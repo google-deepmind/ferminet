@@ -1,0 +1,384 @@
+# Lint as: python3
+# Copyright 2020 DeepMind Technologies Limited. All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+"""Learn ground state wavefunctions for molecular systems using VMC."""
+
+import ast
+import datetime
+import os
+import sys
+
+from absl import app
+from absl import flags
+from absl import logging
+from ferminet import train
+from ferminet.utils import system
+import numpy as np
+import tensorflow.compat.v1 as tf
+
+FLAGS = flags.FLAGS
+
+################################################################################
+# High-level flags to configure hardware
+################################################################################
+
+flags.DEFINE_boolean(
+    'multi_gpu', False,
+    'Use all available GPUs on machine for batch parallelism. '
+    'Default: use single GPU.')
+
+################################################################################
+# High-level flags about training
+################################################################################
+
+flags.DEFINE_integer('batch_size', 4096, 'number of walkers')
+flags.DEFINE_boolean('double_precision', False,
+                     'use double rather than single precision')
+
+################################################################################
+# Flags related to pretraining
+################################################################################
+
+flags.DEFINE_integer(
+    'pretrain_iterations', 1000,
+    'Number of iterations for which to pretrain the network '
+    'to match Hartree-Fock orbitals.')
+flags.DEFINE_string('pretrain_basis', 'sto-3g',
+                    'Basis set used to run Hartree-Fock calculation in PySCF.')
+
+################################################################################
+# Flags related to optimization
+################################################################################
+
+flags.DEFINE_integer('iterations', 1000000, 'number of iterations')
+flags.DEFINE_float('clip_el', 5.0,
+                   'If not none, scale at which to clip local energy')
+
+# Flags related to the learning rate
+flags.DEFINE_float('learning_rate', 1.e-4, 'learning rate')
+flags.DEFINE_float('learning_rate_decay', 1.0,
+                   'exponent of learning rate decay')
+flags.DEFINE_float('learning_rate_delay', 10000.0,
+                   'set the scale of the rate decay')
+
+# Flags related to KFAC
+flags.DEFINE_boolean('use_kfac', True,
+                     'If false, use ADAM, else use KFAC as optimizer')
+flags.DEFINE_integer('kfac_invert_every', 1, 'See KFAC documentation')
+flags.DEFINE_integer('kfac_cov_update_every', 1, 'See KFAC documentation')
+flags.DEFINE_float('kfac_damping', 0.001, 'See KFAC documentation')
+flags.DEFINE_float('kfac_cov_ema_decay', 0.95, 'See KFAC documentation')
+flags.DEFINE_float('kfac_momentum', 0.0, 'See KFAC documentation')
+flags.DEFINE_string('kfac_momentum_type', 'regular', 'See KFAC documentation')
+flags.DEFINE_boolean('kfac_adapt_damping', False, 'See KFAC documentation')
+flags.DEFINE_float('kfac_damping_adaptation_decay', 0.9,
+                   'See KFAC documentation')
+flags.DEFINE_integer('kfac_damping_adaptation_interval', 5,
+                     'See KFAC documentation')
+flags.DEFINE_float('kfac_min_damping', 1.e-4, 'See KFAC documentation')
+flags.DEFINE_float('kfac_norm_constraint', 0.001, 'See KFAC documentation')
+
+################################################################################
+# Flags related to the system to solve for
+################################################################################
+
+flags.DEFINE_string('system_type', 'molecule',
+                    'Function to be called to create the system.')
+flags.DEFINE_string(
+    'system', 'LiH', 'If system_type is "molecule", the name of the molecule. '
+    'If system_type is "atom", the atomic symbol. '
+    'If system_type is "hn", the number of atoms in the '
+    'hydrogen chain.')
+flags.DEFINE_integer(
+    'system_charge', 0,
+    'The overall charge of the system. Positive for cations '
+    'and negative for anions.')
+flags.DEFINE_integer('system_dim', 3,
+                     'Number of dimensions of the system. Change with care.')
+flags.DEFINE_string(
+    'system_units', 'bohr',
+    'Units of *input* coords of atoms. Either "bohr" or '
+    '"angstrom". Internally work in a.u.; positions in '
+    'Angstroms are converged to Bohr.')
+
+# Flags related to diatomics, the hydrogen chain, and the hydrogen circle
+flags.DEFINE_float(
+    'system_separation', 0.0,
+    'For the hydrogen chain and diatomic systems, the '
+    'separation between nuclei. For the H4 circle, the radius '
+    'of the circle. For diatomics, will default to the '
+    'equilibrium bond length if set to 0.')
+
+# Flags related to the hydrogen circle
+flags.DEFINE_float('system_angle', np.pi / 4.0,
+                   'Angle from the x-axis for the H4 circle')
+
+################################################################################
+# Flags related to the MCMC chain
+################################################################################
+
+flags.DEFINE_integer(
+    'mcmc_burn_in', 100, 'Number of burn in steps after pretraining. '
+    'If zero do not burn in or reinitialize walkers.')
+flags.DEFINE_integer('mcmc_steps', 10,
+                     'Number of MCMC steps to make between network updates.')
+flags.DEFINE_float(
+    'mcmc_init_width', 0.8,
+    'Width of (atom-centred) Gaussian used to generate initial '
+    'electron configurations.')
+flags.DEFINE_float('mcmc_move_width', 0.02,
+                   'Width of Gaussian used for random moves.')
+flags.DEFINE_list(
+    'mcmc_init_means', '',
+    'Iterable of 3*nelectrons giving the mean initial position '
+    'of each electron. Configurations are drawn using Gaussians '
+    'of width init_width at each 3D position. Alpha electrons '
+    'are listed before beta electrons. If empty, electrons are '
+    'assigned to atoms based upon the isolated atom spin '
+    'configuration.')
+
+################################################################################
+# Flags related to the network architecture
+################################################################################
+
+flags.DEFINE_enum(
+    'network_architecture', 'ferminet', ['ferminet', 'slater'],
+    'The choice of architecture to run the calculation with. '
+    'Either "ferminet" or "slater" for the Fermi Net and '
+    'standard Slater determinant respectively.')
+flags.DEFINE_string(
+    'hidden_units', '((256, 32), (256, 32), (256, 32), (256, 32))',
+    'Number of hidden units in each layer of the network. If '
+    'the Fermi Net with one- and two-electron streams is used, '
+    'a tuple is provided for each layer, with the first '
+    'element giving the number of hidden units in the '
+    'one-electron stream and the second element giving the '
+    'number of units in the two-electron stream.')
+flags.DEFINE_integer('determinants', 16,
+                     'Number of determinants in the Fermi Net')
+
+flags.DEFINE_boolean(
+    'r12_en_features', True,
+    'Include r12/distance features between electrons and nuclei')
+flags.DEFINE_boolean(
+    'r12_ee_features', True,
+    'Include r12/distance features between pairs of electrons')
+flags.DEFINE_boolean('pos_ee_features', True,
+                     'Include electron-electron position features')
+flags.DEFINE_boolean(
+    'use_envelope', True,
+    'Include multiplicative exponentially-decaying envelope. '
+    'Calculations will not converge if set to False.')
+flags.DEFINE_boolean(
+    'backflow', False, 'Include backflow transformation in input coordinates. '
+    'Only for use if network_architecture == "slater". '
+    'Implies --build_backflow.')
+flags.DEFINE_boolean(
+    'build_backflow', False, 'Create backflow weights but do '
+    'not include backflow coordinate transformation. Use to '
+    'train a Slater-Jastrow architecture and then train a '
+    'Slater-Jastrow-Backflow architecture based on it.')
+flags.DEFINE_boolean('residual', True, 'Use residual connections. Recommended.')
+flags.DEFINE_list(
+    'after_det', '1',
+    'Comma-separated configuration of neural network after the '
+    'determinants. By default, just takes a  weighted sum of '
+    'determinants with no nonlinearity.')
+
+# Flags related to the Jastrow factor
+flags.DEFINE_boolean('jastrow_en', False,
+                     'Include electron-nuclear Jastrow factor.')
+flags.DEFINE_boolean('jastrow_ee', False,
+                     'Include electron-electron Jastrow factor.')
+flags.DEFINE_boolean('jastrow_een', False,
+                     'Include electron-electron-nuclear Jastrow factor.')
+
+################################################################################
+# Flags related to logging, checkpointing, and restoring
+################################################################################
+
+flags.DEFINE_integer('stats_frequency', 1,
+                     'Iterations between logging of stats.')
+flags.DEFINE_float('save_frequency', 10.0,
+                   'Minutes between saving network params.')
+flags.DEFINE_string(
+    'result_folder', '.', 'Path to save results and checkpoints to. A new '
+    'subdirectory will be created for every experiment. '
+    'By default, save locally.')
+flags.DEFINE_string('restore_path', '',
+                    'Path containing checkpoint to restore network from.')
+flags.DEFINE_boolean(
+    'log_walkers', False,
+    'Whether or not to log the values of all walkers every '
+    'iteration. Use with caution!!! Produces a lot of data '
+    'very quickly.')
+flags.DEFINE_boolean(
+    'log_local_energies', False,
+    'Whether or not to log all local energies for each walker '
+    'at each step.')
+flags.DEFINE_boolean(
+    'log_wavefunction', False,
+    'Whether or not to log all values of wavefunction for '
+    'each walker at each step.')
+
+################################################################################
+# Flags related to debugging
+################################################################################
+
+flags.DEFINE_boolean(
+    'check_loss', False, 'Apply gradient update only if the loss is not NaN. '
+    'If true, training could be slightly slower but the '
+    'checkpoint written out when a NaN is detected will be '
+    'with the network weights which led to '
+    'the NaN.')
+flags.DEFINE_boolean(
+    'determinism', False, 'CPU only mode that also enforces determinism.'
+    'Will run significantly slower if used.')
+flags.DEFINE_integer(
+    'random_seed', 1, 'Only works in determinism mode. '
+    'Set a random seed for the run.')
+flags.DEFINE_string('graph_path', '', 'File to write graph to.')
+
+
+def main(argv):
+  del argv
+  tf.enable_resource_variables()
+
+  if FLAGS.determinism:
+    tf.set_random_seed(FLAGS.random_seed)
+    logging.info('Activating determinism mode. Expect slow performance.')
+
+  # Create folders for logging
+  result_path = os.path.join(
+      FLAGS.result_folder, 'ferminet_results_' +
+      datetime.datetime.ctime(datetime.datetime.now()).replace(' ', '_'))
+  if not os.path.isdir(FLAGS.result_folder):
+    os.mkdir(FLAGS.result_folder)
+  os.mkdir(result_path)
+
+  # Save the command line arguments for reproducibility
+  with open(os.path.join(result_path, 'flags.txt'), 'w') as f:
+    f.write(' '.join(sys.argv[1:]) + '\n')
+
+  # Run function to create the system from flags.
+  logging.info('System Type: %s', FLAGS.system_type)
+  logging.info('System: %s', FLAGS.system)
+  if FLAGS.system_type == 'molecule':
+    molecule, spins = system.molecule(
+        FLAGS.system,
+        bond_length=FLAGS.system_separation,
+        units=FLAGS.system_units)
+  elif FLAGS.system_type == 'atom':
+    molecule, spins = system.atom(FLAGS.system, charge=FLAGS.system_charge)
+  elif FLAGS.system_type == 'hn':
+    molecule, spins = system.hn(
+        int(FLAGS.system),
+        FLAGS.system_separation,
+        charge=FLAGS.system_charge,
+        units=FLAGS.system_units)
+  elif FLAGS.system_type == 'h4_circle':
+    molecule, spins = system.h4_circle(
+        FLAGS.system_separation, FLAGS.system_angle, units=FLAGS.system_units)
+  else:
+    raise ValueError('Not a recognized system type: %s' % FLAGS.system_type)
+
+  network_config = train.NetworkConfig(
+      architecture=FLAGS.network_architecture,
+      hidden_units=ast.literal_eval(FLAGS.hidden_units),
+      determinants=FLAGS.determinants,
+      r12_en_features=FLAGS.r12_en_features,
+      r12_ee_features=FLAGS.r12_ee_features,
+      pos_ee_features=FLAGS.pos_ee_features,
+      use_envelope=FLAGS.use_envelope,
+      backflow=FLAGS.backflow,
+      build_backflow=FLAGS.build_backflow,
+      residual=FLAGS.residual,
+      after_det=tuple(int(x) for x in FLAGS.after_det),
+      jastrow_en=FLAGS.jastrow_en,
+      jastrow_ee=FLAGS.jastrow_ee,
+      jastrow_een=FLAGS.jastrow_een,
+  )
+
+  pretrain_config = train.PretrainConfig(
+      iterations=FLAGS.pretrain_iterations,
+      basis=FLAGS.pretrain_basis,
+  )
+
+  optim_config = train.OptimConfig(
+      iterations=FLAGS.iterations,
+      learning_rate=FLAGS.learning_rate,
+      learning_rate_decay=FLAGS.learning_rate_decay,
+      learning_rate_delay=FLAGS.learning_rate_delay,
+      clip_el=FLAGS.clip_el,
+      use_kfac=FLAGS.use_kfac,
+      check_loss=FLAGS.check_loss,
+      deterministic=FLAGS.determinism,
+  )
+
+  kfac_config = train.KfacConfig(
+      invert_every=FLAGS.kfac_invert_every,
+      cov_update_every=FLAGS.kfac_cov_update_every,
+      damping=FLAGS.kfac_damping,
+      cov_ema_decay=FLAGS.kfac_cov_ema_decay,
+      momentum=FLAGS.kfac_momentum,
+      momentum_type=FLAGS.kfac_momentum_type,
+      adapt_damping=FLAGS.kfac_adapt_damping,
+      damping_adaptation_decay=FLAGS.kfac_damping_adaptation_decay,
+      damping_adaptation_interval=FLAGS.kfac_damping_adaptation_interval,
+      min_damping=FLAGS.kfac_min_damping,
+  )
+
+  mcmc_config = train.MCMCConfig(
+      burn_in=FLAGS.mcmc_burn_in,
+      steps=FLAGS.mcmc_steps,
+      init_width=FLAGS.mcmc_init_width,
+      move_width=FLAGS.mcmc_move_width,
+      init_means=tuple(float(x) for x in FLAGS.mcmc_init_means),
+  )
+
+  logging_config = train.LoggingConfig(
+      result_path=result_path,
+      save_frequency=FLAGS.save_frequency,
+      restore_path=FLAGS.restore_path,
+      stats_frequency=FLAGS.stats_frequency,
+      walkers=FLAGS.log_walkers,
+      wavefunction=FLAGS.log_wavefunction,
+      local_energy=FLAGS.log_local_energies,
+      config={
+          'system_type': FLAGS.system_type,
+          'system': FLAGS.system,
+          'system_units': FLAGS.system_units,
+          'system_separation': FLAGS.system_separation,
+          'system_charge': FLAGS.system_charge,
+      },
+  )
+
+  train.train(
+      molecule=molecule,
+      spins=spins,
+      batch_size=FLAGS.batch_size,
+      network_config=network_config,
+      pretrain_config=pretrain_config,
+      optim_config=optim_config,
+      kfac_config=kfac_config,
+      mcmc_config=mcmc_config,
+      logging_config=logging_config,
+      multi_gpu=FLAGS.multi_gpu,
+      double_precision=FLAGS.double_precision,
+      graph_path=FLAGS.graph_path)
+  logging.info('Fermi Net training run completed successfully.')
+
+
+if __name__ == '__main__':
+  app.run(main)
