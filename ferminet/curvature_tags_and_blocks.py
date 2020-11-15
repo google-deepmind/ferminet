@@ -12,26 +12,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Main wrapper for FermiNet in JAX."""
-
-from absl import app
-from absl import flags
-from absl import logging
-from ferminet import base_config
-from ferminet import train
-from ml_collections.config_flags import config_flags
-
-FLAGS = flags.FLAGS
-
-config_flags.DEFINE_config_file('config', None, 'Path to config file.')
+"""Dummy interaces."""
 
 
-def main(_):
-  cfg = FLAGS.config
-  cfg = base_config.resolve(cfg)
-  logging.info('System config:\n\n%s', cfg)
-  train.train(cfg)
+def register_qmc1(y, x, w, **kwargs):
+  del x, w, kwargs
+  return y
 
 
-if __name__ == '__main__':
-  app.run(main)
+def register_qmc2(y, x, w, **kwargs):
+  del x, w, kwargs
+  return y
+
+
+def register_repeated_dense(y, x, w, b):
+  del x, w, b
+  return y

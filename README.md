@@ -7,22 +7,31 @@ Rev. Research 2, 033429 (2020). FermiNet is a neural network for learning the
 ground state wavefunctions of atoms and molecules using a variational Monte
 Carlo approach.
 
+WARNING: This is a research-level release of a JAX implementation.
+
 ## Installation
 
 `pip install -e .` will install all required dependencies. This is best done
 inside a [virtual environment](https://docs.python-guide.org/dev/virtualenvs/).
 
 ```
-virtualenv -m python3.7 ~/venv/ferminet
+virtualenv ~/venv/ferminet
 source ~/venv/ferminet/bin/activate
 pip install -e .
 ```
 
-If you have a GPU available (highly recommended for fast training), then use
-`pip install -e '.[tensorflow-gpu]'` to install TensorFlow with GPU support.
+If you have a GPU available (highly recommended for fast training), then you can
+install JAX with CUDA support, using e.g.:
 
-We use python 3.7 (or earlier) because there is TensorFlow 1.15 wheel available
-for it. TensorFlow 2 is not currently supported.
+```
+pip install --upgrade jax jaxlib==0.157+cuda110 -f
+https://storage.googleapis.com/jax-releases/jax_releases.html
+```
+
+Note that the jaxlib version must correspond to the existing CUDA installation
+you wish to use. Please see the
+[JAX documentation](https://github.com/google/jax#installation) for more
+details.
 
 The tests are easiest run using pytest:
 
@@ -33,66 +42,92 @@ python -m pytest
 
 ## Usage
 
-```
-ferminet --batch_size 1024 --pretrain_iterations 100
-```
-
-will train FermiNet to find the ground-state wavefunction of the LiH molecule
-with a bond-length of 1.63999 angstroms using a batch size of 1024 MCMC
-configurations ("walkers" in variational Monte Carlo language), and 100
-iterations of pretraining (the default of 1000 is overkill for such a small
-system). The system and hyperparameters can be controlled by flags. Run
+ferminet uses the `ConfigDict` from
+[ml_collections](https://github.com/google/ml_collections) to configure the
+system. A few example scripts are included under `ferminet/configs/`. These are
+mostly for testing so need additional
 
 ```
-ferminet --help
+ferminet --config ferminet/configs/atom.py --config.system.atom Li --config.batch_size 256 --config.pretrain.iterations 100
 ```
 
-to see the available options. Several systems used in the FermiNet paper are
-included by default. Other systems can easily be set up, by setting the
-appropriate system flags to `ferminet`, modifying `ferminet.utils.system` or
-writing a custom training script. For example, to run on the H2 molecule:
+will train FermiNet to find the ground-state wavefunction of the Li atom with a
+bond-length of 1.63999 angstroms using a batch size of 1024 MCMC configurations
+("walkers" in variational Monte Carlo language), and 100 iterations of
+pretraining (the default of 1000 is overkill for such a small system). The
+system and hyperparameters can be controlled by modifying the config file or
+(better, for one-off changes) using flags. See the
+[ml_collections](https://github.com/google/ml_collections)' documentation for
+further details on the flag syntax. Details of all available config settings are
+in `ferminet/base_config.py`.
+
+Other systems can easily be set up, by creating a new config file or `ferminet`,
+or writing a custom training script. For example, to run on the H2 molecule, you
+can create a config file containing:
+
+```
+from ferminet import base_config
+from ferminet.utils import system
+
+# Settings in a a config files are loaded by executing the the get_config
+# function.
+def get_config():
+  # Get default options.
+  cfg = base_config.default()
+  # Set up molecule
+  cfg.system.electrons = (1,1)
+  cfg.system.molecule = [system.Atom('H', (0, 0, -1)), system.Atom('H', (0, 0, 1))]
+
+  # Set training hyperparameters
+  cfg.batch_size = 256
+  cfg.pretrain.iterations = 100
+
+  return cfg
+```
+
+and then run it using
+
+```
+ferminet --config /path/to/h2_config.py
+```
+
+or equivalently write the following script (or execute it interactively):
 
 ```
 import sys
 
 from absl import logging
 from ferminet.utils import system
-from ferminet import train
+from ferminet import base_config
+from ferminet import qmc
 
-# Optional, for also printing training progress to STDOUT
+# Optional, for also printing training progress to STDOUT.
+# If running a script, you can also just use the --alsologtostderr flag.
 logging.get_absl_handler().python_handler.stream = sys.stdout
 logging.set_verbosity(logging.INFO)
 
 # Define H2 molecule
-molecule = [system.Atom('H', (0, 0, -1)), system.Atom('H', (0, 0, 1))]
+cfg = base_config.default()
+cfg.system.electrons = (1,1)
+cfg.system.molecule = [system.Atom('H', (0, 0, -1)), system.Atom('H', (0, 0, 1))]
 
-train.train(
-  molecule=molecule,
-  spins=(1, 1),
-  batch_size=256,
-  pretrain_config=train.PretrainConfig(iterations=100),
-  logging_config=train.LoggingConfig(result_path='H2'),
-)
+# Set training parameters
+cfg.batch_size = 256
+cfg.pretrain.iterations = 100
+
+qmc.train(cfg)
 ```
 
-`train.train` is controlled by a several lightweight config objects. Only
-non-default settings need to be explicitly supplied. Please see the docstrings
-for `train.train` and associated `*Config` classes for details.
-
 Note: to train on larger atoms and molecules with large batch sizes, multi-GPU
-parallelisation is essential. This is supported via TensorFlow's
-[MirroredStrategy](https://www.tensorflow.org/api_docs/python/tf/distribute/MirroredStrategy)
-and the `--multi_gpu` flag.
+parallelisation is essential. This is supported via JAX's
+[pmap](https://jax.readthedocs.io/en/latest/jax.html#parallelization-pmap).
+Multiple GPUs will be automatically detected and used if available.
 
 ## Output
 
-The results directory contains `pretrain_stats.csv`, which contains the
-pretraining loss for each iteration, `train_stats.csv` which contains the local
-energy and MCMC acceptance probability for each iteration, and the `checkpoints`
-directory, which contains the checkpoints generated during training. If
-requested, there is also an HDF5 file, `data.h5`, which contains the walker
-configuration, per-walker local energies and per-walker wavefunction values for
-each iteration. Warning: this quickly becomes very large!
+The results directory contains `train_stats.csv` which contains the local energy
+and MCMC acceptance probability for each iteration, and the `checkpoints`
+directory, which contains the checkpoints generated during training.
 
 ## Giving Credit
 

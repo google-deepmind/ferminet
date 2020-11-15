@@ -1,4 +1,4 @@
-# Copyright 2018-2019 DeepMind Technologies Limited and Google LLC
+# Copyright 2020 DeepMind Technologies Limited and Google LLC
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,17 +15,24 @@
 """Setup for pip package."""
 
 import unittest
+
 from setuptools import find_packages
 from setuptools import setup
 
 REQUIRED_PACKAGES = [
-    'absl-py', 'kfac>=0.2.3', 'numpy<1.19.0', 'pandas', 'pyscf', 'pyblock',
-    'dm-sonnet<2.0', 'tables', 'tensorflow>=1.14,<2.0',
-    'tensorflow_probability==0.8'
+    'absl-py',
+    'chex',
+    'jax',
+    'jaxlib',
+    'ml-collections',
+    'optax',
+    'numpy',
+    'pandas',
+    'pyscf',
+    'pyblock',
+    'scipy<1.5',
+    'tables',
 ]
-EXTRA_PACKAGES = {
-    'tensorflow-gpu': ['tensorflow-gpu>=1.14,<2.0'],
-}
 
 
 def ferminet_test_suite():
@@ -36,7 +43,7 @@ def ferminet_test_suite():
 
 setup(
     name='ferminet',
-    version='0.1',
+    version='0.2',
     description='A library to train networks to represent ground state wavefunctions of fermionic systems',
     url='https://github.com/deepmind/ferminet',
     author='DeepMind',
@@ -45,7 +52,6 @@ setup(
     scripts=['bin/ferminet'],
     packages=find_packages(),
     install_requires=REQUIRED_PACKAGES,
-    extras_require=EXTRA_PACKAGES,
     platforms=['any'],
     license='Apache 2.0',
     test_suite='setup.ferminet_test_suite',

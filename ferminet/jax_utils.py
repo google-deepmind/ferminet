@@ -12,26 +12,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Main wrapper for FermiNet in JAX."""
+"""Utilities for working with JAX."""
 
-from absl import app
-from absl import flags
-from absl import logging
-from ferminet import base_config
-from ferminet import train
-from ml_collections.config_flags import config_flags
+import jax
 
-FLAGS = flags.FLAGS
+broadcast = jax.pmap(lambda x: x)
 
-config_flags.DEFINE_config_file('config', None, 'Path to config file.')
+p_split = jax.pmap(lambda key: tuple(jax.random.split(key)))
 
 
-def main(_):
-  cfg = FLAGS.config
-  cfg = base_config.resolve(cfg)
-  logging.info('System config:\n\n%s', cfg)
-  train.train(cfg)
-
-
-if __name__ == '__main__':
-  app.run(main)
+def replicate(pytree):
+  n = jax.local_device_count()
+  stacked_pytree = jax.tree_map(lambda x: jax.lax.broadcast(x, (n,)), pytree)
+  return broadcast(stacked_pytree)

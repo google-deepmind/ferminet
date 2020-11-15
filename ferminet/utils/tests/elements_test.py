@@ -39,29 +39,44 @@ class ElementsTest(parameterized.TestCase):
         elements.ATOMIC_NUMS.keys())
 
   @parameterized.parameters(
-      (elements.SYMBOLS['H'], 1, 1, 1),
-      (elements.SYMBOLS['He'], 1, 18, 0),
-      (elements.SYMBOLS['Li'], 2, 1, 1),
-      (elements.SYMBOLS['Be'], 2, 2, 0),
-      (elements.SYMBOLS['C'], 2, 14, 2),
-      (elements.SYMBOLS['N'], 2, 15, 3),
-      (elements.SYMBOLS['Al'], 3, 13, 1),
-      (elements.SYMBOLS['Zn'], 4, 12, -1),
-      (elements.SYMBOLS['Ga'], 4, 13, 1),
-      (elements.SYMBOLS['Kr'], 4, 18, 0),
-      (elements.SYMBOLS['Ce'], 6, -1, -1),
-      (elements.SYMBOLS['Ac'], 7, 3, -1),
+      (elements.SYMBOLS['H'], 1, 1, 1, 1, 0),
+      (elements.SYMBOLS['He'], 1, 18, 0, 1, 1),
+      (elements.SYMBOLS['Li'], 2, 1, 1, 2, 1),
+      (elements.SYMBOLS['Be'], 2, 2, 0, 2, 2),
+      (elements.SYMBOLS['C'], 2, 14, 2, 4, 2),
+      (elements.SYMBOLS['N'], 2, 15, 3, 5, 2),
+      (elements.SYMBOLS['Al'], 3, 13, 1, 7, 6),
+      (elements.SYMBOLS['Zn'], 4, 12, 0, 15, 15),
+      (elements.SYMBOLS['Ga'], 4, 13, 1, 16, 15),
+      (elements.SYMBOLS['Kr'], 4, 18, 0, 18, 18),
+      (elements.SYMBOLS['Ce'], 6, -1, -1, None, None),
+      (elements.SYMBOLS['Ac'], 7, 3, -1, None, None),
   )
-  def test_element_group_period(self, element, period, group, spin_config):
+  def test_element_group_period(self, element, period, group, spin_config,
+                                nalpha, nbeta):
     # Validate subset of elements. See below for more thorough tests using
     # properties of the periodic table.
-    self.assertEqual(element.period, period)
-    self.assertEqual(element.group, group)
-    if element.group == -1 or 3 <= element.group <= 12:
-      with self.assertRaises(NotImplementedError):
-        _ = element.spin_config
-    else:
-      self.assertEqual(element.spin_config, spin_config)
+    with self.subTest('Verify period'):
+      self.assertEqual(element.period, period)
+    with self.subTest('Verify group'):
+      self.assertEqual(element.group, group)
+    with self.subTest('Verify spin configuration'):
+      if (element.period > 5 and
+          (element.group == -1 or 3 <= element.group <= 12)):
+        with self.assertRaises(NotImplementedError):
+          _ = element.spin_config
+      else:
+        self.assertEqual(element.spin_config, spin_config)
+    with self.subTest('Verify electrons per spin'):
+      if (element.period > 5 and
+          (element.group == -1 or 3 <= element.group <= 12)):
+        with self.assertRaises(NotImplementedError):
+          _ = element.nalpha
+        with self.assertRaises(NotImplementedError):
+          _ = element.nbeta
+      else:
+        self.assertEqual(element.nalpha, nalpha)
+        self.assertEqual(element.nbeta, nbeta)
 
   def test_periods(self):
     self.assertLen(elements.ATOMIC_NUMS,

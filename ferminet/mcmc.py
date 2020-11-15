@@ -1,138 +1,242 @@
-# Lint as: python3
-# Copyright 2020 DeepMind Technologies Limited. All Rights Reserved.
+# Copyright 2020 DeepMind Technologies Limited.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
-#     https://www.apache.org/licenses/LICENSE-2.0
+# https://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""Simple Markov Chain Monte Carlo data generator."""
 
-import functools
-import tensorflow.compat.v1 as tf
+"""Metropolis-Hastings Monte Carlo.
+
+NOTE: these functions operate on batches of MCMC configurations and should not
+be vmapped.
+"""
+
+from ferminet import constants
+import jax
+from jax import lax
+from jax import numpy as jnp
 
 
-class MCMC:
-  """Simple Markov Chain Monte Carlo implementation for sampling from |f|^2."""
+def _harmonic_mean(x, atoms):
+  """Calculates the harmonic mean of each electron distance to the nuclei.
 
-  def __init__(self,
-               network,
-               batch_size,
-               init_mu,
-               init_sigma,
-               move_sigma,
-               dtype=tf.float32):
-    """Constructs MCMC object.
+  Args:
+    x: electron positions. Shape (batch, nelectrons, 1, ndim). Note the third
+      dimension is already expanded, which allows for avoiding additional
+      reshapes in the MH algorithm.
+    atoms: atom positions. Shape (natoms, ndim)
+
+  Returns:
+    Array of shape (batch, nelectrons, 1, 1), where the (i, j, 0, 0) element is
+    the harmonic mean of the distance of the j-th electron of the i-th MCMC
+    configuration to all atoms.
+  """
+  ae = x - atoms[None, ...]
+  r_ae = jnp.linalg.norm(ae, axis=-1, keepdims=True)
+  return 1.0 / jnp.mean(1.0 / r_ae, axis=-2, keepdims=True)
+
+
+def _log_prob_gaussian(x, mu, sigma):
+  """Calculates the log probability of Gaussian with diagonal covariance.
+
+  Args:
+    x: Positions. Shape (batch, nelectron, 1, ndim) - as used in mh_update.
+    mu: means of Gaussian distribution. Same shape as or broadcastable to x.
+    sigma: standard deviation of the distribution. Same shape as or
+      broadcastable to x.
+
+  Returns:
+    Log probability of Gaussian distribution with shape as required for
+    mh_update - (batch, nelectron, 1, 1).
+  """
+  numer = jnp.sum(-0.5 * ((x - mu)**2) / (sigma**2), axis=[1, 2, 3])
+  denom = x.shape[-1] * jnp.sum(jnp.log(sigma), axis=[1, 2, 3])
+  return numer - denom
+
+
+def mh_update(params,
+              f,
+              x1,
+              key,
+              lp_1,
+              num_accepts,
+              stddev=0.02,
+              atoms=None,
+              i=0):
+  """Performs one Metropolis-Hastings step using an all-electron move.
+
+  Args:
+    params: Wavefuncttion parameters.
+    f: Callable with signature f(params, x) which returns the log of the
+      wavefunction (i.e. the sqaure root of the log probability of x).
+    x1: Initial MCMC configurations. Shape (batch, nelectrons*ndim).
+    key: RNG state.
+    lp_1: log probability of f evaluated at x1 given parameters params.
+    num_accepts: Number of MH move proposals accepted.
+    stddev: width of Gaussian move proposal.
+    atoms: If not None, atom positions. Shape (natoms, 3). If present, then the
+      Metropolis-Hastings move proposals are drawn from a Gaussian distribution,
+      N(0, (h_i stddev)^2), where h_i is the harmonic mean of distances between
+      the i-th electron and the atoms, otherwise the move proposal drawn from
+      N(0, stddev^2).
+    i: Ignored.
+
+  Returns:
+    (x, key, lp, num_accepts), where:
+      x: Updated MCMC configurations.
+      key: RNG state.
+      lp: log probability of f evaluated at x.
+      num_accepts: update running total of number of accepted MH moves.
+  """
+  del i  # electron index ignored for all-electron moves
+  key, subkey = jax.random.split(key)
+  if atoms is None:  # symmetric proposal, same stddev everywhere
+    x2 = x1 + stddev * jax.random.normal(subkey, shape=x1.shape)  # proposal
+    lp_2 = 2. * f(params, x2)  # log prob of proposal
+    ratio = lp_2 - lp_1
+  else:  # asymmetric proposal, stddev propto harmonic mean of nuclear distances
+    n = x1.shape[0]
+    x1 = jnp.reshape(x1, [n, -1, 1, 3])
+    hmean1 = _harmonic_mean(x1, atoms)  # harmonic mean of distances to nuclei
+
+    x2 = x1 + stddev * hmean1 * jax.random.normal(subkey, shape=x1.shape)
+    lp_2 = 2. * f(params, x2)  # log prob of proposal
+    hmean2 = _harmonic_mean(x2, atoms)  # needed for probability of reverse jump
+
+    lq_1 = _log_prob_gaussian(x1, x2, stddev * hmean1)  # forward probability
+    lq_2 = _log_prob_gaussian(x2, x1, stddev * hmean2)  # reverse probability
+    ratio = lp_2 + lq_2 - lp_1 - lq_1
+
+    x1 = jnp.reshape(x1, [n, -1])
+    x2 = jnp.reshape(x2, [n, -1])
+  key, subkey = jax.random.split(key)
+  rnd = jnp.log(jax.random.uniform(subkey, shape=lp_1.shape))
+  cond = ratio > rnd
+  x_new = jnp.where(cond[..., None], x2, x1)
+  lp_new = jnp.where(cond, lp_2, lp_1)
+  num_accepts += jnp.sum(cond)
+
+  return x_new, key, lp_new, num_accepts
+
+
+def mh_one_electron_update(params,
+                           f,
+                           x1,
+                           key,
+                           lp_1,
+                           num_accepts,
+                           stddev=0.02,
+                           atoms=None,
+                           i=0):
+  """Performs one Metropolis-Hastings step for a single electron.
+
+  Args:
+    params: Wavefuncttion parameters.
+    f: Callable with signature f(params, x) which returns the log of the
+      wavefunction (i.e. the sqaure root of the log probability of x).
+    x1: Initial MCMC configurations. Shape (batch, nelectrons*ndim).
+    key: RNG state.
+    lp_1: log probability of f evaluated at x1 given parameters params.
+    num_accepts: Number of MH move proposals accepted.
+    stddev: width of Gaussian move proposal.
+    atoms: Ignored. Asymmetric move proposals are not implemented for
+      single-electron moves.
+    i: index of electron to move.
+
+  Returns:
+    (x, key, lp, num_accepts), where:
+      x: Updated MCMC configurations.
+      key: RNG state.
+      lp: log probability of f evaluated at x.
+      num_accepts: update running total of number of accepted MH moves.
+
+  Raises:
+    NotImplementedError: if atoms is supplied.
+  """
+  key, subkey = jax.random.split(key)
+  n = x1.shape[0]
+  x1 = jnp.reshape(x1, [n, -1, 1, 3])
+  nelec = x1.shape[1]
+  ii = i % nelec
+  if atoms is None:  # symmetric proposal, same stddev everywhere
+    x2 = x1.at[:, ii].add(stddev *
+                          jax.random.normal(subkey, shape=x1[:, ii].shape))
+    lp_2 = 2. * f(params, x2)  # log prob of proposal
+    ratio = lp_2 - lp_1
+  else:  # asymmetric proposal, stddev propto harmonic mean of nuclear distances
+    raise NotImplementedError('Still need to work out reverse probabilities '
+                              'for asymmetric moves.')
+
+  x1 = jnp.reshape(x1, [n, -1])
+  x2 = jnp.reshape(x2, [n, -1])
+  key, subkey = jax.random.split(key)
+  rnd = jnp.log(jax.random.uniform(subkey, shape=lp_1.shape))
+  cond = ratio > rnd
+  x_new = jnp.where(cond[..., None], x2, x1)
+  lp_new = jnp.where(cond, lp_2, lp_1)
+  num_accepts += jnp.sum(cond)
+
+  return x_new, key, lp_new, num_accepts
+
+
+def make_mcmc_step(batch_network,
+                   batch_per_device,
+                   steps=10,
+                   atoms=None,
+                   one_electron_moves=False):
+  """Creates the MCMC step function.
+
+  Args:
+    batch_network: function, signature (params, x), which evaluates the log of
+      the wavefunction (square root of the log probability distribution) at x
+      given params. Inputs and outputs are batched.
+    batch_per_device: Batch size per device.
+    steps: Number of MCMC moves to attempt in a single call to the MCMC step
+      function.
+    atoms: atom positions. If given, an asymmetric move proposal is used based
+      on the harmonic mean of electron-atom distances for each electron.
+      Otherwise the (conventional) normal distribution is used.
+    one_electron_moves: If true, attempt to move one electron at a time.
+      Otherwise, attempt one all-electron move per MCMC step.
+
+  Returns:
+    Callable which performs the set of MCMC steps.
+  """
+  inner_fun = mh_one_electron_update if one_electron_moves else mh_update
+
+  @jax.jit
+  def mcmc_step(params, data, key, width):
+    """Performs a set of MCMC steps.
 
     Args:
-      network: network to sample from according to the square of the output.
-      batch_size: batch size - number of configurations (walkers) to generate.
-      init_mu: mean of a truncated normal distribution to draw from to generate
-        initial configurations for each coordinate (i.e. of length 3 x number of
-        electrons).
-        distribution.
-      init_sigma: standard deviation of a truncated normal distribution to draw
-        from to generate initial configurations.
-      move_sigma: standard deviation of random normal distribution from which to
-        draw random moves.
-      dtype: the data type of the configurations.
+      params: parameters to pass to the network.
+      data: (batched) MCMC configurations to pass to the network.
+      key: RNG state.
+      width: standard deviation to use in the move proposal.
+
+    Returns:
+      (data, pmove), where data is the updated MCMC configurations, key the
+      updated RNG state and pmove the average probability a move was accepted.
     """
 
-    strategy = tf.distribute.get_strategy()
-    nreplicas = strategy.num_replicas_in_sync
-    self._dtype = dtype.base_dtype
-    self.network = network
-    self._init_mu = init_mu
-    self._init_sigma = init_sigma
-    self._move_sigma = move_sigma
-    self.walkers = tf.get_variable(
-        'walkers',
-        initializer=self._rand_init((nreplicas, batch_size)),
-        trainable=False,
-        use_resource=True,
-        dtype=self._dtype)
-    self.psi = self.update_psi()
-    self.move_acc = tf.constant(0.0)
+    def step_fn(i, x):
+      return inner_fun(
+          params, batch_network, *x, stddev=width, atoms=atoms, i=i)
 
-  def _rand_init(self, batch_dims):
-    """Generate a random set of samples from a uniform distribution."""
-    return tf.concat(
-        [
-            tf.random.truncated_normal(  # pylint: disable=g-complex-comprehension
-                shape=(*batch_dims, 1),
-                mean=mu,
-                stddev=self._init_sigma,
-                dtype=self._dtype) for mu in self._init_mu
-        ],
-        axis=-1)
+    nelec = data.shape[-1] // 3
+    nsteps = nelec * steps if one_electron_moves else steps
+    logprob = 2. * batch_network(params, data)
+    data, key, _, num_accepts = lax.fori_loop(0, nsteps, step_fn,
+                                              (data, key, logprob, 0.))
+    pmove = jnp.sum(num_accepts) / (nsteps * batch_per_device)
+    pmove = jax.lax.pmean(pmove, axis_name=constants.PMAP_AXIS_NAME)
+    return data, pmove
 
-  def reinitialize_walkers(self):
-    walker_reset = self.walkers.assign(
-        self._rand_init(self.walkers.shape.as_list()[:-1]))
-    with tf.control_dependencies([walker_reset]):
-      psi_reset = self.update_psi()
-    return walker_reset, psi_reset
-
-  def update_psi(self):
-    strategy = tf.distribute.get_strategy()
-    psi_per_gpu = strategy.experimental_run(
-        lambda: self.network(self.walkers_per_gpu)[0])
-    self.psi = tf.stack(
-        strategy.experimental_local_results(psi_per_gpu), axis=0)
-    return self.psi
-
-  @property
-  def walkers_per_gpu(self):
-    replica_id = tf.distribute.get_replica_context().replica_id_in_sync_group
-    return self.walkers[replica_id]
-
-  @property
-  def psi_per_gpu(self):
-    replica_id = tf.distribute.get_replica_context().replica_id_in_sync_group
-    return self.psi[replica_id]
-
-  def step(self):
-    """Returns ops for one Metropolis-Hastings step across all replicas."""
-    strategy = tf.distribute.get_strategy()
-    walkers, psi, move_acc = strategy.experimental_run(
-        functools.partial(self._mh_step, step_size=self._move_sigma))
-    update_walkers = self.walkers.assign(
-        tf.stack(strategy.experimental_local_results(walkers), axis=0))
-    self.psi = tf.stack(strategy.experimental_local_results(psi), axis=0)
-    self.move_acc = tf.reduce_mean(
-        strategy.experimental_local_results(move_acc))
-    return update_walkers, self.psi, self.move_acc
-
-  def _mh_step(self, step_size):
-    """Returns ops for one Metropolis-Hastings step in a replica context."""
-    walkers, psi = self.walkers_per_gpu, self.psi_per_gpu
-    new_walkers = walkers + tf.random.normal(
-        shape=walkers.shape, stddev=step_size, dtype=self._dtype)
-    new_psi = self.network(new_walkers)[0]
-    pmove = tf.squeeze(2 * (new_psi - psi))
-    pacc = tf.log(
-        tf.random_uniform(shape=walkers.shape.as_list()[:1], dtype=self._dtype))
-    decision = tf.less(pacc, pmove)
-    with tf.control_dependencies([decision]):
-      new_walkers = tf.where(decision, new_walkers, walkers)
-      new_psi = tf.where(decision, new_psi, psi)
-    move_acc = tf.reduce_mean(tf.cast(decision, tf.float32))
-    return new_walkers, new_psi, move_acc
-
-  def stats_ops(self, log_walkers=False):
-    """Returns op for evaluating the move acceptance probability.
-
-    Args:
-      log_walkers: also include the complete walker configurations (slow, lots
-      of data).
-    """
-    stats = {'pmove': self.move_acc}
-    if log_walkers:
-      stats['walkers'] = self.walkers
-    return stats
+  return mcmc_step
