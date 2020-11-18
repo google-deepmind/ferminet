@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Tests for ferminet.jax.train."""
+"""Tests for ferminet.train."""
 import itertools
 
 from absl import flags

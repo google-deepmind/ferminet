@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Tests for ferminet.jax.hamiltonian."""
+"""Tests for ferminet.hamiltonian."""
 
 from absl.testing import absltest
 from ferminet import base_config
