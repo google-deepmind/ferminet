@@ -24,7 +24,7 @@ If you have a GPU available (highly recommended for fast training), then you can
 install JAX with CUDA support, using e.g.:
 
 ```
-pip install --upgrade jax jaxlib==0.157+cuda110 -f
+pip install --upgrade jax jaxlib==0.1.57+cuda110 -f
 https://storage.googleapis.com/jax-releases/jax_releases.html
 ```
 
