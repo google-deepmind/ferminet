@@ -13,18 +13,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Tests for ferminet.scf."""
+"""Tests for ferminet.utils.scf."""
 
 from typing import List, Tuple
+from absl.testing import absltest
 from absl.testing import parameterized
 from ferminet.utils import scf
 from ferminet.utils import system
 import numpy as np
 import pyscf
-import tensorflow.compat.v1 as tf
 
 
-class ScfTest(tf.test.TestCase, parameterized.TestCase):
+class ScfTest(parameterized.TestCase):
 
   def setUp(self):
     super(ScfTest, self).setUp()
@@ -100,4 +100,4 @@ class ScfTest(tf.test.TestCase, parameterized.TestCase):
 
 
 if __name__ == '__main__':
-  tf.test.main()
+  absltest.main()
