@@ -129,6 +129,44 @@ The results directory contains `train_stats.csv` which contains the local energy
 and MCMC acceptance probability for each iteration, and the `checkpoints`
 directory, which contains the checkpoints generated during training.
 
+## Pretrained Models
+
+A collection of pretrained models trained with KFAC can be found on Google Cloud
+[here](https://console.cloud.google.com/storage/browser/dm-ferminet/models).
+These are all systems from the original PRResearch paper: carbon and neon atoms,
+and nitrogen, ethene, methylamine, ethanol and bicyclobutane molecules. Each
+folder contains samples from the wavefunction in `walkers.npy`, parameters in
+`parameters.npz` and geometries for the molecule in `geometry.npz`. To load the
+models and evaluate the local energy, run:
+
+```
+import numpy as np
+import jax
+from functools import partial
+from ferminet import networks, train, jax_utils
+
+with open('params.npz', 'rb') as f:
+  params = dict(np.load(f, allow_pickle=True))
+  params = params['arr_0'].tolist()
+  params = jax_utils.replicate(params)
+
+with open('walkers.npy', 'rb') as f:
+  data = np.load(f)
+  data = jax_utils.replicate(data)
+
+with open('geometry.npz', 'rb') as f:
+  geometry = dict(np.load(f, allow_pickle=True))
+
+foo = partial(networks.fermi_net, envelope_type='isotropic', full_det=False, **geometry)
+# networks.fermi_net gives the sign/log of the wavefunction. We only care about the latter.
+network = lambda p, x: foo(p, x)[1]
+batch_network = jax.vmap(network, (None, 0), 0)
+loss = train.make_loss(network, batch_network, geometry['atoms'], geometry['charges'], clip_local_energy=5.0)
+ploss = jax.pmap(loss, axis_name='qmc_pmap_axis')  # right now, the code only works if the loss is wrapped by pmap
+
+print(ploss(params, data))  # For neon, should give -128.94165
+```
+
 ## Giving Credit
 
 If you use this code in your work, please cite the associated paper:
