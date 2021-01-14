@@ -21,6 +21,7 @@ from setuptools import setup
 
 REQUIRED_PACKAGES = [
     'absl-py',
+    'attrs',
     'chex',
     'jax',
     'jaxlib',
