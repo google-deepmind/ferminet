@@ -169,7 +169,8 @@ print(ploss(params, data))  # For neon, should give -128.94165
 
 ## Giving Credit
 
-If you use this code in your work, please cite the associated paper:
+If you use this code in your work, please cite the associated papers. The
+initial paper details the architecture and results on a range of systems:
 
 ```
 @article{ferminet,
@@ -182,6 +183,21 @@ If you use this code in your work, please cite the associated paper:
   pages={033429},
   doi = {10.1103/PhysRevResearch.2.033429},
   url = {https://link.aps.org/doi/10.1103/PhysRevResearch.2.033429}
+}
+```
+
+and a NeurIPS Workshop Machine Learning and Physics paper describes the JAX
+implementation:
+
+```
+@misc{spencer2020better,
+  title={Better, Faster Fermionic Neural Networks},
+  author={James S. Spencer and David Pfau and Aleksandar Botev and W. M.C. Foulkes},
+  year={2020},
+  eprint={2011.07125},
+  archivePrefix={arXiv},
+  primaryClass={physics.comp-ph},
+  url = {https://arxiv.org/abs/2011.07125}
 }
 ```
 
