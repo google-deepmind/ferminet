@@ -213,7 +213,7 @@ def molecule(symbol, bond_length=0.0, units='bohr'):
         Atom(symbol='H', coords=(-1.53791, -0.88791, -0.51364), units='bohr'),
     ], (5, 5)
 
-  if symbol == 'C2H4' or symbol == 'ethene' or symbol == 'ethylene':
+  if symbol in ('C2H4', 'ethene', 'ethylene'):
     return [
         Atom(symbol='C', coords=(0.0, 0.0, 1.26135), units='bohr'),
         Atom(symbol='C', coords=(0.0, 0.0, -1.26135), units='bohr'),
@@ -223,7 +223,7 @@ def molecule(symbol, bond_length=0.0, units='bohr'):
         Atom(symbol='H', coords=(0.0, -1.74390, -2.33889), units='bohr'),
     ], (8, 8)
 
-  if symbol == 'C4H6' or symbol == 'bicyclobutane':
+  if symbol in ('C4H6', 'bicyclobutane'):
     return [
         Atom(symbol='C', coords=(0.0, 2.13792, 0.58661), units='bohr'),
         Atom(symbol='C', coords=(0.0, -2.13792, 0.58661), units='bohr'),

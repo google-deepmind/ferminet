@@ -63,8 +63,8 @@ def eval_orbitals(scf_approx, pos, spins):
   if not isinstance(pos, np.ndarray):  # works even with JAX array
     try:
       pos = pos.copy()
-    except AttributeError:
-      raise ValueError('Input must be either NumPy or JAX array.')
+    except AttributeError as e:
+      raise ValueError('Input must be either NumPy or JAX array.') from e
   leading_dims = pos.shape[:-1]
   # split into separate electrons
   pos = np.reshape(pos, [-1, 3])  # (batch*nelec, 3)
