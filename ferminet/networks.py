@@ -76,11 +76,11 @@ def init_fermi_net_params(
   # use.
   del after_determinants
 
-  if envelope_type == 'sto' or envelope_type == 'sto-poly':
+  if envelope_type in ('sto', 'sto-poly'):
     if bias_orbitals: raise ValueError('Cannot bias orbitals w/STO envelope.')
   if hf_solution is not None:
     if use_last_layer: raise ValueError('Cannot use last layer w/HF init')
-    if envelope_type != 'sto' and envelope_type != 'sto-poly':
+    if envelope_type not in ('sto', 'sto-poly'):
       raise ValueError('When using HF init, '
                        'envelope_type must be `sto` or `sto-poly`.')
 
@@ -538,7 +538,7 @@ def fermi_net_orbitals(params, x,
     h_to_orbitals = h_one
   else:
     h_to_orbitals = construct_symmetric_features(h_one, h_two, spins)
-  if envelope_type == 'sto' or envelope_type == 'sto-poly':
+  if envelope_type in ('sto', 'sto-poly'):
     h_to_orbitals = envelope(to_env, params['envelope']) * h_to_orbitals
   h_to_orbitals = jnp.split(h_to_orbitals, spins[0:1], axis=0)
 
