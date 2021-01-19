@@ -1,0 +1,98 @@
+name: CI
+
+on:
+  # Trigger the workflow on push or pull request,
+  # only on the master or jax branches
+  push:
+    branches:
+      - master
+      - jax
+  pull_request:
+    branches:
+      - master
+      - jax
+  workflow_dispatch:
+
+jobs:
+  lint_and_typecheck:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: [3.7]
+
+    steps:
+    - uses: actions/checkout@v2
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v2
+      with:
+        python-version: ${{ matrix.python-version }}
+    - name: Get pip cache dir
+      id: pip-cache
+      run: |
+        python -m pip install --upgrade pip
+        echo "::set-output name=dir::$(pip cache dir)"
+    - name: pip cache
+      uses: actions/cache@v2
+      with:
+        path: ${{ steps.pip-cache.outputs.dir }}
+        key: ${{ runner.os }}-pip-${{ hashFiles('**/setup.py') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+    - name: Install dependencies
+      run: |
+        pip install -e '.[testing]'
+    - name: Lint with flake8
+      run: |
+        flake8 .
+    - name: Lint with pylint
+      run: |
+        pylint ferminet
+    - name: Type check with pytype
+      run: |
+        pytype ferminet
+  build:
+    name: "build ${{ matrix.name-prefix }} (py ${{ matrix.python-version }} on ${{ matrix.os }})"
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - name-prefix: "all tests"
+            python-version: 3.7
+            os: ubuntu-latest
+            package-overrides: "none"
+          - name-prefix: "all tests"
+            python-version: 3.8
+            os: ubuntu-latest
+            package-overrides: "none"
+          - name-prefix: "with internal numpy"
+            python-version: 3.6
+            os: ubuntu-latest
+            # Test with numpy version that matches Google-internal version
+            package-overrides: "numpy==1.16.4"
+    steps:
+    - uses: actions/checkout@v2
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v2
+      with:
+        python-version: ${{ matrix.python-version }}
+    - name: Get pip cache dir
+      id: pip-cache
+      run: |
+        python -m pip install --upgrade pip
+        echo "::set-output name=dir::$(pip cache dir)"
+    - name: pip cache
+      uses: actions/cache@v2
+      with:
+        path: ${{ steps.pip-cache.outputs.dir }}
+        key: ${{ runner.os }}-pip-${{ hashFiles('**/setup.py') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+    - name: Install dependencies
+      run: |
+        pip install -e '.[testing]'
+        if [ ${{ matrix.package-overrides }} != none ]; then
+          pip install ${{ matrix.package-overrides }}
+        fi
+    - name: Run tests
+      run: |
+        python -m pytest

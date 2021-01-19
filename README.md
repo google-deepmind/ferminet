@@ -36,7 +36,7 @@ details.
 The tests are easiest run using pytest:
 
 ```
-pip install pytest
+pip install -e '.[testing]'
 python -m pytest
 ```
 

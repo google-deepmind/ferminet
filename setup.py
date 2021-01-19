@@ -53,6 +53,7 @@ setup(
     scripts=['bin/ferminet'],
     packages=find_packages(),
     install_requires=REQUIRED_PACKAGES,
+    extras_require={'testing': ['flake8', 'pylint', 'pytest', 'pytype']},
     platforms=['any'],
     license='Apache 2.0',
     test_suite='setup.ferminet_test_suite',
