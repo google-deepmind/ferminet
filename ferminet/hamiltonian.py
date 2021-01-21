@@ -63,7 +63,7 @@ def potential_energy(r_ae, r_ee, atoms, charges):
     charges: Shape (natoms). Nuclear charges of the atoms.
   """
   v_ee = jnp.sum(jnp.triu(1 / r_ee[..., 0], k=1))
-  v_ae = -jnp.sum(charges / r_ae[..., 0]) # pylint: disable=invalid-unary-operand-type
+  v_ae = -jnp.sum(charges / r_ae[..., 0])  # pylint: disable=invalid-unary-operand-type
   r_aa = jnp.linalg.norm(atoms[None, ...] - atoms[:, None], axis=-1)
   v_aa = jnp.sum(
       jnp.triu((charges[None, ...] * charges[..., None]) / r_aa, k=1))
