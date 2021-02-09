@@ -30,7 +30,7 @@
 #   are solutions to the Hartree-Fock equations.
 
 
-from typing import Sequence, Text, Tuple
+from typing import Sequence, Tuple, Optional
 
 from absl import logging
 from ferminet.utils import system
@@ -42,30 +42,39 @@ class Scf:
   """Helper class for running Hartree-Fock (self-consistent field) with pyscf.
 
   Attributes:
-    molecule: list of system.Atom objects giving the atoms in the molecule
-      and their positions.
-    nelectrons: Tuple with number of alpha electrons and beta electrons.
-    basis: Basis set to use, best specified with the relevant string for a
-      built-in basis set in pyscf. A user-defined basis set can be used
+    molecule: list of system.Atom objects giving the atoms in the
+      molecule and their positions.
+    nelectrons: Tuple with number of alpha electrons and beta
+      electrons.
+    basis: Basis set to use, best specified with the relevant string
+      for a built-in basis set in pyscf. A user-defined basis set can be used
       (advanced). See https://sunqm.github.io/pyscf/gto.html#input-basis for
         more details.
+    pyscf_mol: the PySCF 'Molecule'. If this is passed to the init,
+      the molecule, nelectrons, and basis will not be used, and the
+      calculations will be performed on the existing pyscf_mol
     restricted: If true, use the restriced Hartree-Fock method, otherwise use
       the unrestricted Hartree-Fock method.
   """
 
   def __init__(self,
-               molecule: Sequence[system.Atom],
-               nelectrons: Tuple[int, int],
-               basis: Text = 'cc-pVTZ',
+               molecule: Optional[Sequence[system.Atom]] = None,
+               nelectrons: Optional[Tuple[int, int]] = None,
+               basis: Optional[str] = 'cc-pVTZ',
+               pyscf_mol: Optional[pyscf.gto.Mole] = None,
                restricted: bool = True):
-    self.molecule = molecule
-    self.nelectrons = nelectrons
-    self.basis = basis
+    if pyscf_mol:
+      self._mol = pyscf_mol
+    else:
+      self.molecule = molecule
+      self.nelectrons = nelectrons
+      self.basis = basis
+      self._spin = nelectrons[0] - nelectrons[1]
+      self._mol = None
+
     self.restricted = restricted
     self._mean_field = None
-    self._mol = None
 
-    self._spin = nelectrons[0] - nelectrons[1]
     pyscf.lib.param.TMPDIR = None
 
   def run(self):
@@ -79,21 +88,26 @@ class Scf:
       RuntimeError: If the number of electrons in the PySCF molecule is not
       consistent with self.nelectrons.
     """
-    if any(atom.atomic_number - atom.charge > 1.e-8 for atom in self.molecule):
-      logging.info(
-          'Fractional nuclear charge detected. Running SCF on atoms with integer charge.'
-      )
-    nuclear_charge = sum(atom.atomic_number for atom in self.molecule)
-    charge = nuclear_charge - sum(self.nelectrons)
-    self._mol = pyscf.gto.Mole(
-        atom=[[atom.symbol, atom.coords] for atom in self.molecule],
-        unit='bohr')
-    self._mol.basis = self.basis
-    self._mol.spin = self._spin
-    self._mol.charge = charge
-    self._mol.build()
-    if self._mol.nelectron != sum(self.nelectrons):
-      raise RuntimeError('PySCF molecule not consistent with QMC molecule.')
+    # If not passed a pyscf molecule, create one
+    if not self._mol:
+      if any(atom.atomic_number - atom.charge > 1.e-8
+             for atom in self.molecule):
+        logging.info(
+            'Fractional nuclear charge detected. '
+            'Running SCF on atoms with integer charge.'
+        )
+
+      nuclear_charge = sum(atom.atomic_number for atom in self.molecule)
+      charge = nuclear_charge - sum(self.nelectrons)
+      self._mol = pyscf.gto.Mole(
+          atom=[[atom.symbol, atom.coords] for atom in self.molecule],
+          unit='bohr')
+      self._mol.basis = self.basis
+      self._mol.spin = self._spin
+      self._mol.charge = charge
+      self._mol.build()
+      if self._mol.nelectron != sum(self.nelectrons):
+        raise RuntimeError('PySCF molecule not consistent with QMC molecule.')
     if self.restricted:
       self._mean_field = pyscf.scf.RHF(self._mol)
     else:

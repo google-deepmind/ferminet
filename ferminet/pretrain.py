@@ -14,32 +14,46 @@
 
 """Utilities for pretraining and importing PySCF models."""
 
+from typing import Sequence, Tuple, Optional
+
 from absl import logging
 from ferminet import constants
 from ferminet import jax_utils
 from ferminet import mcmc
 from ferminet import networks
 from ferminet.utils import scf
+from ferminet.utils import system
 import jax
 from jax import numpy as jnp
 import numpy as np
 import optax
+import pyscf
 
 
-def get_hf(molecule, spins, restricted=False, basis='sto-3g'):
+def get_hf(molecule: Optional[Sequence[system.Atom]] = None,
+           spins: Optional[Tuple[int, int]] = None,
+           basis: Optional[str] = 'sto-3g',
+           pyscf_mol: Optional[pyscf.gto.Mole] = None,
+           restricted: Optional[bool] = False):
   """Returns a function that computes Hartree-Fock solution to the system.
 
   Args:
-    molecule: the molecule.
+    molecule: the molecule in internal format.
     spins: tuple with number of spin up and spin down electrons.
-    restricted (optional): boolean. self explanatory.
-    basis (optional): string. self explanatory.
+    basis: basis set to use in Hartree-Fock calculatoin.
+    pyscf_mol: pyscf Mole object defining the molecule. If supplied,
+      molecule, spins and basis are ignored.
+    restricted: If true, perform a restricted Hartree-Fock calculation,
+      otherwise perform an unrestricted Hartree-Fock calculation.
 
   Returns:
     object that contains result of PySCF calculation.
   """
-  scf_approx = scf.Scf(
-      molecule, nelectrons=spins, restricted=restricted, basis=basis)
+  if pyscf_mol:
+    scf_approx = scf.Scf(pyscf_mol=pyscf_mol, restricted=restricted)
+  else:
+    scf_approx = scf.Scf(molecule, nelectrons=spins, basis=basis,
+                         restricted=restricted)
   scf_approx.run()
   return scf_approx
 

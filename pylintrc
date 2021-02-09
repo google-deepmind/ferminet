@@ -147,7 +147,6 @@ disable=abstract-method,
         wrong-import-order,
         xrange-builtin,
         zip-builtin-not-iterating,
-        line-too-long, # line too long error, caught with flake8
 
 
 [REPORTS]
@@ -272,7 +271,10 @@ max-line-length=80
 # Regexp for a line that is allowed to be longer than the limit.
 ignore-long-lines=(?x)(
   ^\s*(\#\ )?<?https?://\S+>?$|
-  ^\s*(from\s+\S+\s+)?import\s+.+$)
+  ^\s*(from\s+\S+\s+)?import\s+.+$|
+  ^.*pytype:\sdisable=.*$|
+  ^\s*""".*$|
+  ^.*pylint:\sdisable=.*$)
 
 # Allow the body of an if to be on the same line as the test if there is no
 # else.
