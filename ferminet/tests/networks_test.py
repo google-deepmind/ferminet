@@ -16,7 +16,7 @@
 
 from absl.testing import parameterized
 from ferminet import networks
-from ferminet.utils import scf
+from ferminet import scf
 from ferminet.utils import system
 import numpy as np
 import pyscf

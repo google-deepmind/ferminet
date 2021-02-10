@@ -79,6 +79,7 @@ class Atom:  # pytype: disable=invalid-function-definition
       string 'bohr'.
     coords_angstrom: list of atomic coordinates in angstrom.
     coords_array: Numpy array of atomic coordinates in bohr.
+    element: elements.Element corresponding to the symbol.
   """
   symbol = attr.ib()
   coords = attr.ib(
@@ -91,11 +92,11 @@ class Atom:  # pytype: disable=invalid-function-definition
 
   @charge.default
   def _set_default_charge(self):
-    return elements.SYMBOLS[self.symbol].atomic_number
+    return self.element.atomic_number
 
   @atomic_number.default
   def _set_default_atomic_number(self):
-    return elements.SYMBOLS[self.symbol].atomic_number
+    return self.element.atomic_number
 
   def __attrs_post_init__(self):
     if self.units == 'angstrom':
@@ -111,6 +112,10 @@ class Atom:  # pytype: disable=invalid-function-definition
     if not hasattr(self, '_coords_arr'):
       self._coords_arr = np.array(self.coords)
     return self._coords_arr
+
+  @property
+  def element(self):
+    return elements.SYMBOLS[self.symbol]
 
 
 def atom(symbol, spins=None, charge=0):
@@ -208,7 +213,7 @@ def molecule(symbol, bond_length=0.0, units='bohr'):
         Atom(symbol='H', coords=(-1.53791, -0.88791, -0.51364), units='bohr'),
     ], (5, 5)
 
-  if symbol == 'C2H4' or symbol == 'ethene' or symbol == 'ethylene':
+  if symbol in ('C2H4', 'ethene', 'ethylene'):
     return [
         Atom(symbol='C', coords=(0.0, 0.0, 1.26135), units='bohr'),
         Atom(symbol='C', coords=(0.0, 0.0, -1.26135), units='bohr'),
@@ -218,7 +223,7 @@ def molecule(symbol, bond_length=0.0, units='bohr'):
         Atom(symbol='H', coords=(0.0, -1.74390, -2.33889), units='bohr'),
     ], (8, 8)
 
-  if symbol == 'C4H6' or symbol == 'bicyclobutane':
+  if symbol in ('C4H6', 'bicyclobutane'):
     return [
         Atom(symbol='C', coords=(0.0, 2.13792, 0.58661), units='bohr'),
         Atom(symbol='C', coords=(0.0, -2.13792, 0.58661), units='bohr'),

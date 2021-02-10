@@ -13,7 +13,7 @@ Carlo approach.
 inside a [virtual environment](https://docs.python-guide.org/dev/virtualenvs/).
 
 ```
-virtualenv -m python3.7 ~/venv/ferminet
+virtualenv -p python3.7 ~/venv/ferminet
 source ~/venv/ferminet/bin/activate
 pip install -e .
 ```

@@ -16,25 +16,28 @@
 """Basic data on chemical elements."""
 
 import collections
-
+from typing import Optional
 import attr
 
 
 @attr.s
-class Element:
+class Element(object):
   """Chemical element.
 
   Attributes:
     symbol: official symbol of element.
     atomic_number: atomic number of element.
     period: period to which the element belongs.
+    spin: overrides default ground-state spin-configuration based on the
+      element's group (main groups only).
   """
-  symbol = attr.ib()
-  atomic_number = attr.ib()
-  period = attr.ib()
+  symbol: str = attr.ib()
+  atomic_number: int = attr.ib()
+  period: int = attr.ib()
+  _spin: Optional[int] = attr.ib(default=None, repr=False)
 
   @property
-  def group(self):
+  def group(self) -> int:
     """Group to which element belongs. Set to -1 for actines and lanthanides."""
     is_lanthanide = (58 <= self.atomic_number <= 71)
     is_actinide = (90 <= self.atomic_number <= 103)
@@ -55,19 +58,47 @@ class Element:
     return group_
 
   @property
-  def spin_config(self):
+  def spin_config(self) -> int:
     """Canonical spin configuration (via Hund's rules) of neutral atom.
 
     Returns:
       Number of unpaired electrons (as required by PySCF) in the neutral atom's
       ground state.
+
+    Raises:
+      NotImplementedError: if element is a transition metal and the spin
+      configuration is not set at initialization.
     """
+    if self._spin is not None:
+      return self._spin
     unpaired = {1: 1, 2: 0, 13: 1, 14: 2, 15: 3, 16: 2, 17: 1, 18: 0}
     if self.group in unpaired:
       return unpaired[self.group]
     else:
       raise NotImplementedError(
           'Spin configuration for transition metals not set.')
+
+  @property
+  def nalpha(self) -> int:
+    """Returns the number of alpha electrons of the ground state neutral atom.
+
+    Without loss of generality, the number of alpha electrons is taken to be
+    equal to or greater than the number of beta electrons.
+    """
+    electrons = self.atomic_number
+    unpaired = self.spin_config
+    return (electrons + unpaired) // 2
+
+  @property
+  def nbeta(self) -> int:
+    """Returns the number of beta electrons of the ground state neutral atom.
+
+    Without loss of generality, the number of alpha electrons is taken to be
+    equal to or greater than the number of beta electrons.
+    """
+    electrons = self.atomic_number
+    unpaired = self.spin_config
+    return (electrons - unpaired) // 2
 
 
 # Atomic symbols for all known elements
@@ -106,16 +137,16 @@ _ELEMENTS = (
     Element(symbol='Ar', atomic_number=18, period=3),
     Element(symbol='K', atomic_number=19, period=4),
     Element(symbol='Ca', atomic_number=20, period=4),
-    Element(symbol='Sc', atomic_number=21, period=4),
-    Element(symbol='Ti', atomic_number=22, period=4),
-    Element(symbol='V', atomic_number=23, period=4),
-    Element(symbol='Cr', atomic_number=24, period=4),
-    Element(symbol='Mn', atomic_number=25, period=4),
-    Element(symbol='Fe', atomic_number=26, period=4),
-    Element(symbol='Co', atomic_number=27, period=4),
-    Element(symbol='Ni', atomic_number=28, period=4),
-    Element(symbol='Cu', atomic_number=29, period=4),
-    Element(symbol='Zn', atomic_number=30, period=4),
+    Element(symbol='Sc', atomic_number=21, period=4, spin=1),
+    Element(symbol='Ti', atomic_number=22, period=4, spin=2),
+    Element(symbol='V', atomic_number=23, period=4, spin=3),
+    Element(symbol='Cr', atomic_number=24, period=4, spin=6),
+    Element(symbol='Mn', atomic_number=25, period=4, spin=5),
+    Element(symbol='Fe', atomic_number=26, period=4, spin=4),
+    Element(symbol='Co', atomic_number=27, period=4, spin=3),
+    Element(symbol='Ni', atomic_number=28, period=4, spin=2),
+    Element(symbol='Cu', atomic_number=29, period=4, spin=1),
+    Element(symbol='Zn', atomic_number=30, period=4, spin=0),
     Element(symbol='Ga', atomic_number=31, period=4),
     Element(symbol='Ge', atomic_number=32, period=4),
     Element(symbol='As', atomic_number=33, period=4),
@@ -124,16 +155,16 @@ _ELEMENTS = (
     Element(symbol='Kr', atomic_number=36, period=4),
     Element(symbol='Rb', atomic_number=37, period=5),
     Element(symbol='Sr', atomic_number=38, period=5),
-    Element(symbol='Y', atomic_number=39, period=5),
-    Element(symbol='Zr', atomic_number=40, period=5),
-    Element(symbol='Nb', atomic_number=41, period=5),
-    Element(symbol='Mo', atomic_number=42, period=5),
-    Element(symbol='Tc', atomic_number=43, period=5),
-    Element(symbol='Ru', atomic_number=44, period=5),
-    Element(symbol='Rh', atomic_number=45, period=5),
-    Element(symbol='Pd', atomic_number=46, period=5),
-    Element(symbol='Ag', atomic_number=47, period=5),
-    Element(symbol='Cd', atomic_number=48, period=5),
+    Element(symbol='Y', atomic_number=39, period=5, spin=1),
+    Element(symbol='Zr', atomic_number=40, period=5, spin=2),
+    Element(symbol='Nb', atomic_number=41, period=5, spin=5),
+    Element(symbol='Mo', atomic_number=42, period=5, spin=6),
+    Element(symbol='Tc', atomic_number=43, period=5, spin=5),
+    Element(symbol='Ru', atomic_number=44, period=5, spin=4),
+    Element(symbol='Rh', atomic_number=45, period=5, spin=3),
+    Element(symbol='Pd', atomic_number=46, period=5, spin=0),
+    Element(symbol='Ag', atomic_number=47, period=5, spin=1),
+    Element(symbol='Cd', atomic_number=48, period=5, spin=0),
     Element(symbol='In', atomic_number=49, period=5),
     Element(symbol='Sn', atomic_number=50, period=5),
     Element(symbol='Sb', atomic_number=51, period=5),

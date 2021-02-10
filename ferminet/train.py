@@ -20,16 +20,14 @@ from typing import Any, Mapping, Optional, Sequence, Tuple
 
 from absl import logging
 import attr
-
 from ferminet import hamiltonian
 from ferminet import mcmc
 from ferminet import mean_corrected_kfac_opt
 from ferminet import networks
 from ferminet import qmc
+from ferminet import scf
 from ferminet.utils import elements
-from ferminet.utils import scf
 from ferminet.utils import system
-
 import numpy as np
 import tensorflow.compat.v1 as tf
 
