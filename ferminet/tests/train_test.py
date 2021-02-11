@@ -14,10 +14,13 @@
 
 """Tests for ferminet.train."""
 import itertools
+import os
 
 from absl import flags
+from absl import logging
 from absl.testing import absltest
 from absl.testing import parameterized
+import chex
 from ferminet import base_config
 from ferminet import train
 from ferminet.configs import atom
@@ -35,6 +38,21 @@ FLAGS = flags.FLAGS
 # Default flags are sufficient so mark FLAGS as parsed so we can run the tests
 # with py.test, which imports this file rather than runs it.
 FLAGS.mark_as_parsed()
+
+
+def setUpModule():
+  # Allow chex_n_cpu_devices to be set via an environment variable as well as
+  # --chex_n_cpu_devices to play nicely with pytest.
+  fake_devices = os.environ.get('FERMINET_CHEX_N_CPU_DEVICES')
+  if fake_devices is not None:
+    fake_devices = int(fake_devices)
+  try:
+    chex.set_n_cpu_devices(n=fake_devices)
+  except RuntimeError:
+    # jax has already been initialised (e.g. because this is being run with
+    # other tests via a test runner such as pytest)
+    logging.info('JAX already initialised so cannot set number of CPU devices. '
+                 'Using a single device in train_test.')
 
 
 class QmcTest(jtu.JaxTestCase):
