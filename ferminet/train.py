@@ -290,11 +290,8 @@ def train(cfg: ml_collections.ConfigDict):
 
   # Initialisation done. We now want to have different PRNG streams on each
   # device. Shard the key over devices
-  key, subkeys = jax.random.split(key, num_devices+1)
+  key, *subkeys = jax.random.split(key, num_devices+1)
   subkeys = jnp.stack(subkeys)
-  # Handle num_devices=1 case by explicitly broadcasting from an array of shape
-  # (2,) to an array of (num_devices, 2). This is a no-op for num_devices > 1.
-  subkeys = jnp.broadcast_to(subkeys, (num_devices, 2))
   sharded_key = jax_utils.broadcast(subkeys)
 
   # Pretraining to match Hartree-Fock
@@ -370,7 +367,7 @@ def train(cfg: ml_collections.ConfigDict):
       data, pmove = mcmc_step(params, data, subkeys, mcmc_width)
     logging.info('Completed burn-in MCMC steps')
     logging.info('Initial energy: %03.4f E_h',
-                 constants.pmap(total_energy)(params, data))
+                 constants.pmap(total_energy)(params, data)[0])
 
   time_of_last_ckpt = time.time()
 
