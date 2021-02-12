@@ -96,3 +96,7 @@ jobs:
     - name: Run tests
       run: |
         python -m pytest
+    - name: Run multi-device tests
+      if: matrix.python-version == 3.8
+      run: |
+        FERMINET_CHEX_N_CPU_DEVICES=2 python -m pytest ferminet/tests/train_test.py
