@@ -97,6 +97,9 @@ def default() -> ml_collections.ConfigDict:
           # ConfigDict as the sole argument and sets the molecule value (and any
           # other related values) in the ConfigDict.
           'molecule': config_dict.placeholder(list),
+          # Users can pass in a pyscf_mol here, instead of the internal
+          # representation.
+          'pyscf_mol': None,
           'electrons': tuple(),  # electrons in system
           'laplacian_epsilon': 0.0,  # Finite difference step for Laplacian
           'limit': 5.0,  # limit of box used to define boundary

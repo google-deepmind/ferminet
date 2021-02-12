@@ -50,7 +50,8 @@ def _adjust_nuclear_charge(cfg):
     atomic_number = elements.SYMBOLS[atom.symbol].atomic_number
     if 'charge' in cfg.system:
       atomic_number -= cfg.system.charge
-    if 'spin_polarisation' in cfg.system and cfg.system.spin_polarisation is not None:
+    if ('spin_polarisation' in cfg.system
+        and cfg.system.spin_polarisation is not None):
       spin_polarisation = cfg.system.spin_polarisation
     else:
       spin_polarisation = elements.ATOMIC_NUMS[atomic_number].spin_config

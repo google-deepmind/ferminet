@@ -199,6 +199,32 @@ def make_training_step(mcmc_step, val_and_grad, opt_update):
   return step
 
 
+def pyscf_to_molecule(cfg: ml_collections.ConfigDict):
+  """Converts the PySCF 'Molecule' in the config to the internal representation.
+
+  Args:
+    cfg: ConfigDict containing the system and training parameters to run on. See
+      base_config.default for more details. Must have the system.pyscf_mol set.
+
+  Returns:
+    cfg: ConfigDict matching the input with system.molecule, system.electrons
+      and pretrain.basis fields set from the information in the system.pyscf_mol
+      field.
+
+  Raises:
+    ValueError: if the system.pyscf_mol field is not set in the cfg.
+  """
+  if not cfg.system.pyscf_mol:
+    raise ValueError('You must set system.pyscf_mol in your cfg')
+  cfg.system.pyscf_mol.build()
+  cfg.system.electrons = cfg.system.pyscf_mol.nelec
+  cfg.system.molecule = [system.Atom(cfg.system.pyscf_mol.atom_symbol(i),
+                                     cfg.system.pyscf_mol.atom_coords()[i])
+                         for i in range(cfg.system.pyscf_mol.natm)]
+  cfg.pretrain.basis = cfg.system.pyscf_mol.basis
+  return cfg
+
+
 def train(cfg: ml_collections.ConfigDict):
   """Runs training loop for QMC.
 
@@ -223,6 +249,10 @@ def train(cfg: ml_collections.ConfigDict):
     raise ValueError('Only 3D systems are currently supported.')
   data_shape = (num_devices, cfg.batch_size // num_devices)
 
+  # Check if mol is a pyscf molecule and convert to internal representation
+  if cfg.system.pyscf_mol:
+    cfg = pyscf_to_molecule(cfg)
+
   # Convert mol config into array of atomic positions and charges
   atoms = jnp.stack([jnp.array(atom.coords) for atom in cfg.system.molecule])
   charges = jnp.array([atom.charge for atom in cfg.system.molecule])
@@ -238,9 +268,13 @@ def train(cfg: ml_collections.ConfigDict):
 
   if cfg.pretrain.method == 'direct_init' or (
       cfg.pretrain.method == 'hf' and cfg.pretrain.iterations > 0):
-    hartree_fock = pretrain.get_hf(
-        cfg.system.molecule, cfg.system.electrons,
-        restricted=False, basis=cfg.pretrain.basis)
+    if cfg.system.pyscf_mol:
+      hartree_fock = pretrain.get_hf(
+          pyscf_mol=cfg.system.pyscf_mol, restricted=False)
+    else:
+      hartree_fock = pretrain.get_hf(
+          cfg.system.molecule, cfg.system.electrons,
+          basis=cfg.pretrain.basis, restricted=False)
 
   hf_solution = hartree_fock if cfg.pretrain.method == 'direct_init' else None
   network_init, network = networks.make_fermi_net(

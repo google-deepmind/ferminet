@@ -99,7 +99,7 @@ import sys
 from absl import logging
 from ferminet.utils import system
 from ferminet import base_config
-from ferminet import qmc
+from ferminet import train
 
 # Optional, for also printing training progress to STDOUT.
 # If running a script, you can also just use the --alsologtostderr flag.
@@ -108,14 +108,41 @@ logging.set_verbosity(logging.INFO)
 
 # Define H2 molecule
 cfg = base_config.default()
-cfg.system.electrons = (1,1)
+cfg.system.electrons = (1,1)  # (alpha electrons, beta electrons)
 cfg.system.molecule = [system.Atom('H', (0, 0, -1)), system.Atom('H', (0, 0, 1))]
 
 # Set training parameters
 cfg.batch_size = 256
 cfg.pretrain.iterations = 100
 
-qmc.train(cfg)
+train.train(cfg)
+```
+
+Alternatively, you can directly pass in a PySCF ['Molecule'](http://pyscf.org). You can create PySCF
+Molecules with the following:
+
+```
+from pyscf import gto
+mol = gto.Mole()
+mol.build(
+    atom = 'H  0 0 1; H 0 0 -1',
+    basis = 'sto-3g', unit='bohr')
+```
+
+Once you have this molecule, you can pass it directly into the configuration by running
+```
+from ferminet import base_config
+from ferminet import train
+
+# Add H2 molecule
+cfg = base_config.default()
+cfg.system.pyscf_mol = mol
+
+# Set training parameters
+cfg.batch_size = 256
+cfg.pretrain.iterations = 100
+
+train.train(cfg)
 ```
 
 Note: to train on larger atoms and molecules with large batch sizes, multi-GPU
