@@ -27,7 +27,6 @@ class SystemType(enum.IntEnum):
   SystemType.member.value in such cases.
   """
   molecule = 0
-  heisenberg1d = 1
 
   @classmethod
   def has_value(cls, value):
@@ -101,10 +100,6 @@ def default() -> ml_collections.ConfigDict:
           # representation.
           'pyscf_mol': None,
           'electrons': tuple(),  # electrons in system
-          'laplacian_epsilon': 0.0,  # Finite difference step for Laplacian
-          'limit': 5.0,  # limit of box used to define boundary
-          'neig': 1,  # number of eigenvalues to compute
-          'ground_truth': (),  # tuple of ground truth eigenvalues
           # Change with care. FermiNet implementation currently assumes 3D
           # systems.
           'ndim': 3,
@@ -118,6 +113,7 @@ def default() -> ml_collections.ConfigDict:
           # be performed in-place.
       },
       'mcmc': {
+          # Note: HMC options are not currently used.
           # Number of burn in steps after pretraining.  If zero do not burn in
           # or reinitialize walkers.
           'burn_in': 100,
