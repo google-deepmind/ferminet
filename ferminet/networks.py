@@ -239,7 +239,7 @@ def construct_input_features(
   """Constructs inputs to Fermi Net from raw electron and atomic positions.
 
   Args:
-    x: electron positions. Shape (nelectrons, ndim).
+    x: electron positions. Shape (nelectrons*ndim,).
     atoms: atom positions. Shape (natoms, ndim).
     ndim: dimension of system. Change only with caution.
 
