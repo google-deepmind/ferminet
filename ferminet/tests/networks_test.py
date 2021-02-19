@@ -257,6 +257,20 @@ class NetworksTest(jtu.JaxTestCase):
       result = fermi_net(params, xs)
       self.assertSequenceEqual(result.shape, expected_shape)
 
+  @parameterized.parameters((spins, full_det)
+                            for spins, full_det in itertools.product([(
+                                1, 0), (2, 0), (0, 1)], [True, False]))
+  def test_spin_polarised_fermi_net(self, spins, full_det):
+    atoms = jnp.zeros(shape=(1, 3))
+    charges = jnp.ones(shape=1)
+    key = jax.random.PRNGKey(42)
+    init, fermi_net = networks.make_fermi_net(atoms, spins, charges)
+    key, subkey1, subkey2 = jax.random.split(key, num=3)
+    params = init(subkey1)
+    xs = jax.random.uniform(subkey2, shape=(sum(spins) * 3,))
+    # Test fermi_net runs without raising exceptions for spin-polarised systems.
+    fermi_net(params, xs)
+
 
 if __name__ == '__main__':
   absltest.main()

@@ -86,8 +86,16 @@ def init_fermi_net_params(
 
   natom = atoms.shape[0]
   in_dims = (natom*4, 4)
-  dims_one_in = ([3*in_dims[0] + 2*in_dims[1]] +
-                 [3*hdim[0] + 2*hdim[1] for hdim in hidden_dims])
+  nchannels = sum(spin > 0 for spin in spins)
+  # The input to layer L of the one-electron stream is from
+  # construct_symmetric_features and shape (nelectrons, nfeatures), where
+  # nfeatures is i) output from the previous one-electron layer; ii) the mean
+  # for each spin channel from each layer; iii) the mean for each spin channel
+  # from each two-electron layer. We don't create features for spin channels
+  # which contain no electrons (i.e. spin-polarised systems).
+  dims_one_in = (
+      [(nchannels + 1) * in_dims[0] + nchannels * in_dims[1]] +
+      [(nchannels + 1) * hdim[0] + nchannels * hdim[1] for hdim in hidden_dims])
   if not use_last_layer:
     dims_one_in[-1] = hidden_dims[-1][0]
   dims_one_out = [hdim[0] for hdim in hidden_dims]
@@ -278,21 +286,23 @@ def construct_symmetric_features(h_one: jnp.ndarray, h_two: jnp.ndarray,
 
   Returns:
     array containing the permutation-equivariant features: the input set of
-    one-electron features, the mean of the one-electron features over each spin
-    channel, and the mean of the two-electron features over each spin channel.
+    one-electron features, the mean of the one-electron features over each
+    (occupied) spin channel, and the mean of the two-electron features over each
+    (occupied) spin channel. Output shape (nelectrons, 3*n1 + 2*n2) if there are
+    both spin-up and spin-down electrons and (nelectrons, 2*n1, n2) otherwise.
   """
   # Split features into spin up and spin down electrons
   h_ones = jnp.split(h_one, spins[0:1], axis=0)
   h_twos = jnp.split(h_two, spins[0:1], axis=0)
 
   # Construct inputs to next layer
-  g_one = [jnp.mean(h, axis=0, keepdims=True) for h in h_ones]
-  g_two = [jnp.mean(h, axis=0) for h in h_twos]
+  # h.size == 0 corresponds to unoccupied spin channels.
+  g_one = [jnp.mean(h, axis=0, keepdims=True) for h in h_ones if h.size > 0]
+  g_two = [jnp.mean(h, axis=0) for h in h_twos if h.size > 0]
 
-  return jnp.concatenate((h_one,
-                          jnp.tile(g_one[0], [h_one.shape[0], 1]),
-                          jnp.tile(g_one[1], [h_one.shape[0], 1]),
-                          g_two[0], g_two[1]), axis=1)
+  g_one = [jnp.tile(g, [h_one.shape[0], 1]) for g in g_one]
+
+  return jnp.concatenate([h_one] + g_one + g_two, axis=1)
 
 
 def isotropic_envelope(ae, params):
@@ -540,6 +550,7 @@ def fermi_net_orbitals(params, x,
     h_to_orbitals = construct_symmetric_features(h_one, h_two, spins)
   if envelope_type in ('sto', 'sto-poly'):
     h_to_orbitals = envelope(to_env, params['envelope']) * h_to_orbitals
+  # Note split creates arrays of size 0 for spin channels without any electrons.
   h_to_orbitals = jnp.split(h_to_orbitals, spins[0:1], axis=0)
 
   orbitals = [linear_layer(h, **p)
@@ -548,8 +559,9 @@ def fermi_net_orbitals(params, x,
     orbitals = [envelope(te, param)*orbital for te, orbital, param in
                 zip(jnp.split(to_env, spins[0:1], axis=0),
                     orbitals, params['envelope'])]
+  # Reshape into matrices and drop unoccupied spin channels.
   orbitals = [jnp.reshape(orbital, [spin, -1, sum(spins) if full_det else spin])
-              for spin, orbital in zip(spins, orbitals)]
+              for spin, orbital in zip(spins, orbitals) if spin > 0]
   orbitals = [jnp.transpose(orbital, (1, 0, 2)) for orbital in orbitals]
   if full_det:
     orbitals = [jnp.concatenate(orbitals, axis=1)]
