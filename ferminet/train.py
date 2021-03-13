@@ -459,7 +459,8 @@ def train(cfg: ml_collections.ConfigDict):
       # Logging
       if t % cfg.log.stats_frequency == 0:
         logging.info('Step %05d: %03.4f E_h, pmove=%0.2f', t, loss, pmove)
-        writer.write(t, step=t, energy=loss._npy_value, pmove=pmove._npy_value)  # pylint: disable=protected-access
+        writer.write(t, step=t, energy=np.asarray(loss),
+                     pmove=np.asarray(pmove))
 
       # Checkpointing
       if time.time() - time_of_last_ckpt > cfg.log.save_frequency * 60:
