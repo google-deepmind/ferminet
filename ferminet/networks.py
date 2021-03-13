@@ -649,6 +649,4 @@ def make_fermi_net(atoms,
       charges=charges,
       envelope_type=envelope_type,
       full_det=full_det)
-  # Just need the log output.
-  log_network = lambda p, x: network(params=p, x=x)[1]
-  return init, log_network
+  return init, network

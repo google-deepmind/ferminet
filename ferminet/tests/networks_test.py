@@ -254,8 +254,9 @@ class NetworksTest(jtu.JaxTestCase):
         init(subkey)
     else:
       params = init(subkey)
-      result = fermi_net(params, xs)
-      self.assertSequenceEqual(result.shape, expected_shape)
+      sign_psi, log_psi = fermi_net(params, xs)
+      self.assertSequenceEqual(sign_psi.shape, expected_shape)
+      self.assertSequenceEqual(log_psi.shape, expected_shape)
 
   @parameterized.parameters((spins, full_det)
                             for spins, full_det in itertools.product([(

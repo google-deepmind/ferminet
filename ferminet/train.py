@@ -277,7 +277,7 @@ def train(cfg: ml_collections.ConfigDict):
           basis=cfg.pretrain.basis, restricted=False)
 
   hf_solution = hartree_fock if cfg.pretrain.method == 'direct_init' else None
-  network_init, network = networks.make_fermi_net(
+  network_init, signed_network = networks.make_fermi_net(
       atoms, spins, charges,
       envelope_type=cfg.network.envelope_type,
       bias_orbitals=cfg.network.bias_orbitals,
@@ -288,6 +288,8 @@ def train(cfg: ml_collections.ConfigDict):
   key, subkey = jax.random.split(key)
   params = network_init(subkey)
   params = jax_utils.replicate(params)
+  # Often just need log|psi(x)|.
+  network = lambda params, x: signed_network(params, x)[1]
   batch_network = jax.vmap(network, (None, 0), 0)  # batched network
 
   # Set up checkpointing and restore params/data if necessary
