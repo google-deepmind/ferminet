@@ -14,7 +14,7 @@
 
 """Implementation of Fermionic Neural Network in JAX."""
 import functools
-from typing import Optional, Sequence, Tuple, Union
+from typing import Any, Callable, Iterable, Mapping, Optional, Sequence, Tuple, Union
 
 from ferminet import curvature_tags_and_blocks
 from ferminet import sto
@@ -26,6 +26,15 @@ _MAX_POLY_ORDER = 5  # highest polynomial used in envelopes
 
 
 FermiLayers = Tuple[Tuple[int, int], ...]
+# Recursive types are not yet supported in pytype - b/109648354.
+# pytype: disable=not-supported-yet
+ParamTree = Union[jnp.ndarray, Iterable['ParamTree'], Mapping[Any, 'ParamTree']]
+# pytype: enable=not-supported-yet
+# init(key) -> params
+FermiNetInit = Callable[[jnp.ndarray], ParamTree]
+# network(params, x) -> sign_out, log_out
+FermiNetApply = Callable[[ParamTree, jnp.ndarray], Tuple[jnp.ndarray,
+                                                         jnp.ndarray]]
 
 
 def init_fermi_net_params(
@@ -603,7 +612,8 @@ def fermi_net(params, x,
       True by default, false is still available for backward compatibility.
 
   Returns:
-    Output of antisymmetric neural network.
+    Output of antisymmetric neural network in log space, i.e. a tuple of sign of
+    and log absolute of the network evaluated at x.
   """
 
   orbitals, to_env = fermi_net_orbitals(params, x,
@@ -621,16 +631,52 @@ def fermi_net(params, x,
   return output
 
 
-def make_fermi_net(atoms,
-                   spins,
-                   charges,
-                   envelope_type='full',
-                   bias_orbitals=False,
-                   use_last_layer=False,
-                   hf_solution=None,
-                   full_det=True,
-                   **kwargs):
-  """Initialize parameters and return function for forward pass."""
+def make_fermi_net(
+    atoms: jnp.ndarray,
+    spins: Tuple[int, int],
+    charges: jnp.ndarray,
+    envelope_type: str = 'full',
+    bias_orbitals: bool = False,
+    use_last_layer: bool = False,
+    hf_solution: scf.Scf = None,
+    full_det: bool = True,
+    hidden_dims: FermiLayers = ((256, 32), (256, 32), (256, 32)),
+    determinants: int = 16,
+    after_determinants: Union[int, Tuple[int, ...]] = 1,
+) -> Tuple[FermiNetInit, FermiNetApply]:
+  """Creates functions for initializing parameters and evaluating ferminet.
+
+  Args:
+    atoms: (natom, 3) array of atom positions.
+    spins: Tuple of the number of spin-up and spin-down electrons.
+    charges: (natom) array of atom nuclear charges.
+    envelope_type: Envelope to use to impose orbitals go to zero at infinity.
+      See fermi_net_orbitals.
+    bias_orbitals: If true, include a bias in the final linear layer to shape
+      the outputs into orbitals.
+    use_last_layer: If true, the outputs of the one- and two-electron streams
+      are combined into permutation-equivariant features and passed into the
+      final orbital-shaping layer. Otherwise, just the output of the
+      one-electron stream is passed into the orbital-shaping layer.
+    hf_solution: If present, initialise the parameters to match the Hartree-Fock
+      solution. Otherwise a random initialisation is use.
+    full_det: If true, evaluate determinants over all electrons. Otherwise,
+      block-diagonalise determinants into spin channels.
+    hidden_dims: Tuple of pairs, where each pair contains the number of hidden
+      units in the one-electron and two-electron stream in the corresponding
+      layer of the FermiNet. The number of layers is given by the length of the
+      tuple.
+    determinants: Number of determinants to use.
+    after_determinants: currently ignored.
+
+  Returns:
+    init, network tuple of callables. init has signature f(key), where key is
+    a JAX PRNG state, and returns the pytree of network parameters. network has
+    signature network(params, x), where params is the pytree of network
+    parameters and x the 3N-dimensional vector of electron positions, and
+    returns the network output in log space.
+  """
+
   init = functools.partial(
       init_fermi_net_params,
       atoms=atoms,
@@ -640,7 +686,9 @@ def make_fermi_net(atoms,
       use_last_layer=use_last_layer,
       hf_solution=hf_solution,
       full_det=full_det,
-      **kwargs,
+      hidden_dims=hidden_dims,
+      determinants=determinants,
+      after_determinants=after_determinants,
   )
   network = functools.partial(
       fermi_net,
