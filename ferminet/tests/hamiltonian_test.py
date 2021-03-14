@@ -139,8 +139,9 @@ class LaplacianTest(jtu.JaxTestCase):
     cfg = base_config.default()
     cfg.network.detnet.hidden_dims = ((32, 8),)*2
     cfg.network.detnet.determinants = 2
-    network_init, network = networks.make_fermi_net(atoms, spins, charges,
-                                                    **cfg.network.detnet)
+    network_init, signed_network = networks.make_fermi_net(
+        atoms, spins, charges, **cfg.network.detnet)
+    network = lambda params, x: signed_network(params, x)[1]
     key = jax.random.PRNGKey(47)
     params = network_init(key)
     xs = np.random.normal(scale=5, size=(batch, sum(spins) * 3))
