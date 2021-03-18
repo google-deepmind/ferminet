@@ -444,25 +444,25 @@ def logdet_matmul(xs: Sequence[jnp.ndarray],
   # We can avoid the log(0) issue by not going into the log domain
   dets = [x.reshape(-1) for x in xs if x.shape[-1] == 1]
   dets = functools.reduce(
-      lambda a, b: a*b, dets
+    lambda a, b: a*b, dets
   ) if len(dets) > 0 else 1
 
   slogdets = [slogdet(x) for x in xs if x.shape[-1] > 1]
   maxlogdet = 0
   if len(slogdets) > 0:
-      sign_in, logdet = functools.reduce(
-          lambda a, b: (a[0]*b[0], a[1]+b[1]), slogdets
-      )
+    sign_in, logdet = functools.reduce(
+      lambda a, b: (a[0]*b[0], a[1]+b[1]), slogdets
+    )
 
-      maxlogdet = jnp.max(logdet)
-      det = sign_in * dets * jnp.exp(logdet - maxlogdet)
+    maxlogdet = jnp.max(logdet)
+    det = sign_in * dets * jnp.exp(logdet - maxlogdet)
   else:
-      det = dets
+    det = dets
 
   if w is None:
-      result = jnp.sum(det)
+    result = jnp.sum(det)
   else:
-      result = jnp.dot(det, w)
+    result = jnp.dot(det, w)
 
   sign_out = jnp.sign(result)
   log_out = jnp.log(jnp.abs(result)) + maxlogdet
