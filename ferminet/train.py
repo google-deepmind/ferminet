@@ -88,13 +88,26 @@ def init_electrons(
       jax.random.normal(subkey, shape=(batch_size, electron_positions.size)))
 
 
+@chex.dataclass
+class AuxiliaryLossData:
+  """Auxiliary data returned by total_energy.
+
+  Attributes:
+    variance: mean variance over batch, and over all devices if inside a pmap.
+    local_energy: local energy for each MCMC configuration.
+  """
+  variance: jnp.DeviceArray
+  local_energy: jnp.DeviceArray
+
+
 def make_loss(network, batch_network, atoms, charges, clip_local_energy=0.0):
   """Creates the loss function, including custom gradients.
 
   Args:
     network: function, signature (params, data), which evaluates the log of
-      the wavefunction (square root of the log probability distribution) at the
-      single MCMC configuration in data given the network parameters.
+      the magnitude of the wavefunction (square root of the log probability
+      distribution) at the single MCMC configuration in data given the network
+      parameters.
     batch_network: as for network but data is a batch of MCMC configurations.
     atoms: array of (natoms, ndim) specifying the positions of the nuclei.
     charges: array of (natoms) specifying the nuclear charges.
@@ -105,8 +118,9 @@ def make_loss(network, batch_network, atoms, charges, clip_local_energy=0.0):
       evaluate gradients.
 
   Returns:
-    Callable with signature (params, data) which evaluates the energy of the
-    network given the parameters and the (batched) MCMC configurations in data.
+    Callable with signature (params, data) and returns (loss, aux_data), where
+    loss is the mean energy, and aux_data is an AuxiliaryLossDataobject. The
+    loss is averaged over the batch and over all devices inside a pmap.
   """
   el_fun = hamiltonian.local_energy(network, atoms, charges)
   batch_local_energy = jax.vmap(el_fun, in_axes=(None, 0), out_axes=0)
@@ -120,30 +134,37 @@ def make_loss(network, batch_network, atoms, charges, clip_local_energy=0.0):
       data: (batched) MCMC configurations to pass to the network.
 
     Returns:
-      Mean total energy across the batch, over all devices if inside a pmap.
+      (loss, aux_data), where loss is the mean energy, and aux_data is an
+      AuxiliaryLossData object containing the variance of the energy and the
+      local energy per MCMC configuration. The loss and variance are averaged
+      over the batch and over all devices inside a pmap.
     """
     e_l = batch_local_energy(params, data)
     loss = jax.lax.pmean(jnp.mean(e_l), axis_name=constants.PMAP_AXIS_NAME)
-    return loss
+    variance = jax.lax.pmean(
+        jnp.mean((e_l - loss)**2), axis_name=constants.PMAP_AXIS_NAME)
+    return loss, AuxiliaryLossData(variance=variance, local_energy=e_l)
 
   @total_energy.defjvp
   def total_energy_jvp(primals, tangents):  # pylint: disable=unused-variable
     """Custom Jacobian-vector product for unbiased local energy gradients."""
-    e_l = batch_local_energy(*primals)
-    loss = jax.lax.pmean(jnp.mean(e_l), axis_name=constants.PMAP_AXIS_NAME)
+    params, data = primals
+    loss, aux_data = total_energy(params, data)
 
     if clip_local_energy > 0.0:
       # Try centering the window around the median instead of the mean?
-      tv = jnp.mean(jnp.abs(e_l - loss))
+      tv = jnp.mean(jnp.abs(aux_data.local_energy - loss))
       tv = jax.lax.pmean(tv, axis_name=constants.PMAP_AXIS_NAME)
-      diff = jnp.clip(e_l,
+      diff = jnp.clip(aux_data.local_energy,
                       loss - clip_local_energy*tv,
                       loss + clip_local_energy*tv) - loss
     else:
-      diff = e_l - loss
+      diff = aux_data.local_energy - loss
 
     _, psi_tangent = jax.jvp(batch_network, primals, tangents)
-    return loss, jnp.dot(psi_tangent, diff)
+    primals_out = loss, aux_data
+    tangents_out = (jnp.dot(psi_tangent, diff), aux_data)
+    return primals_out, tangents_out
 
   return total_energy
 
@@ -154,8 +175,9 @@ def make_training_step(mcmc_step, val_and_grad, opt_update):
   Args:
     mcmc_step: Callable which performs the set of MCMC steps. See make_mcmc_step
       for creating the callable.
-    val_and_grad: Callable f(params, data) which evaluates the loss and
-      gradients given network parameters and MCMC configurations.
+    val_and_grad: Callable f(params, data) which evaluates the loss, auxiliary
+      data and gradients of the loss given network parameters and MCMC
+      configurations.
     opt_update: Callable f(t, gradients, params, state) which updates the
       network parameters according to an optimizer policy and returns the
       updated network parameters and optimization state.
@@ -184,6 +206,8 @@ def make_training_step(mcmc_step, val_and_grad, opt_update):
         state: updated optimization state.
         loss: energy of system based on input network parameters averaged over
           the entire set of MCMC configurations.
+        aux_data: AuxiliaryLossData object also returned from evaluating the
+          loss of the system.
         pmove: probability that a proposed MCMC move was accepted.
     """
     # MCMC loop
@@ -191,11 +215,11 @@ def make_training_step(mcmc_step, val_and_grad, opt_update):
     data, pmove = mcmc_step(params, data, key, mcmc_width)
 
     # Optimization step
-    loss, search_direction = val_and_grad(params, data)
+    (loss, aux_data), search_direction = val_and_grad(params, data)
     search_direction = jax.lax.pmean(
         search_direction, axis_name=constants.PMAP_AXIS_NAME)
     state, params = opt_update(t, search_direction, params, state)
-    return data, params, state, loss, pmove
+    return data, params, state, loss, aux_data, pmove
   return step
 
 
@@ -322,7 +346,7 @@ def train(cfg: ml_collections.ConfigDict):
     mcmc_width_ckpt = None
 
   # Set up logging
-  train_schema = ['step', 'energy', 'pmove']
+  train_schema = ['step', 'energy', 'variance', 'pmove']
 
   # Initialisation done. We now want to have different PRNG streams on each
   # device. Shard the key over devices
@@ -365,7 +389,7 @@ def train(cfg: ml_collections.ConfigDict):
     return cfg.optim.lr.rate * jnp.power(
         (1.0 / (1.0 + (t/cfg.optim.lr.delay))), cfg.optim.lr.decay)
   # Differentiate wrt parameters (argument 0)
-  val_and_grad = jax.value_and_grad(total_energy, argnums=0, has_aux=False)
+  val_and_grad = jax.value_and_grad(total_energy, argnums=0, has_aux=True)
   if cfg.optim.optimizer == 'adam':
     optimizer = optax.chain(
         optax.scale_by_adam(**cfg.optim.adam),
@@ -426,9 +450,9 @@ def train(cfg: ml_collections.ConfigDict):
       sharded_key, subkeys = jax_utils.p_split(sharded_key)
       if cfg.optim.optimizer == 'none':
         data, pmove = mcmc_step(params, data, subkeys, mcmc_width)
-        loss = total_energy(params, data)
+        loss, aux_data = total_energy(params, data)
       else:
-        data, params, opt_state, loss, pmove = step(
+        data, params, opt_state, loss, aux_data, pmove = step(
             shared_t,
             data,
             params,
@@ -439,6 +463,7 @@ def train(cfg: ml_collections.ConfigDict):
 
       # due to pmean, both loss and pmove should be the same across devices.
       loss = loss[0]
+      variance = aux_data.variance[0]
       pmove = pmove[0]
 
       # Update MCMC move width
@@ -458,9 +483,15 @@ def train(cfg: ml_collections.ConfigDict):
 
       # Logging
       if t % cfg.log.stats_frequency == 0:
-        logging.info('Step %05d: %03.4f E_h, pmove=%0.2f', t, loss, pmove)
-        writer.write(t, step=t, energy=np.asarray(loss),
-                     pmove=np.asarray(pmove))
+        logging.info(
+            'Step %05d: %03.4f E_h, variance=%03.4f E_h^2, pmove=%0.2f', t,
+            loss, variance, pmove)
+        writer.write(
+            t,
+            step=t,
+            energy=np.asarray(loss),
+            variance=np.asarray(variance),
+            pmove=np.asarray(pmove))
 
       # Checkpointing
       if time.time() - time_of_last_ckpt > cfg.log.save_frequency * 60:
