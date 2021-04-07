@@ -447,9 +447,8 @@ def logdet_matmul(xs: Sequence[jnp.ndarray],
     lambda a, b: a*b, dets
   ) if len(dets) > 0 else 1
 
-  slogdets = [slogdet(x) for x in xs if x.shape[-1] > 1]
-  maxlogdet = 0
-  if len(slogdets) > 0:
+  if any(x.shape[-1] > 1 for x in xs):
+    slogdets = [slogdet(x) for x in xs if x.shape[-1] > 1]
     sign_in, logdet = functools.reduce(
       lambda a, b: (a[0]*b[0], a[1]+b[1]), slogdets
     )
@@ -458,6 +457,7 @@ def logdet_matmul(xs: Sequence[jnp.ndarray],
     det = sign_in * dets * jnp.exp(logdet - maxlogdet)
   else:
     det = dets
+    maxlogdet = 0
 
   if w is None:
     result = jnp.sum(det)
