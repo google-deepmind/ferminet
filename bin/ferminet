@@ -21,6 +21,8 @@ from ferminet import base_config
 from ferminet import train
 from ml_collections.config_flags import config_flags
 
+# internal imports
+
 FLAGS = flags.FLAGS
 
 config_flags.DEFINE_config_file('config', None, 'Path to config file.')
