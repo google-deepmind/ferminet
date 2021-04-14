@@ -26,7 +26,7 @@ class SystemType(enum.IntEnum):
   WARNING: enum members cannot be serialised readily so use
   SystemType.member.value in such cases.
   """
-  molecule = 0
+  MOLECULE = 0
 
   @classmethod
   def has_value(cls, value):
@@ -91,7 +91,7 @@ def default() -> ml_collections.ConfigDict:
           'features': False,
       },
       'system': {
-          'type': SystemType.molecule.value,
+          'type': SystemType.MOLECULE.value,
           # Alternatively, set 'set_molecule' to a function which takes the
           # ConfigDict as the sole argument and sets the molecule value (and any
           # other related values) in the ConfigDict.
