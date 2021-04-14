@@ -154,7 +154,7 @@ class LaplacianTest(jtu.JaxTestCase):
     if hess_t.dtype == jnp.float64:
       atol, rtol = 1.e-10, 1.e-10
     else:
-      atol, rtol = 2.e-4, 2.e-4
+      atol, rtol = 2.e-4, 3.e-4
     self.assertArraysAllClose(t_l, hess_t, atol=atol, rtol=rtol)
 
 
