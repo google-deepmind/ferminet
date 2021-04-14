@@ -54,13 +54,28 @@ def default() -> ml_collections.ConfigDict:
       'config_module': __name__,
       'optim': {
           'iterations': 1000000,  # number of iterations
-          'optimizer': 'adam',  # one of adam, none
+          'optimizer': 'kfac',  # one of adam, kfac, lamb, none
           'lr': {
               'rate': 1.e-4,  # learning rate
               'decay': 1.0,  # exponent of learning rate decay
               'delay': 10000.0,  # term that sets the scale of the rate decay
           },
           'clip_el': 5.0,  # If not none, scale at which to clip local energy
+          # KFAC hyperparameters. See KFAC documentation for details.
+          'kfac': {
+              'invert_every': 1,
+              'cov_update_every': 1,
+              'damping': 0.001,
+              'cov_ema_decay': 0.95,
+              'momentum': 0.0,
+              'momentum_type': 'regular',
+              # Warning: adaptive damping is not currently available.
+              'min_damping': 1.e-4,
+              'norm_constraint': 0.001,
+              'mean_center': True,
+              'l2_reg': 0.0,
+              'register_only_generic': False,
+          },
           # ADAM hyperparameters. See optax documentation for details.
           'adam': {
               'b1': 0.9,

@@ -18,7 +18,6 @@ from typing import Sequence, Tuple, Optional
 
 from absl import logging
 from ferminet import constants
-from ferminet import jax_utils
 from ferminet import mcmc
 from ferminet import networks
 from ferminet.utils import scf
@@ -28,6 +27,8 @@ from jax import numpy as jnp
 import numpy as np
 import optax
 import pyscf
+
+from kfac_ferminet_alpha import utils as kfac_utils
 
 
 def get_hf(molecule: Optional[Sequence[system.Atom]] = None,
@@ -254,7 +255,7 @@ def pretrain_hartree_fock(params,
 
   for t in range(iterations):
     target = eval_orbitals(scf_approx, data, electrons)
-    sharded_key, subkeys = jax_utils.p_split(sharded_key)
+    sharded_key, subkeys = kfac_utils.p_split(sharded_key)
     data, params, opt_state_pt, loss, logprob = pretrain_step(
         data, target, params, opt_state_pt, subkeys, logprob)
     logging.info('Pretrain iter %05d: %g', t, loss[0])

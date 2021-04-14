@@ -30,7 +30,7 @@ from jax import numpy as jnp
 from jax import test_util as jtu
 import pyscf
 
-OPTIMIZERS = ['adam']
+OPTIMIZERS = ['kfac', 'adam', 'lamb']
 MOL_STRINGS = ['H 0 0 -1; H 0 0 1', 'H 0 0 0; Cl 0 0 1.1',
                'O 0 0 0; H  0 1 0; H 0 0 1']
 

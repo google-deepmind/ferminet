@@ -25,6 +25,7 @@ REQUIRED_PACKAGES = [
     'chex',
     'jax',
     'jaxlib',
+    'kfac_ferminet_alpha @ git+https://github.com/deepmind/deepmind_research#egg=kfac_ferminet_alpha&subdirectory=kfac_ferminet_alpha',  # pylint: disable=line-too-long
     'ml-collections',
     'optax',
     'numpy',
