@@ -15,7 +15,7 @@
 
 """Basic definition of units and converters useful for chemistry."""
 
-from typing import Union
+from typing import TypeVar
 import numpy as np
 
 # 1 Bohr = 0.52917721067 (12) x 10^{-10} m
@@ -29,18 +29,20 @@ BOHR_ANGSTROM = 1. / ANGSTROM_BOHR
 KCAL_HARTREE = 627.509474
 HARTREE_KCAL = 1. / KCAL_HARTREE
 
+NumericalLike = TypeVar('NumericalLike', float, np.ndarray)
 
-def bohr2angstrom(x_b: Union[float, np.ndarray]) -> Union[float, np.ndarray]:
+
+def bohr2angstrom(x_b: NumericalLike) -> NumericalLike:
   return x_b * ANGSTROM_BOHR
 
 
-def angstrom2bohr(x_a: Union[float, np.ndarray]) -> Union[float, np.ndarray]:
+def angstrom2bohr(x_a: NumericalLike) -> NumericalLike:
   return x_a * BOHR_ANGSTROM
 
 
-def hartree2kcal(x_b: Union[float, np.ndarray]) -> Union[float, np.ndarray]:
+def hartree2kcal(x_b: NumericalLike) -> NumericalLike:
   return x_b * KCAL_HARTREE
 
 
-def kcal2hartree(x_a: Union[float, np.ndarray]) -> Union[float, np.ndarray]:
+def kcal2hartree(x_a: NumericalLike) -> NumericalLike:
   return x_a * HARTREE_KCAL

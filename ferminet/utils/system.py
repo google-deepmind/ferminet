@@ -100,7 +100,7 @@ class Atom:  # pytype: disable=invalid-function-definition
 
   def __attrs_post_init__(self):
     if self.units == 'angstrom':
-      self.coords = [unit_conversion.angstrom2bohr(x) for x in self.coords]  # pytype: disable=annotation-type-mismatch
+      self.coords = [unit_conversion.angstrom2bohr(x) for x in self.coords]
       self.units = 'bohr'
 
   @property
