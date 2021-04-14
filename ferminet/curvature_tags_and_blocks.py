@@ -90,7 +90,7 @@ class QmcBlockedDense(blocks.TwoKroneckerFactored):
     # kmjn
     v = jnp.transpose(v.reshape([j, k, m, n]), [1, 2, 0, 3])
     v = v * scale + diagonal_weight * w
-    return v,
+    return (v,)
 
   def update_curvature_matrix_estimate(
       self,
@@ -147,10 +147,10 @@ class RepeatedDenseBlock(blocks.DenseTwoKroneckerFactored):
     info = dict(**info)
     (x,), (dy,) = info["inputs"], info["outputs_tangent"]
     assert x.shape[0] == batch_size
-    info["inputs"] = x.reshape([-1, x.shape[-1]]),
-    info["outputs_tangent"] = dy.reshape([-1, dy.shape[-1]]),
-    super(RepeatedDenseBlock, self).update_curvature_matrix_estimate(
-        info, x.size // x.shape[-1], ema_old, ema_new, pmap_axis_name)
+    info["inputs"] = (x.reshape([-1, x.shape[-1]]),)
+    info["outputs_tangent"] = (dy.reshape([-1, dy.shape[-1]]),)
+    super().update_curvature_matrix_estimate(info, x.size // x.shape[-1],
+                                             ema_old, ema_new, pmap_axis_name)
 
 
 blocks.set_default_tag_to_block("qmc1_tag", QmcBlockedDense)
