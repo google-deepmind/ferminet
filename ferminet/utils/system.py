@@ -1,4 +1,3 @@
-# Lint as: python3
 # Copyright 2020 DeepMind Technologies Limited. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -59,7 +58,7 @@ diatomic_spin_polarisation = {
 
 
 @attr.s
-class Atom:  # pytype: disable=invalid-function-definition
+class Atom:
   """Atom information for Hamiltonians.
 
   The nuclear charge is inferred from the symbol if not given, in which case the
@@ -81,14 +80,17 @@ class Atom:  # pytype: disable=invalid-function-definition
     coords_array: Numpy array of atomic coordinates in bohr.
     element: elements.Element corresponding to the symbol.
   """
-  symbol = attr.ib()
+  symbol = attr.ib(type=str)
   coords = attr.ib(
+      type=Sequence[float],
       converter=lambda xs: tuple(float(x) for x in xs),
-      default=(0.0, 0.0, 0.0))  # type: Sequence[float]
-  charge = attr.ib(converter=float)
-  atomic_number = attr.ib(converter=int)
+      default=(0.0, 0.0, 0.0))
+  charge = attr.ib(type=float, converter=float)
+  atomic_number = attr.ib(type=int, converter=int)
   units = attr.ib(
-      default='bohr', validator=attr.validators.in_(['bohr', 'angstrom']))
+      type=str,
+      default='bohr',
+      validator=attr.validators.in_(['bohr', 'angstrom']))
 
   @charge.default
   def _set_default_charge(self):
