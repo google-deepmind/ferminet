@@ -31,7 +31,7 @@ REQUIRED_PACKAGES = [
     'pandas',
     'pyscf',
     'pyblock',
-    'scipy<1.5',
+    'scipy',
     'tables',
 ]
 
