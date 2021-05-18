@@ -154,7 +154,10 @@ class LaplacianTest(jtu.JaxTestCase):
     if hess_t.dtype == jnp.float64:
       atol, rtol = 1.e-10, 1.e-10
     else:
-      atol, rtol = 2.e-4, 3.e-4
+      # This needs a low tolerance because on fast math optimization in CPU can
+      # substantially affect floating point expressions. See
+      # https://github.com/google/jax/issues/6566.
+      atol, rtol = 4.e-3, 4.e-3
     self.assertArraysAllClose(t_l, hess_t, atol=atol, rtol=rtol)
 
 
