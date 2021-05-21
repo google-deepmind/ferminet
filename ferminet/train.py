@@ -143,10 +143,8 @@ def make_loss(network, batch_network, atoms, charges, clip_local_energy=0.0):
       over the batch and over all devices inside a pmap.
     """
     e_l = batch_local_energy(params, data)
-    loss = kfac_utils.pmean_if_pmap(
-        jnp.mean(e_l), axis_name=constants.PMAP_AXIS_NAME)
-    variance = kfac_utils.pmean_if_pmap(
-        jnp.mean((e_l - loss)**2), axis_name=constants.PMAP_AXIS_NAME)
+    loss = constants.pmean(jnp.mean(e_l))
+    variance = constants.pmean(jnp.mean((e_l - loss)**2))
     return loss, AuxiliaryLossData(variance=variance, local_energy=e_l)
 
   @total_energy.defjvp
@@ -158,7 +156,7 @@ def make_loss(network, batch_network, atoms, charges, clip_local_energy=0.0):
     if clip_local_energy > 0.0:
       # Try centering the window around the median instead of the mean?
       tv = jnp.mean(jnp.abs(aux_data.local_energy - loss))
-      tv = kfac_utils.pmean_if_pmap(tv, axis_name=constants.PMAP_AXIS_NAME)
+      tv = constants.pmean(tv)
       diff = jnp.clip(aux_data.local_energy,
                       loss - clip_local_energy*tv,
                       loss + clip_local_energy*tv) - loss
@@ -221,8 +219,7 @@ def make_training_step(mcmc_step, val_and_grad, opt_update):
 
     # Optimization step
     (loss, aux_data), search_direction = val_and_grad(params, data)
-    search_direction = kfac_utils.pmean_if_pmap(
-        search_direction, axis_name=constants.PMAP_AXIS_NAME)
+    search_direction = constants.pmean(search_direction)
     state, params = opt_update(t, search_direction, params, state)
     return data, params, state, loss, aux_data, pmove
   return step

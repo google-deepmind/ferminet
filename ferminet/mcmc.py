@@ -236,7 +236,7 @@ def make_mcmc_step(batch_network,
     data, key, _, num_accepts = lax.fori_loop(0, nsteps, step_fn,
                                               (data, key, logprob, 0.))
     pmove = jnp.sum(num_accepts) / (nsteps * batch_per_device)
-    pmove = jax.lax.pmean(pmove, axis_name=constants.PMAP_AXIS_NAME)
+    pmove = constants.pmean(pmove)
     return data, pmove
 
   return mcmc_step

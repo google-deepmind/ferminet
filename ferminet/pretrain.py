@@ -163,12 +163,11 @@ def make_pretrain_step(batch_envelope_fn,
             jnp.mean((t[:, None, ...] - env * o)**2)
             for t, o in zip(target, batch_orbitals(p, x))
         ]).sum()
-      return jax.lax.pmean(result, axis_name=constants.PMAP_AXIS_NAME)
+      return constants.pmean(result)
 
     val_and_grad = jax.value_and_grad(loss_fn, argnums=1)
     loss_val, search_direction = val_and_grad(data, params, target)
-    search_direction = jax.lax.pmean(
-        search_direction, axis_name=constants.PMAP_AXIS_NAME)
+    search_direction = constants.pmean(search_direction)
     updates, state = optimizer.update(search_direction, state, params)
     params = optax.apply_updates(params, updates)
     data, key, logprob, _ = mcmc.mh_update(params, batch_network, data, key,
