@@ -100,6 +100,7 @@ class QmcBlockedDense(blocks.TwoKroneckerFactored):
       ema_new: Union[float, jnp.ndarray],
       pmap_axis_name: str
   ) -> None:
+    del pmap_axis_name
     (x,), (dy,) = info["inputs"], info["outputs_tangent"]
     assert batch_size == x.shape[0]
     normalizer = x.shape[0] * x.shape[1]

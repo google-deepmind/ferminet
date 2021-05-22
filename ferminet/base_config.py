@@ -136,14 +136,15 @@ def default() -> ml_collections.ConfigDict:
           # Width of (atom-centred) Gaussian used to generate initial electron
           # configurations.
           'init_width': 0.8,
-          # Width of Gaussian used for random moves for RMW or step size for
-          # HMC.
+          # Width of Gaussian used for random moves for RMW
           'move_width': 0.02,
           # Number of steps after which to update the adaptive MCMC step size
           'adapt_frequency': 100,
           'use_hmc': False,  # Use HMC (True) or Random Walk Metropolis (False)
-          # Number of HMC leapfrog steps.  Unused if not doing HMC.
-          'num_leapfrog_steps': 10,
+          # Size of hmc leapfrog steps. Unused if not using HMC
+          'step_size': .0005,
+          'path_len': .002,  # Leapfrog path len. Unused if not using HMC
+          'hmc_steps': 5,  # Number of HMC outer steps. Unused if not using HMC
           # Iterable of 3*nelectrons giving the mean initial position of each
           # electron. Configurations are drawn using Gaussians of width
           # init_width at each 3D position. Alpha electrons are listed before

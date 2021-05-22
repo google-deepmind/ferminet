@@ -222,8 +222,8 @@ def make_mcmc_step(batch_network,
       width: standard deviation to use in the move proposal.
 
     Returns:
-      (data, pmove), where data is the updated MCMC configurations, key the
-      updated RNG state and pmove the average probability a move was accepted.
+      (data, pmove), where data is the updated MCMC configurations
+      and pmove the average probability a move was accepted.
     """
 
     def step_fn(i, x):

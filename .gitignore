@@ -2,3 +2,4 @@
 *.egg-info
 *.csv
 *.npz
+.vscodes/*

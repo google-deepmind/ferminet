@@ -26,6 +26,7 @@ from ferminet import hamiltonian
 from ferminet import mcmc
 from ferminet import networks
 from ferminet import pretrain
+from ferminet import hmc
 from ferminet.utils import system
 from ferminet.utils import writers
 import jax
@@ -176,34 +177,35 @@ def make_training_step(mcmc_step, val_and_grad, opt_update):
   """Factory to create traning step for non-KFAC optimizers.
 
   Args:
-    mcmc_step: Callable which performs the set of MCMC steps. See make_mcmc_step
-      for creating the callable.
+    mcmc_step: Callable which performs the set of MCMC or HMC steps. See
+      make_mcmc_step or make_hmc_step for creating the callable.
     val_and_grad: Callable f(params, data) which evaluates the loss, auxiliary
-      data and gradients of the loss given network parameters and MCMC
+      data and gradients of the loss given network parameters and MC
       configurations.
     opt_update: Callable f(t, gradients, params, state) which updates the
       network parameters according to an optimizer policy and returns the
       updated network parameters and optimization state.
 
   Returns:
-    step, a callable which performs a set of MCMC steps and then an optimization
+    step, a callable which performs a set of MC steps and then an optimization
     update. See the step docstring for details.
   """
   @functools.partial(constants.pmap, donate_argnums=(1, 2, 3, 4))
   def step(t, data, params, state, key, mcmc_width):
-    """A full update iteration (except for KFAC): MCMC steps + optimization.
+    """A full update iteration (except for KFAC): MC steps + optimization.
 
     Args:
       t: training step iteration.
-      data: batch of MCMC configurations.
+      data: batch of MC configurations.
       params: network parameters.
       state: optimizer internal state.
       key: JAX RNG state.
       mcmc_width: width of MCMC move proposal. See mcmc.make_mcmc_step.
+      Only used if running MCMC, otherwise ignored.
 
     Returns:
       Tuple of (data, params, state, loss, pmove).
-        data: Updated MCMC configurations drawn from the network given the
+        data: Updated MC configurations drawn from the network given the
           *input* network parameters.
         params: updated network parameters after the gradient update.
         state: updated optimization state.
@@ -213,7 +215,7 @@ def make_training_step(mcmc_step, val_and_grad, opt_update):
           loss of the system.
         pmove: probability that a proposed MCMC move was accepted.
     """
-    # MCMC loop
+    # MC loop
     # Should this be created outside the function?
     data, pmove = mcmc_step(params, data, key, mcmc_width)
 
@@ -375,12 +377,7 @@ def train(cfg: ml_collections.ConfigDict):
 
   # Construct MCMC step
   atoms_to_mcmc = atoms if cfg.mcmc.scale_by_nuclear_distance else None
-  mcmc_step = mcmc.make_mcmc_step(
-      batch_network,
-      cfg.batch_size // num_devices,
-      steps=cfg.mcmc.steps,
-      atoms=atoms_to_mcmc,
-      one_electron_moves=cfg.mcmc.one_electron)
+
   # Construct loss and optimizer
   total_energy = make_loss(network, batch_network, atoms, charges,
                            clip_local_energy=cfg.optim.clip_el)
@@ -428,6 +425,22 @@ def train(cfg: ml_collections.ConfigDict):
   else:
     raise ValueError(f'Not a recognized optimizer: {cfg.optim.optimizer}')
 
+  mh_step = mcmc.make_mcmc_step(
+      batch_network,
+      cfg.batch_size // num_devices,
+      steps=cfg.mcmc.steps,
+      atoms=atoms_to_mcmc,
+      one_electron_moves=cfg.mcmc.one_electron)
+  if cfg.mcmc.use_hmc:
+    mcmc_step = hmc.make_hmc_step(
+        network,
+        cfg.batch_size // num_devices,
+        steps=cfg.mcmc.hmc_steps,
+        step_size=cfg.mcmc.step_size,
+        path_len=cfg.mcmc.path_len)
+  else:
+    mcmc_step = mh_step
+
   if cfg.optim.optimizer != 'kfac' and cfg.optim.optimizer != 'none':
     opt_state = jax.pmap(optimizer.init)(params)
     opt_state = opt_state_ckpt or opt_state  # avoid overwriting ckpted state
@@ -437,8 +450,12 @@ def train(cfg: ml_collections.ConfigDict):
       params = optax.apply_updates(params, updates)
       return opt_state, params
     step = make_training_step(mcmc_step, val_and_grad, opt_update)
-  # Only the pmapped MCMC step is needed after this point
-  mcmc_step = constants.pmap(mcmc_step, donate_argnums=1)
+  # Only the pmapped MCMC and HMC step is needed after this point
+  mh_step = constants.pmap(mh_step, donate_argnums=1)
+  if cfg.mcmc.use_hmc:
+    mcmc_step = constants.pmap(mcmc_step, donate_argnums=1)
+  else:
+    mcmc_step = mh_step
 
   # The actual training loop
 
@@ -457,7 +474,7 @@ def train(cfg: ml_collections.ConfigDict):
     logging.info('Burning in MCMC chain for %d steps', cfg.mcmc.burn_in)
     for t in range(cfg.mcmc.burn_in):
       sharded_key, subkeys = kfac_utils.p_split(sharded_key)
-      data, pmove = mcmc_step(params, data, subkeys, mcmc_width)
+      data, pmove = mh_step(params, data, subkeys, mcmc_width)
     logging.info('Completed burn-in MCMC steps')
     logging.info('Initial energy: %03.4f E_h',
                  constants.pmap(total_energy)(params, data)[0])
@@ -479,6 +496,7 @@ def train(cfg: ml_collections.ConfigDict):
       directory=ckpt_save_path,
       iteration_key=None,
       log=False) as writer:
+
     for t in range(t_init, cfg.optim.iterations):
       sharded_key, subkeys = kfac_utils.p_split(sharded_key)
       if cfg.optim.optimizer == 'kfac':
@@ -514,7 +532,7 @@ def train(cfg: ml_collections.ConfigDict):
       pmove = pmove[0]
 
       # Update MCMC move width
-      if t > 0 and t % cfg.mcmc.adapt_frequency == 0:
+      if not cfg.mcmc.use_hmc and t > 0 and t % cfg.mcmc.adapt_frequency == 0:
         if np.mean(pmoves) > 0.55:
           mcmc_width *= 1.1
         if np.mean(pmoves) < 0.5:

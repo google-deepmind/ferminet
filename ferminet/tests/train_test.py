@@ -30,6 +30,7 @@ from jax import numpy as jnp
 from jax import test_util as jtu
 import pyscf
 
+
 FLAGS = flags.FLAGS
 # Default flags are sufficient so mark FLAGS as parsed so we can run the tests
 # with py.test, which imports this file rather than runs it.
@@ -52,9 +53,11 @@ def setUpModule():
 
 
 def _config_params():
-  for params in itertools.product(('Li', 'LiH'), ('kfac', 'adam')):
-    yield params
-  yield ('Li', 'lamb')
+  for system, optimizer in itertools.product(('Li', 'LiH'), ('kfac', 'adam')):
+    yield {'system': system, 'optimizer': optimizer, 'use_hmc': False}
+  for optimizer in ('kfac', 'adam'):
+    yield {'system': 'Li', 'optimizer': optimizer, 'use_hmc': True}
+  yield {'system': 'Li', 'optimizer': 'lamb', 'use_hmc': False}
 
 
 class QmcTest(jtu.JaxTestCase):
@@ -67,7 +70,7 @@ class QmcTest(jtu.JaxTestCase):
     pyscf.lib.param.TMPDIR = None
 
   @parameterized.parameters(_config_params())
-  def test_training_step(self, system, optimizer):
+  def test_training_step(self, system, optimizer, use_hmc):
     if system == 'Li':
       cfg = atom.get_config()
       cfg.system.atom = system
@@ -82,6 +85,7 @@ class QmcTest(jtu.JaxTestCase):
     cfg.optim.optimizer = optimizer
     cfg.optim.iterations = 3
     cfg.debug.check_nan = True
+    cfg.mcmc.use_hmc = use_hmc
     cfg.log.save_path = self.create_tempdir().full_path
     cfg = base_config.resolve(cfg)
     # Calculation is too small to test the results for accuracy. Test just to
@@ -90,7 +94,9 @@ class QmcTest(jtu.JaxTestCase):
 
 
 MOL_STRINGS = [
-    'H 0 0 -1; H 0 0 1', 'O 0 0 0; H  0 1 0; H 0 0 1', 'H 0 0 0; Cl 0 0 1.1',
+    'H 0 0 -1; H 0 0 1',
+    'O 0 0 0; H  0 1 0; H 0 0 1',
+    'H 0 0 0; Cl 0 0 1.1',
 ]
 
 
@@ -104,9 +110,18 @@ class QmcPyscfMolTest(jtu.JaxTestCase):
     pyscf.lib.param.TMPDIR = None
 
   @parameterized.parameters(
-      (mol_string, optimizer)
-      for mol_string, optimizer in zip(MOL_STRINGS[:2], ('adam', 'kfac')))
-  def test_training_step_pyscf(self, mol_string, optimizer):
+      {
+          'mol_string': MOL_STRINGS[0],
+          'optimizer': 'adam',
+          'use_hmc': True,
+      },
+      {
+          'mol_string': MOL_STRINGS[1],
+          'optimizer': 'kfac',
+          'use_hmc': False,
+      },
+  )
+  def test_training_step_pyscf(self, mol_string, optimizer, use_hmc):
     mol = pyscf.gto.Mole()
     mol.build(
         atom=mol_string,
@@ -122,6 +137,7 @@ class QmcPyscfMolTest(jtu.JaxTestCase):
     cfg.optim.optimizer = optimizer
     cfg.optim.iterations = 3
     cfg.debug.check_nan = True
+    cfg.mcmc.use_hmc = use_hmc
     cfg.log.save_path = self.create_tempdir().full_path
     cfg = base_config.resolve(cfg)
     # Calculation is too small to test the results for accuracy. Test just to
