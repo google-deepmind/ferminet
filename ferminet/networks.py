@@ -115,7 +115,7 @@ def init_fermi_net_params(
       'single': [{} for i in range(len(hidden_dims))],
       'double': [{} for i in range(len_double)],
       'orbital': [],
-      'envelope': [{} for spin in spins]
+      'envelope': [{} for spin in spins if spin > 0]
   }
 
   if envelope_type in ['output', 'exact_cusp']:
@@ -165,8 +165,8 @@ def init_fermi_net_params(
             params['envelope'] = {'pi': pi, 'sigma': sigma}
             j += 1
   else:
-    params['envelope'] = [{} for spin in spins]
-    for i, spin in enumerate(spins):
+    params['envelope'] = [{} for spin in spins if spin > 0]
+    for i, spin in enumerate((spin for spin in spins if spin > 0)):
       nparam = sum(spins)*determinants if full_det else spin*determinants
       params['envelope'][i]['pi'] = jnp.ones((natom, nparam))
       if envelope_type == 'isotropic':
@@ -223,7 +223,7 @@ def init_fermi_net_params(
           raise NotImplementedError('HF Initialization not implemented for '
                                     '%s orbitals' % orb[1])
 
-  for i, spin in enumerate(spins):
+  for i, spin in enumerate((spin for spin in spins if spin > 0)):
     nparam = sum(spins)*determinants if full_det else spin*determinants
     key, subkey = jax.random.split(key)
     params['orbital'].append({})
