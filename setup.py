@@ -23,6 +23,7 @@ REQUIRED_PACKAGES = [
     'absl-py',
     'attrs',
     'chex',
+    'h5py==2.10.0',
     'jax',
     'jaxlib',
     'kfac_ferminet_alpha @ git+https://github.com/deepmind/deepmind_research#egg=kfac_ferminet_alpha&subdirectory=kfac_ferminet_alpha',  # pylint: disable=line-too-long
