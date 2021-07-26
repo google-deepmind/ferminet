@@ -23,6 +23,7 @@ REQUIRED_PACKAGES = [
     'absl-py',
     'attrs',
     'chex',
+    # TODO(g.cassella20@imperial.ac.uk): Remove this restriction once PySCF 2.0 is on PyPI
     'h5py==2.10.0',
     'jax',
     'jaxlib',
