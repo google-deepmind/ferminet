@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Generic single-atom configuration for qmc.py."""
+"""Generic single-atom configuration for FermiNet."""
 
 from ferminet import base_config
 from ferminet.utils import elements

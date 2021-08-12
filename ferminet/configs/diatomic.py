@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Diatomic molecule config for qmc."""
+"""Diatomic molecule config for FermiNet."""
 
 import re
 
