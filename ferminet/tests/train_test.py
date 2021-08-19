@@ -30,10 +30,6 @@ from jax import numpy as jnp
 from jax import test_util as jtu
 import pyscf
 
-OPTIMIZERS = ['kfac', 'adam', 'lamb']
-MOL_STRINGS = ['H 0 0 -1; H 0 0 1', 'H 0 0 0; Cl 0 0 1.1',
-               'O 0 0 0; H  0 1 0; H 0 0 1']
-
 FLAGS = flags.FLAGS
 # Default flags are sufficient so mark FLAGS as parsed so we can run the tests
 # with py.test, which imports this file rather than runs it.
@@ -55,6 +51,12 @@ def setUpModule():
                  'Using a single device in train_test.')
 
 
+def _config_params():
+  for params in itertools.product(('Li', 'LiH'), ('kfac', 'adam')):
+    yield params
+  yield ('Li', 'lamb')
+
+
 class QmcTest(jtu.JaxTestCase):
 
   def setUp(self):
@@ -64,9 +66,7 @@ class QmcTest(jtu.JaxTestCase):
     # checkpoint files.
     pyscf.lib.param.TMPDIR = None
 
-  @parameterized.parameters(
-      (system, optimizer)
-      for system, optimizer in itertools.product(['Li', 'LiH'], OPTIMIZERS))
+  @parameterized.parameters(_config_params())
   def test_training_step(self, system, optimizer):
     if system == 'Li':
       cfg = atom.get_config()
@@ -89,6 +89,11 @@ class QmcTest(jtu.JaxTestCase):
     train.train(cfg)
 
 
+MOL_STRINGS = [
+    'H 0 0 -1; H 0 0 1', 'O 0 0 0; H  0 1 0; H 0 0 1', 'H 0 0 0; Cl 0 0 1.1',
+]
+
+
 class QmcPyscfMolTest(jtu.JaxTestCase):
 
   def setUp(self):
@@ -100,7 +105,7 @@ class QmcPyscfMolTest(jtu.JaxTestCase):
 
   @parameterized.parameters(
       (mol_string, optimizer)
-      for mol_string, optimizer in itertools.product(MOL_STRINGS, OPTIMIZERS))
+      for mol_string, optimizer in zip(MOL_STRINGS[:2], ('adam', 'kfac')))
   def test_training_step_pyscf(self, mol_string, optimizer):
     mol = pyscf.gto.Mole()
     mol.build(
@@ -123,7 +128,7 @@ class QmcPyscfMolTest(jtu.JaxTestCase):
     # ensure they actually run without a top-level error.
     train.train(cfg)
 
-  @parameterized.parameters(mol_string for mol_string in MOL_STRINGS)
+  @parameterized.parameters(MOL_STRINGS)
   def test_conversion_pyscf(self, mol_string):
     mol = pyscf.gto.Mole()
     mol.build(
