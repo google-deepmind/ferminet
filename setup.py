@@ -23,6 +23,9 @@ REQUIRED_PACKAGES = [
     'absl-py',
     'attrs',
     'chex',
+    # TODO(g.cassella20@imperial.ac.uk): Remove this restriction once PySCF 2.0
+    # is on PyPI
+    'h5py==2.10.0',
     'jax',
     'jaxlib',
     'kfac_ferminet_alpha @ git+https://github.com/deepmind/deepmind_research#egg=kfac_ferminet_alpha&subdirectory=kfac_ferminet_alpha',  # pylint: disable=line-too-long
