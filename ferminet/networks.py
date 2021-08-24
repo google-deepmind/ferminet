@@ -440,24 +440,24 @@ def logdet_matmul(xs: Sequence[jnp.ndarray],
     determinant (or product of the i-th determinant in each spin channel, if
     full_det is not used).
   """
-  # Special case if there is only one electron in any channel
-  # We can avoid the log(0) issue by not going into the log domain
-  dets = [x.reshape(-1) for x in xs if x.shape[-1] == 1]
-  dets = functools.reduce(
-    lambda a, b: a*b, dets
-  ) if len(dets) > 0 else 1
+  # Special case to avoid taking log(0) if any matrix is of size 1x1.
+  # We can avoid this by not going into the log domain and skipping the
+  # log-sum-exp trick.
+  det1 = functools.reduce(
+    lambda a, b: a * b,
+    [x.reshape(-1) for x in xs if x.shape[-1] == 1],
+    1
+  )
 
-  if any(x.shape[-1] > 1 for x in xs):
-    slogdets = [slogdet(x) for x in xs if x.shape[-1] > 1]
-    sign_in, logdet = functools.reduce(
-      lambda a, b: (a[0]*b[0], a[1]+b[1]), slogdets
-    )
-
-    maxlogdet = jnp.max(logdet)
-    det = sign_in * dets * jnp.exp(logdet - maxlogdet)
-  else:
-    det = dets
-    maxlogdet = 0
+  # Compute the logdet for all matrices larger than 1x1
+  sign_in, logdet = functools.reduce(
+    lambda a, b: (a[0] * b[0], a[1] + b[1]),
+    [slogdet(x) for x in xs if x.shape[-1] > 1],
+    (1, 0)
+  )
+  # log-sum-exp trick
+  maxlogdet = jnp.max(logdet)
+  det = sign_in * det1 * jnp.exp(logdet - maxlogdet)
 
   if w is None:
     result = jnp.sum(det)
