@@ -27,7 +27,7 @@ import pyscf
 class ScfTest(parameterized.TestCase):
 
   def setUp(self):
-    super(ScfTest, self).setUp()
+    super().setUp()
     # disable use of temp directory in pyscf.
     # Test calculations are small enough to fit in RAM and we don't need
     # checkpoint files.
