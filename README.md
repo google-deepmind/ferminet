@@ -14,7 +14,7 @@ WARNING: This is a research-level release of a JAX implementation.
 `pip install -e .` will install all required dependencies. This is best done
 inside a [virtual environment](https://docs.python-guide.org/dev/virtualenvs/).
 
-```
+```shell
 virtualenv ~/venv/ferminet
 source ~/venv/ferminet/bin/activate
 pip install -e .
@@ -23,7 +23,7 @@ pip install -e .
 If you have a GPU available (highly recommended for fast training), then you can
 install JAX with CUDA support, using e.g.:
 
-```
+```shell
 pip install --upgrade jax jaxlib==0.1.57+cuda110 -f
 https://storage.googleapis.com/jax-releases/jax_releases.html
 ```
@@ -35,7 +35,7 @@ details.
 
 The tests are easiest run using pytest:
 
-```
+```shell
 pip install -e '.[testing]'
 python -m pytest
 ```
@@ -47,7 +47,7 @@ ferminet uses the `ConfigDict` from
 system. A few example scripts are included under `ferminet/configs/`. These are
 mostly for testing so need additional
 
-```
+```shell
 ferminet --config ferminet/configs/atom.py --config.system.atom Li --config.batch_size 256 --config.pretrain.iterations 100
 ```
 
@@ -65,7 +65,7 @@ Other systems can easily be set up, by creating a new config file or `ferminet`,
 or writing a custom training script. For example, to run on the H2 molecule, you
 can create a config file containing:
 
-```
+```python
 from ferminet import base_config
 from ferminet.utils import system
 
@@ -93,7 +93,7 @@ ferminet --config /path/to/h2_config.py
 
 or equivalently write the following script (or execute it interactively):
 
-```
+```python
 import sys
 
 from absl import logging
@@ -118,10 +118,10 @@ cfg.pretrain.iterations = 100
 train.train(cfg)
 ```
 
-Alternatively, you can directly pass in a PySCF ['Molecule'](http://pyscf.org). You can create PySCF
-Molecules with the following:
+Alternatively, you can directly pass in a PySCF ['Molecule'](http://pyscf.org).
+You can create PySCF Molecules with the following:
 
-```
+```python
 from pyscf import gto
 mol = gto.Mole()
 mol.build(
@@ -129,8 +129,10 @@ mol.build(
     basis = 'sto-3g', unit='bohr')
 ```
 
-Once you have this molecule, you can pass it directly into the configuration by running
-```
+Once you have this molecule, you can pass it directly into the configuration by
+running
+
+```python
 from ferminet import base_config
 from ferminet import train
 
@@ -166,32 +168,29 @@ folder contains samples from the wavefunction in `walkers.npy`, parameters in
 `parameters.npz` and geometries for the molecule in `geometry.npz`. To load the
 models and evaluate the local energy, run:
 
-```
+```python
 import numpy as np
 import jax
 from functools import partial
-from ferminet import networks, train, jax_utils
+from ferminet import networks, train
 
 with open('params.npz', 'rb') as f:
   params = dict(np.load(f, allow_pickle=True))
   params = params['arr_0'].tolist()
-  params = jax_utils.replicate(params)
 
 with open('walkers.npy', 'rb') as f:
   data = np.load(f)
-  data = jax_utils.replicate(data)
 
 with open('geometry.npz', 'rb') as f:
   geometry = dict(np.load(f, allow_pickle=True))
 
-foo = partial(networks.fermi_net, envelope_type='isotropic', full_det=False, **geometry)
+signed_network = partial(networks.fermi_net, envelope_type='isotropic', full_det=False, **geometry)
 # networks.fermi_net gives the sign/log of the wavefunction. We only care about the latter.
-network = lambda p, x: foo(p, x)[1]
+network = lambda p, x: signed_network(p, x)[1]
 batch_network = jax.vmap(network, (None, 0), 0)
 loss = train.make_loss(network, batch_network, geometry['atoms'], geometry['charges'], clip_local_energy=5.0)
-ploss = jax.pmap(loss, axis_name='qmc_pmap_axis')  # right now, the code only works if the loss is wrapped by pmap
 
-print(ploss(params, data))  # For neon, should give -128.94165
+print(loss(params, data)[0])  # For neon, should give -128.94165
 ```
 
 ## Giving Credit
