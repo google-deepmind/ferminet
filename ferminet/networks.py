@@ -79,7 +79,8 @@ def init_fermi_net_params(
     after_determinants: currently ignored.
 
   Returns:
-    PyTree of network parameters.
+    PyTree of network parameters. Spin-dependent parameters are only created for
+    spin channels containing at least one particle.
   """
   # after_det is from the legacy QMC TF implementation. Reserving for future
   # use.
@@ -95,7 +96,10 @@ def init_fermi_net_params(
 
   natom = atoms.shape[0]
   in_dims = (natom*4, 4)
-  nchannels = sum(spin > 0 for spin in spins)
+  active_spin_channels = [spin for spin in spins if spin > 0]
+  nchannels = len(active_spin_channels)
+  if nchannels == 0:
+    raise ValueError('No electrons present!')
   # The input to layer L of the one-electron stream is from
   # construct_symmetric_features and shape (nelectrons, nfeatures), where
   # nfeatures is i) output from the previous one-electron layer; ii) the mean
@@ -112,10 +116,10 @@ def init_fermi_net_params(
 
   len_double = len(hidden_dims) if use_last_layer else len(hidden_dims) - 1
   params = {
-      'single': [{} for i in range(len(hidden_dims))],
-      'double': [{} for i in range(len_double)],
+      'single': [{} for _ in range(len(hidden_dims))],
+      'double': [{} for _ in range(len_double)],
       'orbital': [],
-      'envelope': [{} for spin in spins]
+      'envelope': [{} for _ in active_spin_channels],
   }
 
   if envelope_type in ['output', 'exact_cusp']:
@@ -165,8 +169,8 @@ def init_fermi_net_params(
             params['envelope'] = {'pi': pi, 'sigma': sigma}
             j += 1
   else:
-    params['envelope'] = [{} for spin in spins]
-    for i, spin in enumerate(spins):
+    params['envelope'] = [{} for _ in active_spin_channels]
+    for i, spin in enumerate(active_spin_channels):
       nparam = sum(spins)*determinants if full_det else spin*determinants
       params['envelope'][i]['pi'] = jnp.ones((natom, nparam))
       if envelope_type == 'isotropic':
@@ -223,7 +227,7 @@ def init_fermi_net_params(
           raise NotImplementedError('HF Initialization not implemented for '
                                     '%s orbitals' % orb[1])
 
-  for i, spin in enumerate(spins):
+  for i, spin in enumerate(active_spin_channels):
     nparam = sum(spins)*determinants if full_det else spin*determinants
     key, subkey = jax.random.split(key)
     params['orbital'].append({})
@@ -561,16 +565,20 @@ def fermi_net_orbitals(params, x,
     h_to_orbitals = envelope(to_env, params['envelope']) * h_to_orbitals
   # Note split creates arrays of size 0 for spin channels without any electrons.
   h_to_orbitals = jnp.split(h_to_orbitals, spins[0:1], axis=0)
+  # Drop unoccupied spin channels
+  h_to_orbitals = [h for h, spin in zip(h_to_orbitals, spins) if spin > 0]
+  active_spin_channels = [spin for spin in spins if spin > 0]
 
-  orbitals = [linear_layer(h, **p)
-              for h, p in zip(h_to_orbitals, params['orbital'])]
+  orbitals = [
+      linear_layer(h, **p) for h, p in zip(h_to_orbitals, params['orbital'])
+  ]
   if envelope_type in ['isotropic', 'diagonal', 'full']:
     orbitals = [envelope(te, param)*orbital for te, orbital, param in
-                zip(jnp.split(to_env, spins[0:1], axis=0),
+                zip(jnp.split(to_env, active_spin_channels[:-1], axis=0),
                     orbitals, params['envelope'])]
-  # Reshape into matrices and drop unoccupied spin channels.
+  # Reshape into matrices.
   orbitals = [jnp.reshape(orbital, [spin, -1, sum(spins) if full_det else spin])
-              for spin, orbital in zip(spins, orbitals) if spin > 0]
+              for spin, orbital in zip(active_spin_channels, orbitals)]
   orbitals = [jnp.transpose(orbital, (1, 0, 2)) for orbital in orbitals]
   if full_det:
     orbitals = [jnp.concatenate(orbitals, axis=1)]

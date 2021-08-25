@@ -54,6 +54,8 @@ def setUpModule():
 def _config_params():
   for params in itertools.product(('Li', 'LiH'), ('kfac', 'adam')):
     yield params
+  for optimizer in ('kfac', 'adam'):
+    yield ('H', optimizer)
   yield ('Li', 'lamb')
 
 
@@ -68,7 +70,7 @@ class QmcTest(jtu.JaxTestCase):
 
   @parameterized.parameters(_config_params())
   def test_training_step(self, system, optimizer):
-    if system == 'Li':
+    if system in ('H', 'Li'):
       cfg = atom.get_config()
       cfg.system.atom = system
     else:

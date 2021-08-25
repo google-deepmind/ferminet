@@ -270,7 +270,9 @@ class NetworksTest(jtu.JaxTestCase):
     params = init(subkey1)
     xs = jax.random.uniform(subkey2, shape=(sum(spins) * 3,))
     # Test fermi_net runs without raising exceptions for spin-polarised systems.
-    fermi_net(params, xs)
+    sign_out, log_out = fermi_net(params, xs)
+    self.assertEqual(sign_out.size, 1)
+    self.assertEqual(log_out.size, 1)
 
 
 if __name__ == '__main__':
