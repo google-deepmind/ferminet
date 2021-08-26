@@ -14,6 +14,7 @@
 
 """Implementation of Fermionic Neural Network in JAX."""
 import functools
+import itertools
 from typing import Any, Callable, Iterable, Mapping, Optional, Sequence, Tuple, Union
 
 from ferminet import curvature_tags_and_blocks
@@ -286,6 +287,11 @@ def construct_input_features(
   return ae, ee, r_ae, r_ee[..., None]
 
 
+def _partition_spins(spins: Sequence[int]) -> Sequence[int]:
+  """Returns the indices for splitting an array into spin channels."""
+  return list(itertools.accumulate(spins))[:-1]
+
+
 def construct_symmetric_features(h_one: jnp.ndarray, h_two: jnp.ndarray,
                                  spins: Tuple[int, int]) -> jnp.ndarray:
   """Combines intermediate features from rank-one and -two streams.
@@ -305,8 +311,9 @@ def construct_symmetric_features(h_one: jnp.ndarray, h_two: jnp.ndarray,
     both spin-up and spin-down electrons and (nelectrons, 2*n1, n2) otherwise.
   """
   # Split features into spin up and spin down electrons
-  h_ones = jnp.split(h_one, spins[0:1], axis=0)
-  h_twos = jnp.split(h_two, spins[0:1], axis=0)
+  spin_partitions = _partition_spins(spins)
+  h_ones = jnp.split(h_one, spin_partitions, axis=0)
+  h_twos = jnp.split(h_two, spin_partitions, axis=0)
 
   # Construct inputs to next layer
   # h.size == 0 corresponds to unoccupied spin channels.
@@ -396,8 +403,9 @@ def exact_cusp_envelope(ae, r_ee, params, charges, spins):
   a_cusp = jnp.sum(charges / (1. + r_ae))
 
   # electronic cusp
-  r_ees = [jnp.split(r, spins[0:1], axis=1)
-           for r in jnp.split(r_ee, spins[0:1], axis=0)]
+  spin_partitions = _partition_spins(spins)
+  r_ees = [jnp.split(r, spin_partitions, axis=1)
+           for r in jnp.split(r_ee, spin_partitions, axis=0)]
   # Sum over same-spin electrons twice but different-spin once, which
   # cancels out the different factor of 1/2 and 1/4 in the cusps.
   e_cusp = (jnp.sum(1. / (1. + r_ees[0][0])) +
@@ -564,7 +572,7 @@ def fermi_net_orbitals(params, x,
   if envelope_type in ('sto', 'sto-poly'):
     h_to_orbitals = envelope(to_env, params['envelope']) * h_to_orbitals
   # Note split creates arrays of size 0 for spin channels without any electrons.
-  h_to_orbitals = jnp.split(h_to_orbitals, spins[0:1], axis=0)
+  h_to_orbitals = jnp.split(h_to_orbitals, _partition_spins(spins), axis=0)
   # Drop unoccupied spin channels
   h_to_orbitals = [h for h, spin in zip(h_to_orbitals, spins) if spin > 0]
   active_spin_channels = [spin for spin in spins if spin > 0]
