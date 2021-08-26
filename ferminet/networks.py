@@ -444,16 +444,16 @@ def logdet_matmul(xs: Sequence[jnp.ndarray],
   # We can avoid this by not going into the log domain and skipping the
   # log-sum-exp trick.
   det1 = functools.reduce(
-    lambda a, b: a * b,
-    [x.reshape(-1) for x in xs if x.shape[-1] == 1],
-    1
+      lambda a, b: a * b,
+      [x.reshape(-1) for x in xs if x.shape[-1] == 1],
+      1
   )
 
   # Compute the logdet for all matrices larger than 1x1
   sign_in, logdet = functools.reduce(
-    lambda a, b: (a[0] * b[0], a[1] + b[1]),
-    [slogdet(x) for x in xs if x.shape[-1] > 1],
-    (1, 0)
+      lambda a, b: (a[0] * b[0], a[1] + b[1]),
+      [slogdet(x) for x in xs if x.shape[-1] > 1],
+      (1, 0)
   )
   # log-sum-exp trick
   maxlogdet = jnp.max(logdet)
