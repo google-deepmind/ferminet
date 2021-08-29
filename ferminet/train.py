@@ -177,26 +177,26 @@ def make_training_step(mcmc_step, val_and_grad, opt_update):
   """Factory to create traning step for non-KFAC optimizers.
 
   Args:
-    mcmc_step: Callable which performs the set of MCMC or HMC steps. See
-      make_mcmc_step or make_hmc_step for creating the callable.
+    mcmc_step: Callable which performs the set of MCMC steps. See make_mcmc_step
+      or make_hmc_step for creating the callable.
     val_and_grad: Callable f(params, data) which evaluates the loss, auxiliary
-      data and gradients of the loss given network parameters and MC
+      data and gradients of the loss given network parameters and MCMC
       configurations.
     opt_update: Callable f(t, gradients, params, state) which updates the
       network parameters according to an optimizer policy and returns the
       updated network parameters and optimization state.
 
   Returns:
-    step, a callable which performs a set of MC steps and then an optimization
+    step, a callable which performs a set of MCMC steps and then an optimization
     update. See the step docstring for details.
   """
   @functools.partial(constants.pmap, donate_argnums=(1, 2, 3, 4))
   def step(t, data, params, state, key, mcmc_width):
-    """A full update iteration (except for KFAC): MC steps + optimization.
+    """A full update iteration (except for KFAC): MCMC steps + optimization.
 
     Args:
       t: training step iteration.
-      data: batch of MC configurations.
+      data: batch of MCMC configurations.
       params: network parameters.
       state: optimizer internal state.
       key: JAX RNG state.
@@ -205,7 +205,7 @@ def make_training_step(mcmc_step, val_and_grad, opt_update):
 
     Returns:
       Tuple of (data, params, state, loss, pmove).
-        data: Updated MC configurations drawn from the network given the
+        data: Updated MCMC configurations drawn from the network given the
           *input* network parameters.
         params: updated network parameters after the gradient update.
         state: updated optimization state.
@@ -215,7 +215,7 @@ def make_training_step(mcmc_step, val_and_grad, opt_update):
           loss of the system.
         pmove: probability that a proposed MCMC move was accepted.
     """
-    # MC loop
+    # MCMC loop
     # Should this be created outside the function?
     data, pmove = mcmc_step(params, data, key, mcmc_width)
 
