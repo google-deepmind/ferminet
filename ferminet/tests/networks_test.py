@@ -57,6 +57,7 @@ def _network_options():
       'full_det': [True, False],
       'use_last_layer': [True, False],
       'hidden_dims': [((32, 8), (32, 8))],
+      'ndim' : [2, 3]
   }
   # Create the product of all options.
   for options in itertools.product(*all_options.values()):
@@ -229,8 +230,10 @@ class NetworksTest(jtu.JaxTestCase):
   def test_fermi_net(self, vmap, **network_options):
     # Warning: this only tests we can build and run the network. It does not
     # test correctness of output nor test changing network width or depth.
+    ndim = network_options['ndim']
     spins = (6, 5)
     atoms = jnp.asarray([[0., 0., 0.2], [1.2, 1., -0.2], [2.5, -0.8, 0.6]])
+    atoms = atoms[:, :ndim]
     charges = jnp.asarray([2, 5, 7])
     key = jax.random.PRNGKey(42)
 
@@ -240,11 +243,11 @@ class NetworksTest(jtu.JaxTestCase):
     key, subkey = jax.random.split(key)
     if vmap:
       batch = 10
-      xs = jax.random.uniform(subkey, shape=(batch, sum(spins), 3))
+      xs = jax.random.uniform(subkey, shape=(batch, sum(spins), ndim))
       fermi_net = jax.vmap(fermi_net, in_axes=(None, 0))
       expected_shape = (batch,)
     else:
-      xs = jax.random.uniform(subkey, shape=(sum(spins), 3))
+      xs = jax.random.uniform(subkey, shape=(sum(spins), ndim))
       expected_shape = ()
 
     key, subkey = jax.random.split(key)

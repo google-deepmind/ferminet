@@ -51,12 +51,13 @@ def init_fermi_net_params(
     hidden_dims: FermiLayers = ((256, 32), (256, 32), (256, 32)),
     determinants: int = 16,
     after_determinants: Union[int, Tuple[int, ...]] = 1,
+    ndim: int = 3,
 ):
   """Initializes parameters for the Fermionic Neural Network.
 
   Args:
     key: JAX RNG state.
-    atoms: (natom, 3) array of atom positions.
+    atoms: (natom, ndim) array of atom positions.
     spins: Tuple of the number of spin-up and spin-down electrons.
     envelope_type: Envelope to use to impose orbitals go to zero at infinity.
       See fermi_net_orbitals.
@@ -96,7 +97,7 @@ def init_fermi_net_params(
                        'envelope_type must be `sto` or `sto-poly`.')
 
   natom = atoms.shape[0]
-  in_dims = (natom*4, 4)
+  in_dims = (natom*(ndim+1), (ndim+1))
   active_spin_channels = [spin for spin in spins if spin > 0]
   nchannels = len(active_spin_channels)
   if nchannels == 0:
@@ -126,12 +127,12 @@ def init_fermi_net_params(
   if envelope_type in ['output', 'exact_cusp']:
     params['envelope'] = {
         'pi': jnp.zeros(natom),
-        'sigma': jnp.tile(jnp.eye(3)[..., None], [1, 1, natom])
+        'sigma': jnp.tile(jnp.eye(ndim)[..., None], [1, 1, natom])
     }
   elif envelope_type == 'sto':
     params['envelope'] = {
         'pi': jnp.zeros((natom, dims_one_in[-1])),
-        'sigma': jnp.tile(jnp.eye(3)[..., None, None],
+        'sigma': jnp.tile(jnp.eye(ndim)[..., None, None],
                           [1, 1, natom, dims_one_in[-1]]),
         # log order of the polynomial (initialize so the order is near zero)
         'n': -50 * jnp.ones((natom, dims_one_in[-1])),
@@ -153,7 +154,7 @@ def init_fermi_net_params(
   elif envelope_type == 'sto-poly':
     params['envelope'] = {
         'pi': jnp.zeros((natom, dims_one_in[-1], _MAX_POLY_ORDER)),
-        'sigma': jnp.tile(jnp.eye(3)[..., None, None],
+        'sigma': jnp.tile(jnp.eye(ndim)[..., None, None],
                           [1, 1, natom, dims_one_in[-1]]),
     }
     if hf_solution is not None:
@@ -177,10 +178,10 @@ def init_fermi_net_params(
       if envelope_type == 'isotropic':
         params['envelope'][i]['sigma'] = jnp.ones((natom, nparam))
       elif envelope_type == 'diagonal':
-        params['envelope'][i]['sigma'] = jnp.ones((natom, 3, nparam))
+        params['envelope'][i]['sigma'] = jnp.ones((natom, ndim, nparam))
       elif envelope_type == 'full':
         params['envelope'][i]['sigma'] = jnp.tile(
-            jnp.eye(3)[..., None, None], [1, 1, natom, nparam])
+            jnp.eye(ndim)[..., None, None], [1, 1, natom, nparam])
 
   for i in range(len(hidden_dims)):
     key, subkey = jax.random.split(key)
@@ -503,7 +504,8 @@ def fermi_net_orbitals(params, x,
                        atoms=None,
                        spins=(None, None),
                        envelope_type=None,
-                       full_det=True):
+                       full_det=True,
+                       ndim=3):
   """Forward evaluation of the Fermionic Neural Network up to the orbitals.
 
   Args:
@@ -543,7 +545,7 @@ def fermi_net_orbitals(params, x,
     envelope, depending on the envelope type.
   """
 
-  ae_, ee_, r_ae, r_ee = construct_input_features(x, atoms)
+  ae_, ee_, r_ae, r_ee = construct_input_features(x, atoms, ndim)
   ae = jnp.concatenate((r_ae, ae_), axis=2)
   ae = jnp.reshape(ae, [jnp.shape(ae)[0], -1])
   ee = jnp.concatenate((r_ee, ee_), axis=2)
@@ -611,7 +613,8 @@ def fermi_net(params, x,
               spins=(None, None),
               charges=None,
               envelope_type='full',
-              full_det=True):
+              full_det=True,
+              ndim=3):
   """Forward evaluation of the Fermionic Neural Network for a single datum.
 
   Args:
@@ -649,7 +652,8 @@ def fermi_net(params, x,
                                         atoms=atoms,
                                         spins=spins,
                                         envelope_type=envelope_type,
-                                        full_det=full_det)
+                                        full_det=full_det,
+                                        ndim=ndim)
   output = logdet_matmul(orbitals)
   if envelope_type == 'output':
     output = output[0], output[1] + output_envelope(to_env, params['envelope'])
@@ -672,6 +676,7 @@ def make_fermi_net(
     hidden_dims: FermiLayers = ((256, 32), (256, 32), (256, 32)),
     determinants: int = 16,
     after_determinants: Union[int, Tuple[int, ...]] = 1,
+    ndim: int = 3,
 ) -> Tuple[FermiNetInit, FermiNetApply]:
   """Creates functions for initializing parameters and evaluating ferminet.
 
@@ -706,6 +711,9 @@ def make_fermi_net(
     returns the network output in log space.
   """
 
+  if hf_solution is not None and ndim is not 3:
+    raise NotImplementedError('HF initialization is not implemented for ndim<3')
+
   init = functools.partial(
       init_fermi_net_params,
       atoms=atoms,
@@ -718,6 +726,7 @@ def make_fermi_net(
       hidden_dims=hidden_dims,
       determinants=determinants,
       after_determinants=after_determinants,
+      ndim=ndim
   )
   network = functools.partial(
       fermi_net,
@@ -725,5 +734,7 @@ def make_fermi_net(
       spins=spins,
       charges=charges,
       envelope_type=envelope_type,
-      full_det=full_det)
+      full_det=full_det,
+      ndim=ndim
+  )
   return init, network
