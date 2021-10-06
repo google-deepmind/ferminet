@@ -69,7 +69,8 @@ def mh_update(params,
               num_accepts,
               stddev=0.02,
               atoms=None,
-              i=0):
+              i=0,
+              ndim=3):
   """Performs one Metropolis-Hastings step using an all-electron move.
 
   Args:
@@ -103,7 +104,7 @@ def mh_update(params,
     ratio = lp_2 - lp_1
   else:  # asymmetric proposal, stddev propto harmonic mean of nuclear distances
     n = x1.shape[0]
-    x1 = jnp.reshape(x1, [n, -1, 1, 3])
+    x1 = jnp.reshape(x1, [n, -1, 1, ndim])
     hmean1 = _harmonic_mean(x1, atoms)  # harmonic mean of distances to nuclei
 
     x2 = x1 + stddev * hmean1 * jax.random.normal(subkey, shape=x1.shape)
@@ -134,7 +135,8 @@ def mh_one_electron_update(params,
                            num_accepts,
                            stddev=0.02,
                            atoms=None,
-                           i=0):
+                           i=0,
+                           ndim=3):
   """Performs one Metropolis-Hastings step for a single electron.
 
   Args:
@@ -162,7 +164,7 @@ def mh_one_electron_update(params,
   """
   key, subkey = jax.random.split(key)
   n = x1.shape[0]
-  x1 = jnp.reshape(x1, [n, -1, 1, 3])
+  x1 = jnp.reshape(x1, [n, -1, 1, ndim])
   nelec = x1.shape[1]
   ii = i % nelec
   if atoms is None:  # symmetric proposal, same stddev everywhere
@@ -190,7 +192,8 @@ def make_mcmc_step(batch_network,
                    batch_per_device,
                    steps=10,
                    atoms=None,
-                   one_electron_moves=False):
+                   one_electron_moves=False,
+                   ndim=3):
   """Creates the MCMC step function.
 
   Args:
@@ -228,9 +231,9 @@ def make_mcmc_step(batch_network,
 
     def step_fn(i, x):
       return inner_fun(
-          params, batch_network, *x, stddev=width, atoms=atoms, i=i)
+          params, batch_network, *x, stddev=width, atoms=atoms, i=i, ndim=ndim)
 
-    nelec = data.shape[-1] // 3
+    nelec = data.shape[-1] // ndim
     nsteps = nelec * steps if one_electron_moves else steps
     logprob = 2. * batch_network(params, data)
     data, key, _, num_accepts = lax.fori_loop(0, nsteps, step_fn,
