@@ -301,11 +301,7 @@ def train(cfg: ml_collections.ConfigDict):
       one_electron_moves=cfg.mcmc.one_electron)
   # Construct loss and optimizer
   total_energy = qmc_loss_functions.make_loss(
-      network,
-      batch_network,
-      atoms,
-      charges,
-      clip_local_energy=cfg.optim.clip_el)
+      network, atoms, charges, clip_local_energy=cfg.optim.clip_el)
   # Compute the learning rate
   def learning_rate_schedule(t):
     return cfg.optim.lr.rate * jnp.power(

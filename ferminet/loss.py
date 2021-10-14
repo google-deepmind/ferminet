@@ -35,7 +35,7 @@ class AuxiliaryLossData:
   local_energy: jnp.DeviceArray
 
 
-def make_loss(network, batch_network, atoms, charges, clip_local_energy=0.0):
+def make_loss(network, atoms, charges, clip_local_energy=0.0):
   """Creates the loss function, including custom gradients.
 
   Args:
@@ -43,7 +43,6 @@ def make_loss(network, batch_network, atoms, charges, clip_local_energy=0.0):
       magnitude of the wavefunction (square root of the log probability
       distribution) at the single MCMC configuration in data given the network
       parameters.
-    batch_network: as for network but data is a batch of MCMC configurations.
     atoms: array of (natoms, ndim) specifying the positions of the nuclei.
     charges: array of (natoms) specifying the nuclear charges.
     clip_local_energy: If greater than zero, clip local energies that are
@@ -59,6 +58,7 @@ def make_loss(network, batch_network, atoms, charges, clip_local_energy=0.0):
   """
   el_fun = hamiltonian.local_energy(network, atoms, charges)
   batch_local_energy = jax.vmap(el_fun, in_axes=(None, 0), out_axes=0)
+  batch_network = jax.vmap(network, in_axes=(None, 0), out_axes=0)
 
   @jax.custom_jvp
   def total_energy(params, data):
