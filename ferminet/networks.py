@@ -32,10 +32,13 @@ FermiLayers = Tuple[Tuple[int, int], ...]
 ParamTree = Union[jnp.ndarray, Iterable['ParamTree'], Mapping[Any, 'ParamTree']]
 # pytype: enable=not-supported-yet
 # init(key) -> params
-FermiNetInit = Callable[[jnp.ndarray], ParamTree]
-# network(params, x) -> sign_out, log_out
-FermiNetApply = Callable[[ParamTree, jnp.ndarray], Tuple[jnp.ndarray,
-                                                         jnp.ndarray]]
+InitFermiNet = Callable[[jnp.ndarray], ParamTree]
+# network(params, electrons) -> sign(psi), log(|psi|), where electrons is the
+# array containing the positions of the electrons.
+FermiNetLike = Callable[[ParamTree, jnp.ndarray],
+                        Tuple[jnp.ndarray, jnp.ndarray]]
+# network(params, electrons) -> log(|psi|)
+LogFermiNetLike = Callable[[ParamTree, jnp.ndarray], jnp.ndarray]
 
 
 def init_fermi_net_params(
@@ -672,7 +675,7 @@ def make_fermi_net(
     hidden_dims: FermiLayers = ((256, 32), (256, 32), (256, 32)),
     determinants: int = 16,
     after_determinants: Union[int, Tuple[int, ...]] = 1,
-) -> Tuple[FermiNetInit, FermiNetApply]:
+) -> Tuple[InitFermiNet, FermiNetLike]:
   """Creates functions for initializing parameters and evaluating ferminet.
 
   Args:

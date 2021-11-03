@@ -14,26 +14,36 @@
 
 """Evaluating the Hamiltonian on a wavefunction."""
 
+from typing import Callable
+
+import chex
 from ferminet import networks
 import jax
 from jax import lax
 import jax.numpy as jnp
 
+# Evaluation of local energy of a Hamiltonian.
+# (params, PRNG_key, electron_coords) -> local_energy.
+LocalEnergy = Callable[
+    [networks.ParamTree, chex.PRNGKey, jnp.ndarray], jnp.ndarray]
+# Make the LocalEnergy function given a network, the nuclear positions and
+# charges, and whether to use jax.lax.scan in evaluating the kinetic energy.
+MakeLocalEnergy = Callable[
+    [networks.LogFermiNetLike, jnp.ndarray, jnp.ndarray, bool], LocalEnergy]
 
-def local_kinetic_energy(f, use_scan: bool = False):
+
+def local_kinetic_energy(
+    f: networks.LogFermiNetLike,
+    use_scan: bool = False) -> networks.LogFermiNetLike:
   r"""Creates a function to for the local kinetic energy, -1/2 \nabla^2 ln|f|.
 
   Args:
-    f: Callable with signature f(params, data), where params is the set of
-      (model) parameters of the (wave)function and data is the configurations to
-      evaluate f at, and returns the values of the log magnitude of the
-      wavefunction at those configurations.
+    f: Callable which evaluates the log of the magnitude of the wavefunction.
     use_scan: Whether to use a `lax.scan` for computing the laplacian.
 
   Returns:
-    Callable with signature lapl(params, data), which evaluates the local
-    kinetic energy, -1/2f \nabla^2 f = -1/2 (\nabla^2 log|f| +
-    (\nabla log|f|)^2).
+    Callable which evaluates the local kinetic energy,
+    -1/2f \nabla^2 f = -1/2 (\nabla^2 log|f| + (\nabla log|f|)^2).
   """
 
   def _lapl_over_f(params, data):
@@ -57,7 +67,8 @@ def local_kinetic_energy(f, use_scan: bool = False):
   return _lapl_over_f
 
 
-def potential_energy(r_ae, r_ee, atoms, charges):
+def potential_energy(r_ae: jnp.ndarray, r_ee: jnp.ndarray, atoms: jnp.ndarray,
+                     charges: jnp.ndarray) -> jnp.ndarray:
   """Returns the potential energy for this electron configuration.
 
   Args:
@@ -77,12 +88,15 @@ def potential_energy(r_ae, r_ee, atoms, charges):
   return v_ee + v_ae + v_aa
 
 
-def local_energy(f, atoms, charges, use_scan: bool = False):
-  """Creates function to evaluate the local energy.
+def local_energy(f: networks.LogFermiNetLike,
+                 atoms: jnp.ndarray,
+                 charges: jnp.ndarray,
+                 use_scan: bool = False) -> LocalEnergy:
+  """Creates the function to evaluate the local energy.
 
   Args:
-    f: Callable with signature f(data, params) which returns the log magnitude
-      of the wavefunction given parameters params and configurations data.
+    f: Callable which returns the log of the magnitude of the wavefunction given
+      the network parameters and configurations data.
     atoms: Shape (natoms, ndim). Positions of the atoms.
     charges: Shape (natoms). Nuclear charges of the atoms.
     use_scan: Whether to use a `lax.scan` for computing the laplacian.
@@ -94,7 +108,8 @@ def local_energy(f, atoms, charges, use_scan: bool = False):
   """
   ke = local_kinetic_energy(f, use_scan=use_scan)
 
-  def _e_l(params, key, data):
+  def _e_l(params: networks.ParamTree, key: chex.PRNGKey,
+           data: jnp.ndarray) -> jnp.ndarray:
     """Returns the total energy.
 
     Args:
