@@ -118,14 +118,14 @@ def default() -> ml_collections.ConfigDict:
           # Change with care. FermiNet implementation currently assumes 3D
           # systems.
           'ndim': 3,
-          'units': 'bohr',  # Units of *input* coords of atoms. Either 'bohr' or
+          # Units of *input* coords of atoms. Either 'bohr' or
           # 'angstrom'. Internally work in a.u.; positions in
           # Angstroms are converged to Bohr.
-          'set_molecule': None,  # Callable[ConfigDict] -> ConfigDict.
-          # Takes a ConfigDict and sets molecule and
-          # other related values. Returns the ConfigDict
-          # with these set. Note: modifications may also
-          # be performed in-place.
+          'units': 'bohr',
+          # Callable[ConfigDict] -> ConfigDict which sets molecule and
+          # other related values and returns the ConfigDict with these set.
+          # Note: modifications may also be performed in-place.
+          'set_molecule': None,
           # String set to module.make_local_energy, where make_local_energy is a
           # callable (type: MakeLocalEnergy) which creates a function which
           # evaluates the local energy and module is the absolute module
@@ -161,7 +161,7 @@ def default() -> ml_collections.ConfigDict:
           # If true, scale the proposal width for each electron by the harmonic
           # mean of the distance to the nuclei.
           'scale_by_nuclear_distance': False,
-          'one_electron': False  # If true, use one-electron moves
+          'one_electron': False,  # If true, use one-electron moves
       },
       'network': {
           'detnet': {
