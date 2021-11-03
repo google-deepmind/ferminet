@@ -15,6 +15,7 @@
 """Core training loop for neural QMC in JAX."""
 
 import functools
+import importlib
 import time
 from typing import Sequence
 
@@ -22,6 +23,7 @@ from absl import logging
 import chex
 from ferminet import checkpoint
 from ferminet import constants
+from ferminet import hamiltonian
 from ferminet import loss as qmc_loss_functions
 from ferminet import mcmc
 from ferminet import networks
@@ -302,8 +304,20 @@ def train(cfg: ml_collections.ConfigDict):
       atoms=atoms_to_mcmc,
       one_electron_moves=cfg.mcmc.one_electron)
   # Construct loss and optimizer
+  if cfg.system.make_local_energy_fn:
+    local_energy_module, local_energy_fn = (
+        cfg.system.make_local_energy_fn.rsplit('.', maxsplit=1))
+    local_energy_module = importlib.import_module(local_energy_module)
+    make_local_energy = getattr(local_energy_module, local_energy_fn)  # type: hamiltonian.MakeLocalEnergy
+    local_energy = make_local_energy(network, atoms, charges, False,
+                                     **cfg.system.make_local_energy_kwargs)
+  else:
+    make_local_energy = hamiltonian.local_energy  # type: hamiltonian.MakeLocalEnergy
+    local_energy = make_local_energy(network, atoms, charges, False)
   total_energy = qmc_loss_functions.make_loss(
-      network, atoms, charges, clip_local_energy=cfg.optim.clip_el)
+      network,
+      local_energy,
+      clip_local_energy=cfg.optim.clip_el)
   # Compute the learning rate
   def learning_rate_schedule(t):
     return cfg.optim.lr.rate * jnp.power(

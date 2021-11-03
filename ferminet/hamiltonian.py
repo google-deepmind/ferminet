@@ -14,22 +14,46 @@
 
 """Evaluating the Hamiltonian on a wavefunction."""
 
-from typing import Callable
+from typing import Any
 
 import chex
 from ferminet import networks
 import jax
 from jax import lax
 import jax.numpy as jnp
+from typing_extensions import Protocol
 
-# Evaluation of local energy of a Hamiltonian.
-# (params, PRNG_key, electron_coords) -> local_energy.
-LocalEnergy = Callable[
-    [networks.ParamTree, chex.PRNGKey, jnp.ndarray], jnp.ndarray]
-# Make the LocalEnergy function given a network, the nuclear positions and
-# charges, and whether to use jax.lax.scan in evaluating the kinetic energy.
-MakeLocalEnergy = Callable[
-    [networks.LogFermiNetLike, jnp.ndarray, jnp.ndarray, bool], LocalEnergy]
+
+class LocalEnergy(Protocol):
+
+  def __call__(self, params: networks.ParamTree, key: chex.PRNGKey,
+               data: jnp.ndarray) -> jnp.ndarray:
+    """Returns the local energy of a Hamiltonian at a configuration.
+
+    Args:
+      params: network parameters.
+      key: JAX PRNG state.
+      data: MCMC configuration to evaluate.
+    """
+
+
+class MakeLocalEnergy(Protocol):
+
+  def __call__(self,
+               f: networks.LogFermiNetLike,
+               atoms: jnp.ndarray,
+               charges: jnp.ndarray,
+               use_scan: bool = False,
+               **kwargs: Any) -> LocalEnergy:
+    """Builds the LocalEnergy function.
+
+    Args:
+      f: Callable which evaluates the log of the magnitude of the wavefunction.
+      atoms: atomic positions.
+      charges: nuclear charges.
+      use_scan: Whether to use a `lax.scan` for computing the laplacian.
+      **kwargs: additional kwargs to use for creating the specific Hamiltonian.
+    """
 
 
 def local_kinetic_energy(

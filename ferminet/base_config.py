@@ -126,6 +126,14 @@ def default() -> ml_collections.ConfigDict:
           # other related values. Returns the ConfigDict
           # with these set. Note: modifications may also
           # be performed in-place.
+          # String set to module.make_local_energy, where make_local_energy is a
+          # callable (type: MakeLocalEnergy) which creates a function which
+          # evaluates the local energy and module is the absolute module
+          # containing make_local_energy.
+          # If not set, hamiltonian.local_energy is used.
+          'make_local_energy_fn': '',
+          # Additional kwargs to pass into make_local_energy_fn.
+          'make_local_energy_kwargs': {},
       },
       'mcmc': {
           # Note: HMC options are not currently used.

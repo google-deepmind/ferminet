@@ -37,6 +37,7 @@ REQUIRED_PACKAGES = [
     'pyblock',
     'scipy',
     'tables',
+    'typing_extensions',
 ]
 
 

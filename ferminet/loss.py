@@ -46,18 +46,15 @@ class AuxiliaryLossData:
 
 
 def make_loss(network: networks.LogFermiNetLike,
-              atoms: jnp.ndarray,
-              charges: jnp.ndarray,
+              local_energy: hamiltonian.LocalEnergy,
               clip_local_energy: float = 0.0) -> TotalEnergy:
   """Creates the loss function, including custom gradients.
 
   Args:
-    network: function, signature (params, data), which evaluates the log of the
-      magnitude of the wavefunction (square root of the log probability
-      distribution) at the single MCMC configuration in data given the network
-      parameters.
-    atoms: array of (natoms, ndim) specifying the positions of the nuclei.
-    charges: array of (natoms) specifying the nuclear charges.
+    network: callable which evaluates the log of the magnitude of the
+      wavefunction (square root of the log probability distribution) at a
+      single MCMC configuration given the network parameters.
+    local_energy: callable which evaluates the local energy.
     clip_local_energy: If greater than zero, clip local energies that are
       outside [E_L - n D, E_L + n D], where E_L is the mean local energy, n is
       this value and D the mean absolute deviation of the local energies from
@@ -69,7 +66,6 @@ def make_loss(network: networks.LogFermiNetLike,
     loss is the mean energy, and aux_data is an AuxiliaryLossDataobject. The
     loss is averaged over the batch and over all devices inside a pmap.
   """
-  local_energy = hamiltonian.local_energy(network, atoms, charges)
   batch_local_energy = jax.vmap(local_energy, in_axes=(None, 0, 0), out_axes=0)
   batch_network = jax.vmap(network, in_axes=(None, 0), out_axes=0)
 
