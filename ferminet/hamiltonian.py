@@ -14,7 +14,7 @@
 
 """Evaluating the Hamiltonian on a wavefunction."""
 
-from typing import Any
+from typing import Any, Sequence
 
 import chex
 from ferminet import networks
@@ -43,6 +43,7 @@ class MakeLocalEnergy(Protocol):
                f: networks.LogFermiNetLike,
                atoms: jnp.ndarray,
                charges: jnp.ndarray,
+               spins: Sequence[int],
                use_scan: bool = False,
                **kwargs: Any) -> LocalEnergy:
     """Builds the LocalEnergy function.
@@ -51,6 +52,7 @@ class MakeLocalEnergy(Protocol):
       f: Callable which evaluates the log of the magnitude of the wavefunction.
       atoms: atomic positions.
       charges: nuclear charges.
+      spins: Number of particles of each spin.
       use_scan: Whether to use a `lax.scan` for computing the laplacian.
       **kwargs: additional kwargs to use for creating the specific Hamiltonian.
     """
@@ -115,6 +117,7 @@ def potential_energy(r_ae: jnp.ndarray, r_ee: jnp.ndarray, atoms: jnp.ndarray,
 def local_energy(f: networks.LogFermiNetLike,
                  atoms: jnp.ndarray,
                  charges: jnp.ndarray,
+                 spins: Sequence[int],
                  use_scan: bool = False) -> LocalEnergy:
   """Creates the function to evaluate the local energy.
 
@@ -123,6 +126,7 @@ def local_energy(f: networks.LogFermiNetLike,
       the network parameters and configurations data.
     atoms: Shape (natoms, ndim). Positions of the atoms.
     charges: Shape (natoms). Nuclear charges of the atoms.
+    spins: Number of particles of each spin.
     use_scan: Whether to use a `lax.scan` for computing the laplacian.
 
   Returns:
@@ -130,6 +134,7 @@ def local_energy(f: networks.LogFermiNetLike,
     energy of the wavefunction given the parameters params, RNG state key,
     and a single MCMC configuration in data.
   """
+  del spins
   ke = local_kinetic_energy(f, use_scan=use_scan)
 
   def _e_l(params: networks.ParamTree, key: chex.PRNGKey,

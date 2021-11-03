@@ -111,7 +111,8 @@ class HamiltonianTest(jtu.JaxTestCase):
     atoms = np.zeros(shape=(1, 3))
     charges = np.ones(shape=(1,))
     params = np.zeros(shape=(1,))
-    local_energy = hamiltonian.local_energy(h_atom_log_psi, atoms, charges)
+    local_energy = hamiltonian.local_energy(
+        h_atom_log_psi, atoms, charges, spins=(1, 0), use_scan=False)
 
     xs = np.random.normal(size=(100, 3))
     key = jax.random.PRNGKey(4)

@@ -309,11 +309,16 @@ def train(cfg: ml_collections.ConfigDict):
         cfg.system.make_local_energy_fn.rsplit('.', maxsplit=1))
     local_energy_module = importlib.import_module(local_energy_module)
     make_local_energy = getattr(local_energy_module, local_energy_fn)  # type: hamiltonian.MakeLocalEnergy
-    local_energy = make_local_energy(network, atoms, charges, False,
-                                     **cfg.system.make_local_energy_kwargs)
+    local_energy = make_local_energy(
+        f=network,
+        atoms=atoms,
+        charges=charges,
+        spins=spins,
+        use_scan=False,
+        **cfg.system.make_local_energy_kwargs)
   else:
-    make_local_energy = hamiltonian.local_energy  # type: hamiltonian.MakeLocalEnergy
-    local_energy = make_local_energy(network, atoms, charges, False)
+    local_energy = hamiltonian.local_energy(
+        f=network, atoms=atoms, charges=charges, spins=spins, use_scan=False)
   total_energy = qmc_loss_functions.make_loss(
       network,
       local_energy,
