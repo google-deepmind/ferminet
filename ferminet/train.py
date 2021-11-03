@@ -180,7 +180,7 @@ def train(cfg: ml_collections.ConfigDict):
     ValueError: if an illegal or unsupported value in cfg is detected.
   """
   # Device logging
-  num_devices = jax.device_count()
+  num_devices = jax.local_device_count()
   logging.info('Starting QMC with %i XLA devices', num_devices)
   if cfg.batch_size % num_devices != 0:
     raise ValueError('Batch size must be divisible by number of devices, '
