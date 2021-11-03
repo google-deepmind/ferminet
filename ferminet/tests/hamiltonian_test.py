@@ -135,14 +135,14 @@ class LaplacianTest(jtu.JaxTestCase):
     self.assertArraysAllClose(t_l, hess_t)
 
   def test_fermi_net_laplacian(self):
-    natoms = 3
+    natoms = 2
     np.random.seed(12)
     atoms = np.random.uniform(low=-5.0, high=5.0, size=(natoms, 3))
-    spins = (5, 6)
+    spins = (3, 4)
     charges = list(range(3, 3+natoms*2, 2))
-    batch = 20
+    batch = 10
     cfg = base_config.default()
-    cfg.network.detnet.hidden_dims = ((32, 8),)*2
+    cfg.network.detnet.hidden_dims = ((8, 4),)*2
     cfg.network.detnet.determinants = 2
     network_init, signed_network = networks.make_fermi_net(
         atoms, spins, charges, **cfg.network.detnet)
