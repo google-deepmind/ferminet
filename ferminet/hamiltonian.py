@@ -40,7 +40,7 @@ class LocalEnergy(Protocol):
 class MakeLocalEnergy(Protocol):
 
   def __call__(self,
-               f: networks.LogFermiNetLike,
+               f: networks.FermiNetLike,
                atoms: jnp.ndarray,
                charges: jnp.ndarray,
                spins: Sequence[int],
@@ -49,7 +49,8 @@ class MakeLocalEnergy(Protocol):
     """Builds the LocalEnergy function.
 
     Args:
-      f: Callable which evaluates the log of the magnitude of the wavefunction.
+      f: Callable which evaluates the sign and log of the magnitude of the
+        wavefunction.
       atoms: atomic positions.
       charges: nuclear charges.
       spins: Number of particles of each spin.
@@ -114,7 +115,7 @@ def potential_energy(r_ae: jnp.ndarray, r_ee: jnp.ndarray, atoms: jnp.ndarray,
   return v_ee + v_ae + v_aa
 
 
-def local_energy(f: networks.LogFermiNetLike,
+def local_energy(f: networks.FermiNetLike,
                  atoms: jnp.ndarray,
                  charges: jnp.ndarray,
                  spins: Sequence[int],
@@ -122,8 +123,8 @@ def local_energy(f: networks.LogFermiNetLike,
   """Creates the function to evaluate the local energy.
 
   Args:
-    f: Callable which returns the log of the magnitude of the wavefunction given
-      the network parameters and configurations data.
+    f: Callable which returns the sign and log of the magnitude of the
+      wavefunction given the network parameters and configurations data.
     atoms: Shape (natoms, ndim). Positions of the atoms.
     charges: Shape (natoms). Nuclear charges of the atoms.
     spins: Number of particles of each spin.
@@ -135,7 +136,8 @@ def local_energy(f: networks.LogFermiNetLike,
     and a single MCMC configuration in data.
   """
   del spins
-  ke = local_kinetic_energy(f, use_scan=use_scan)
+  log_abs_f = lambda *args, **kwargs: f(*args, **kwargs)[1]
+  ke = local_kinetic_energy(log_abs_f, use_scan=use_scan)
 
   def _e_l(params: networks.ParamTree, key: chex.PRNGKey,
            data: jnp.ndarray) -> jnp.ndarray:

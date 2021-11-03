@@ -30,6 +30,11 @@ def h_atom_log_psi(param, xs):
   return -jnp.abs(jnp.linalg.norm(xs))
 
 
+def h_atom_log_psi_signed(param, xs):
+  log_psi = h_atom_log_psi(param, xs)
+  return jnp.ones_like(log_psi), log_psi
+
+
 def kinetic_from_hessian(log_f):
 
   def kinetic_operator(params, x):
@@ -112,7 +117,7 @@ class HamiltonianTest(jtu.JaxTestCase):
     charges = np.ones(shape=(1,))
     params = np.zeros(shape=(1,))
     local_energy = hamiltonian.local_energy(
-        h_atom_log_psi, atoms, charges, spins=(1, 0), use_scan=False)
+        h_atom_log_psi_signed, atoms, charges, spins=(1, 0), use_scan=False)
 
     xs = np.random.normal(size=(100, 3))
     key = jax.random.PRNGKey(4)
