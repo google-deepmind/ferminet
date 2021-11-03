@@ -14,13 +14,23 @@
 
 """Helper functions to create the loss and custom gradient of the loss."""
 
+from typing import Callable, Tuple
+
 import chex
 from ferminet import constants
 from ferminet import hamiltonian
+from ferminet import networks
 import jax
 import jax.numpy as jnp
 
 from kfac_ferminet_alpha import loss_functions
+
+
+# Evaluation of total energy.
+# (params, key, (electrons, atoms)) -> energy, auxiliary_loss_data
+TotalEnergy = Callable[
+    [networks.ParamTree, chex.PRNGKey, Tuple[jnp.ndarray, jnp.ndarray]],
+    Tuple[jnp.ndarray, 'AuxiliaryLossData']]
 
 
 @chex.dataclass
@@ -35,7 +45,10 @@ class AuxiliaryLossData:
   local_energy: jnp.DeviceArray
 
 
-def make_loss(network, atoms, charges, clip_local_energy=0.0):
+def make_loss(network: networks.LogFermiNetLike,
+              atoms: jnp.ndarray,
+              charges: jnp.ndarray,
+              clip_local_energy: float = 0.0) -> TotalEnergy:
   """Creates the loss function, including custom gradients.
 
   Args:
@@ -56,12 +69,16 @@ def make_loss(network, atoms, charges, clip_local_energy=0.0):
     loss is the mean energy, and aux_data is an AuxiliaryLossDataobject. The
     loss is averaged over the batch and over all devices inside a pmap.
   """
-  el_fun = hamiltonian.local_energy(network, atoms, charges)
-  batch_local_energy = jax.vmap(el_fun, in_axes=(None, 0, 0), out_axes=0)
+  local_energy = hamiltonian.local_energy(network, atoms, charges)
+  batch_local_energy = jax.vmap(local_energy, in_axes=(None, 0, 0), out_axes=0)
   batch_network = jax.vmap(network, in_axes=(None, 0), out_axes=0)
 
   @jax.custom_jvp
-  def total_energy(params, key, data):
+  def total_energy(
+      params: networks.ParamTree,
+      key: chex.PRNGKey,
+      data: jnp.ndarray,
+  ) -> Tuple[jnp.ndarray, AuxiliaryLossData]:
     """Evaluates the total energy of the network for a batch of configurations.
 
     Note: the signature of this function is fixed to match that expected by
