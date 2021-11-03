@@ -361,7 +361,7 @@ def train(cfg: ml_collections.ConfigDict):
   # The actual training loop
 
   if mcmc_width_ckpt is not None:
-    mcmc_width = mcmc_width_ckpt
+    mcmc_width = kfac_utils.replicate_all_local_devices(mcmc_width_ckpt[0])
   else:
     mcmc_width = kfac_utils.replicate_all_local_devices(
         jnp.asarray(cfg.mcmc.move_width))
