@@ -57,16 +57,21 @@ def make_loss(network, atoms, charges, clip_local_energy=0.0):
     loss is averaged over the batch and over all devices inside a pmap.
   """
   el_fun = hamiltonian.local_energy(network, atoms, charges)
-  batch_local_energy = jax.vmap(el_fun, in_axes=(None, 0), out_axes=0)
+  batch_local_energy = jax.vmap(el_fun, in_axes=(None, 0, 0), out_axes=0)
   batch_network = jax.vmap(network, in_axes=(None, 0), out_axes=0)
 
   @jax.custom_jvp
-  def total_energy(params, data):
+  def total_energy(params, key, data):
     """Evaluates the total energy of the network for a batch of configurations.
+
+    Note: the signature of this function is fixed to match that expected by
+    kfac_jax.optimizer.Optimizer with value_func_has_rng=True and
+    value_func_has_aux=True.
 
     Args:
       params: parameters to pass to the network.
-      data: (batched) MCMC configurations to pass to the network.
+      key: PRNG state.
+      data: Batched MCMC configurations to pass to the local energy function.
 
     Returns:
       (loss, aux_data), where loss is the mean energy, and aux_data is an
@@ -74,7 +79,8 @@ def make_loss(network, atoms, charges, clip_local_energy=0.0):
       local energy per MCMC configuration. The loss and variance are averaged
       over the batch and over all devices inside a pmap.
     """
-    e_l = batch_local_energy(params, data)
+    keys = jax.random.split(key, num=data.shape[0])
+    e_l = batch_local_energy(params, keys, data)
     loss = constants.pmean(jnp.mean(e_l))
     variance = constants.pmean(jnp.mean((e_l - loss)**2))
     return loss, AuxiliaryLossData(variance=variance, local_energy=e_l)
@@ -82,18 +88,25 @@ def make_loss(network, atoms, charges, clip_local_energy=0.0):
   @total_energy.defjvp
   def total_energy_jvp(primals, tangents):  # pylint: disable=unused-variable
     """Custom Jacobian-vector product for unbiased local energy gradients."""
-    params, data = primals
-    loss, aux_data = total_energy(params, data)
+    params, key, data = primals
+    loss, aux_data = total_energy(params, key, data)
 
     if clip_local_energy > 0.0:
       # Try centering the window around the median instead of the mean?
       tv = jnp.mean(jnp.abs(aux_data.local_energy - loss))
       tv = constants.pmean(tv)
-      diff = jnp.clip(aux_data.local_energy, loss - clip_local_energy * tv,
+      diff = jnp.clip(aux_data.local_energy,
+                      loss - clip_local_energy * tv,
                       loss + clip_local_energy * tv) - loss
     else:
       diff = aux_data.local_energy - loss
 
+    # Due to the simultaneous requirements of KFAC (calling convention must be
+    # (params, rng, data)) and Laplacian calculation (only want to take
+    # Laplacian wrt electron positions) we need to change up the calling
+    # convention between total_energy and batch_network
+    primals = primals[0], primals[2]
+    tangents = tangents[0], tangents[2]
     psi_primal, psi_tangent = jax.jvp(batch_network, primals, tangents)
     loss_functions.register_normal_predictive_distribution(psi_primal[:, None])
     primals_out = loss, aux_data

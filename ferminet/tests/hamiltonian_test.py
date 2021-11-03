@@ -114,7 +114,10 @@ class HamiltonianTest(jtu.JaxTestCase):
     local_energy = hamiltonian.local_energy(h_atom_log_psi, atoms, charges)
 
     xs = np.random.normal(size=(100, 3))
-    energies = jax.vmap(local_energy, in_axes=(None, 0))(params, xs)
+    key = jax.random.PRNGKey(4)
+    keys = jax.random.split(key, num=xs.shape[0])
+    batch_local_energy = jax.vmap(local_energy, in_axes=(None, 0, 0))
+    energies = batch_local_energy(params, keys, xs)
 
     self.assertArraysAllClose(energies, -0.5 * np.ones_like(energies))
 
@@ -124,7 +127,9 @@ class LaplacianTest(jtu.JaxTestCase):
   def test_laplacian(self):
 
     xs = np.random.uniform(size=(100, 3))
-    t_l = jax.vmap(hamiltonian.local_kinetic_energy(h_atom_log_psi))(None, xs)
+    t_l = jax.vmap(
+        hamiltonian.local_kinetic_energy(h_atom_log_psi),
+        in_axes=(None, 0))(None, xs)
     hess_t = jax.vmap(
         kinetic_from_hessian(h_atom_log_psi), in_axes=(None, 0))(None, xs)
     self.assertArraysAllClose(t_l, hess_t)

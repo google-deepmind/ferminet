@@ -133,10 +133,11 @@ def make_training_step(mcmc_step, val_and_grad, opt_update):
     """
     # MCMC loop
     # Should this be created outside the function?
-    data, pmove = mcmc_step(params, data, key, mcmc_width)
+    mcmc_key, loss_key = jax.random.split(key, num=2)
+    data, pmove = mcmc_step(params, data, mcmc_key, mcmc_width)
 
     # Optimization step
-    (loss, aux_data), search_direction = val_and_grad(params, data)
+    (loss, aux_data), search_direction = val_and_grad(params, loss_key, data)
     search_direction = constants.pmean(search_direction)
     state, params = opt_update(t, search_direction, params, state)
     return data, params, state, loss, aux_data, pmove
@@ -191,7 +192,8 @@ def train(cfg: ml_collections.ConfigDict):
     # molecule configuration (via system.Atom) assume 3D systems. This can be
     # lifted with a little work.
     raise ValueError('Only 3D systems are currently supported.')
-  data_shape = (num_devices, cfg.batch_size // num_devices)
+  device_batch_size = cfg.batch_size // num_devices  # batch size per device
+  data_shape = (num_devices, device_batch_size)
 
   # Check if mol is a pyscf molecule and convert to internal representation
   if cfg.system.pyscf_mol:
@@ -295,7 +297,7 @@ def train(cfg: ml_collections.ConfigDict):
   atoms_to_mcmc = atoms if cfg.mcmc.scale_by_nuclear_distance else None
   mcmc_step = mcmc.make_mcmc_step(
       batch_network,
-      cfg.batch_size // num_devices,
+      device_batch_size,
       steps=cfg.mcmc.steps,
       atoms=atoms_to_mcmc,
       one_electron_moves=cfg.mcmc.one_electron)
@@ -319,6 +321,7 @@ def train(cfg: ml_collections.ConfigDict):
         l2_reg=cfg.optim.kfac.l2_reg,
         norm_constraint=cfg.optim.kfac.norm_constraint,
         value_func_has_aux=True,
+        value_func_has_rng=True,
         learning_rate_schedule=learning_rate_schedule,
         curvature_ema=cfg.optim.kfac.cov_ema_decay,
         inverse_update_period=cfg.optim.kfac.invert_every,
@@ -377,8 +380,9 @@ def train(cfg: ml_collections.ConfigDict):
       sharded_key, subkeys = kfac_utils.p_split(sharded_key)
       data, pmove = mcmc_step(params, data, subkeys, mcmc_width)
     logging.info('Completed burn-in MCMC steps')
+    sharded_key, subkeys = kfac_utils.p_split(sharded_key)
     logging.info('Initial energy: %03.4f E_h',
-                 total_energy(params, data)[0])
+                 total_energy(params, subkeys, data)[0])
 
   time_of_last_ckpt = time.time()
 

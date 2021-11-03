@@ -88,22 +88,24 @@ def local_energy(f, atoms, charges, use_scan: bool = False):
     use_scan: Whether to use a `lax.scan` for computing the laplacian.
 
   Returns:
-    Callable with signature e_l(params, data) which evaluates the local energy
-    of the wavefunction given the parameters params and a single MCMC
-    configuration in data.
+    Callable with signature e_l(params, key, data) which evaluates the local
+    energy of the wavefunction given the parameters params, RNG state key,
+    and a single MCMC configuration in data.
   """
   ke = local_kinetic_energy(f, use_scan=use_scan)
 
-  def _e_l(params, x):
+  def _e_l(params, key, data):
     """Returns the total energy.
 
     Args:
       params: network parameters.
-      x: MCMC configuration.
+      key: RNG state.
+      data: MCMC configuration.
     """
-    _, _, r_ae, r_ee = networks.construct_input_features(x, atoms)
+    del key  # unused
+    _, _, r_ae, r_ee = networks.construct_input_features(data, atoms)
     potential = potential_energy(r_ae, r_ee, atoms, charges)
-    kinetic = ke(params, x)
+    kinetic = ke(params, data)
     return potential + kinetic
 
   return _e_l
