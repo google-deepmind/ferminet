@@ -341,7 +341,6 @@ def train(cfg: ml_collections.ConfigDict):
         optax.scale_by_schedule(learning_rate_schedule),
         optax.scale(-1))
   elif cfg.optim.optimizer == 'none':
-    total_energy = constants.pmap(total_energy)
     opt_state = None
   else:
     raise ValueError(f'Not a recognized optimizer: {cfg.optim.optimizer}')
@@ -357,6 +356,7 @@ def train(cfg: ml_collections.ConfigDict):
     step = make_training_step(mcmc_step, val_and_grad, opt_update)
   # Only the pmapped MCMC step is needed after this point
   mcmc_step = constants.pmap(mcmc_step, donate_argnums=1)
+  total_energy = constants.pmap(total_energy)
 
   # The actual training loop
 
@@ -378,7 +378,7 @@ def train(cfg: ml_collections.ConfigDict):
       data, pmove = mcmc_step(params, data, subkeys, mcmc_width)
     logging.info('Completed burn-in MCMC steps')
     logging.info('Initial energy: %03.4f E_h',
-                 constants.pmap(total_energy)(params, data)[0])
+                 total_energy(params, data)[0])
 
   time_of_last_ckpt = time.time()
 
