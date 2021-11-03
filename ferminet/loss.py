@@ -110,7 +110,8 @@ def make_loss(network, atoms, charges, clip_local_energy=0.0):
     psi_primal, psi_tangent = jax.jvp(batch_network, primals, tangents)
     loss_functions.register_normal_predictive_distribution(psi_primal[:, None])
     primals_out = loss, aux_data
-    tangents_out = (jnp.dot(psi_tangent, diff), aux_data)
+    device_batch_size = jnp.shape(aux_data.local_energy)[0]
+    tangents_out = (jnp.dot(psi_tangent, diff) / device_batch_size, aux_data)
     return primals_out, tangents_out
 
   return total_energy

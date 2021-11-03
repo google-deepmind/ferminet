@@ -56,7 +56,7 @@ def default() -> ml_collections.ConfigDict:
           'iterations': 1000000,  # number of iterations
           'optimizer': 'kfac',  # one of adam, kfac, lamb, none
           'lr': {
-              'rate': 1.e-4,  # learning rate
+              'rate': 0.05,  # learning rate
               'decay': 1.0,  # exponent of learning rate decay
               'delay': 10000.0,  # term that sets the scale of the rate decay
           },
