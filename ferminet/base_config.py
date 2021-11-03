@@ -26,7 +26,7 @@ class SystemType(enum.IntEnum):
   WARNING: enum members cannot be serialised readily so use
   SystemType.member.value in such cases.
   """
-  MOLECULE = 0
+  MOLECULE = enum.auto()
 
   @classmethod
   def has_value(cls, value):
