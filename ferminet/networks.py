@@ -592,13 +592,14 @@ def fermi_net_orbitals(params, x,
   # Drop unoccupied spin channels
   h_to_orbitals = [h for h, spin in zip(h_to_orbitals, spins) if spin > 0]
   active_spin_channels = [spin for spin in spins if spin > 0]
+  active_spin_partitions = _partition_spins(active_spin_channels)
 
   orbitals = [
       linear_layer(h, **p) for h, p in zip(h_to_orbitals, params['orbital'])
   ]
   if envelope_type in ['isotropic', 'diagonal', 'full']:
     orbitals = [envelope(te, param)*orbital for te, orbital, param in
-                zip(jnp.split(to_env, active_spin_channels[:-1], axis=0),
+                zip(jnp.split(to_env, active_spin_partitions, axis=0),
                     orbitals, params['envelope'])]
   # Reshape into matrices.
   orbitals = [jnp.reshape(orbital, [spin, -1, sum(spins) if full_det else spin])
