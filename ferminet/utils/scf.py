@@ -112,7 +112,6 @@ class Scf:
       self._mean_field = pyscf.scf.RHF(self._mol)
     else:
       self._mean_field = pyscf.scf.UHF(self._mol)
-    self._mean_field.init_guess = 'atom'
     self._mean_field.kernel()
     return self._mean_field
 
