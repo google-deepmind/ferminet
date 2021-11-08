@@ -107,21 +107,23 @@ def default() -> ml_collections.ConfigDict:
       },
       'system': {
           'type': SystemType.MOLECULE.value,
-          # Alternatively, set 'set_molecule' to a function which takes the
-          # ConfigDict as the sole argument and sets the molecule value (and any
-          # other related values) in the ConfigDict.
+          # Specify the system.
+          # 1. Specify the system by setting variables below.
+          # list of system.Atom objects with element type and position.
           'molecule': config_dict.placeholder(list),
-          # Users can pass in a pyscf_mol here, instead of the internal
-          # representation.
-          'pyscf_mol': None,
-          'electrons': tuple(),  # electrons in system
-          # Change with care. FermiNet implementation currently assumes 3D
-          # systems.
+          # number of spin up, spin-down electrons
+          'electrons': tuple(),
+          # Dimensionality. Change with care. FermiNet implementation currently
+          # assumes 3D systems.
           'ndim': 3,
           # Units of *input* coords of atoms. Either 'bohr' or
           # 'angstrom'. Internally work in a.u.; positions in
           # Angstroms are converged to Bohr.
           'units': 'bohr',
+          # 2. Specify the system using pyscf. Must be a pyscf.gto.Mole object.
+          'pyscf_mol': None,
+          # 3. Specify the system inside a function evaluated after the config
+          # has been parsed.
           # Callable[ConfigDict] -> ConfigDict which sets molecule and
           # other related values and returns the ConfigDict with these set.
           # Note: modifications may also be performed in-place.
