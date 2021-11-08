@@ -20,6 +20,7 @@ from absl.testing import parameterized
 from ferminet.utils import system
 from ferminet.utils import units
 import numpy as np
+import pyscf
 
 
 class SystemAtomCoordsTest(absltest.TestCase):
@@ -94,6 +95,60 @@ class SystemCreationsTest(parameterized.TestCase):
       self.assertAlmostEqual(atom.coords[2], 0)
       theta = np.abs(np.arctan(atom.coords[1] / atom.coords[0]))
       self.assertAlmostEqual(theta, angle)
+
+
+class PyscfConversionTest(parameterized.TestCase):
+
+  @parameterized.parameters([
+      {
+          'mol_string': 'H 0 0 -1; H 0 0 1'
+      },
+      {
+          'mol_string': 'O 0 0 0; H  0 1 0; H 0 0 1'
+      },
+      {
+          'mol_string': 'H 0 0 0; Cl 0 0 1.1'
+      },
+  ])
+  def test_conversion_pyscf(self, mol_string):
+    mol = pyscf.gto.Mole()
+    mol.build(
+        atom=mol_string,
+        basis='sto-3g', unit='bohr')
+    cfg = system.pyscf_mol_to_internal_representation(mol)
+    # Assert that the alpha and beta electrons are the same
+    self.assertEqual(mol.nelec, cfg.system.electrons)
+    # Assert that the basis are the same
+    self.assertEqual(mol.basis, cfg.pretrain.basis)
+    # Assert that atom symbols are the same
+    self.assertEqual([mol.atom_symbol(i) for i in range(mol.natm)],
+                     [atom.symbol for atom in cfg.system.molecule])
+    # Assert that atom coordinates are the same
+    pyscf_coords = [mol.atom_coords()[i] for i in range(mol.natm)]
+    internal_coords = [np.array(atom.coords) for atom in cfg.system.molecule]
+    np.testing.assert_allclose(pyscf_coords, internal_coords)
+
+  def test_conversion_pyscf_ang(self):
+    mol = pyscf.gto.Mole()
+    mol.build(
+        atom='H 0 0 -1; H 0 0 1',
+        basis='sto-3g', unit='ang')
+    cfg = system.pyscf_mol_to_internal_representation(mol)
+    # Assert that the coordinates are now in bohr internally
+    bohr_coords = [[0, 0, -units.BOHR_ANGSTROM], [0, 0, units.BOHR_ANGSTROM]]
+    np.testing.assert_allclose([atom.coords for atom in cfg.system.molecule],
+                               bohr_coords)
+    # Assert that the alpha and beta electrons are the same
+    self.assertEqual(mol.nelec, cfg.system.electrons)
+    # Assert that the basis are the same
+    self.assertEqual(mol.basis, cfg.pretrain.basis)
+    # Assert that atom symbols are the same
+    self.assertEqual([mol.atom_symbol(i) for i in range(mol.natm)],
+                     [atom.symbol for atom in cfg.system.molecule])
+    # Assert that atom coordinates are the same
+    pyscf_coords = [mol.atom_coords()[i] for i in range(mol.natm)]
+    internal_coords = [np.array(atom.coords) for atom in cfg.system.molecule]
+    np.testing.assert_allclose(pyscf_coords, internal_coords)
 
 
 if __name__ == '__main__':

@@ -18,7 +18,9 @@ from typing import Sequence
 import attr
 from ferminet.utils import elements
 from ferminet.utils import units as unit_conversion
+import ml_collections
 import numpy as np
+import pyscf
 
 
 # Default bond lengths in angstrom for some diatomics.
@@ -270,3 +272,30 @@ def h4_circle(r, theta, units='bohr'):
            coords=(-r*np.cos(theta), -r*np.sin(theta), 0.0),
            units=units)
   ], (2, 2)
+
+
+def pyscf_mol_to_internal_representation(
+    mol: pyscf.gto.Mole) -> ml_collections.ConfigDict:
+  """Converts a PySCF Mole object to an internal representation.
+
+  Args:
+    mol: Mole object describing the system of interest.
+
+  Returns:
+    A ConfigDict with the fields required to describe the system set.
+  """
+  # Ensure Mole is built so all attributes are appropriately set.
+  mol.build()
+  atoms = [
+      Atom(mol.atom_symbol(i), mol.atom_coord(i))
+      for i in range(mol.natm)
+  ]
+  return ml_collections.ConfigDict({
+      'system': {
+          'molecule': atoms,
+          'electrons': mol.nelec,
+      },
+      'pretrain': {
+          'basis': mol.basis
+      },
+  })
