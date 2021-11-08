@@ -255,13 +255,25 @@ def train(cfg: ml_collections.ConfigDict):
 
   if (t_init == 0 and cfg.pretrain.method == 'hf' and
       cfg.pretrain.iterations > 0):
+    orbitals = functools.partial(
+        networks.fermi_net_orbitals,
+        atoms=atoms,
+        spins=cfg.system.electrons,
+        envelope_type=cfg.network.envelope_type,
+        full_det=cfg.network.full_det)
+    batch_orbitals = jax.vmap(
+        lambda params, data: orbitals(params, data)[0],
+        in_axes=(None, 0),
+        out_axes=0)
     sharded_key, subkeys = kfac_utils.p_split(sharded_key)
     params, data = pretrain.pretrain_hartree_fock(
         params,
         data,
         batch_network,
+        batch_orbitals,
         subkeys,
-        cfg.system.molecule,
+        atoms,
+        charges,
         cfg.system.electrons,
         scf_approx=hartree_fock,
         envelope_type=cfg.network.envelope_type,

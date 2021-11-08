@@ -14,9 +14,10 @@
 
 """Utilities for pretraining and importing PySCF models."""
 
-from typing import Sequence, Tuple, Optional
+from typing import Callable, Optional, Sequence, Tuple, Union
 
 from absl import logging
+import chex
 from ferminet import constants
 from ferminet import mcmc
 from ferminet import networks
@@ -30,25 +31,28 @@ import pyscf
 
 from kfac_ferminet_alpha import utils as kfac_utils
 
+# Given the parameters and electron positions, return arrays(s) of the orbitals.
+# See networks.fermi_net_orbitals. (Note only the orbitals, and not envelope
+# parameters, are required.)
+FermiNetOrbitals = Callable[[networks.ParamTree, jnp.ndarray],
+                            Sequence[jnp.ndarray]]
+
 
 def get_hf(molecule: Optional[Sequence[system.Atom]] = None,
            spins: Optional[Tuple[int, int]] = None,
            basis: Optional[str] = 'sto-3g',
            pyscf_mol: Optional[pyscf.gto.Mole] = None,
-           restricted: Optional[bool] = False):
-  """Returns a function that computes Hartree-Fock solution to the system.
+           restricted: Optional[bool] = False) -> scf.Scf:
+  """Returns an Scf object with the Hartree-Fock solution to the system.
 
   Args:
     molecule: the molecule in internal format.
     spins: tuple with number of spin up and spin down electrons.
-    basis: basis set to use in Hartree-Fock calculatoin.
+    basis: basis set to use in Hartree-Fock calculation.
     pyscf_mol: pyscf Mole object defining the molecule. If supplied,
       molecule, spins and basis are ignored.
     restricted: If true, perform a restricted Hartree-Fock calculation,
       otherwise perform an unrestricted Hartree-Fock calculation.
-
-  Returns:
-    object that contains result of PySCF calculation.
   """
   if pyscf_mol:
     scf_approx = scf.Scf(pyscf_mol=pyscf_mol, restricted=restricted)
@@ -59,7 +63,8 @@ def get_hf(molecule: Optional[Sequence[system.Atom]] = None,
   return scf_approx
 
 
-def eval_orbitals(scf_approx, pos, spins):
+def eval_orbitals(scf_approx: scf.Scf, pos: Union[np.ndarray, jnp.ndarray],
+                  spins: Tuple[int, int]) -> Tuple[np.ndarray, np.ndarray]:
   """Evaluates SCF orbitals from PySCF at a set of positions.
 
   Args:
@@ -78,8 +83,8 @@ def eval_orbitals(scf_approx, pos, spins):
   if not isinstance(pos, np.ndarray):  # works even with JAX array
     try:
       pos = pos.copy()
-    except AttributeError as e:
-      raise ValueError('Input must be either NumPy or JAX array.') from e
+    except AttributeError as exc:
+      raise ValueError('Input must be either NumPy or JAX array.') from exc
   leading_dims = pos.shape[:-1]
   # split into separate electrons
   pos = np.reshape(pos, [-1, 3])  # (batch*nelec, 3)
@@ -93,7 +98,8 @@ def eval_orbitals(scf_approx, pos, spins):
   return alpha_spin, beta_spin
 
 
-def eval_slater(scf_approx, pos, spins):
+def eval_slater(scf_approx: scf.Scf, pos: Union[jnp.ndarray, np.ndarray],
+                spins: Tuple[int, int]) -> Tuple[np.ndarray, np.ndarray]:
   """Evaluates the Slater determinant.
 
   Args:
@@ -114,10 +120,10 @@ def eval_slater(scf_approx, pos, spins):
 
 
 def make_pretrain_step(batch_envelope_fn,
-                       batch_orbitals,
-                       batch_network,
-                       optimizer,
-                       full_det=False):
+                       batch_orbitals: FermiNetOrbitals,
+                       batch_network: networks.LogFermiNetLike,
+                       optimizer_update: optax.TransformUpdateFn,
+                       full_det: bool = False):
   """Creates function for performing one step of Hartre-Fock pretraining.
 
   Args:
@@ -130,10 +136,10 @@ def make_pretrain_step(batch_envelope_fn,
       parameters and a batch of electron positions, returns the orbitals in
       the network evaluated at those positions.
     batch_network: callable with signature f(params, data), which given network
-      parameters and a batch of electron positions, returns the entire
-      (wavefunction) network  evaluated at those positions.
-    optimizer: optimizer object which has an update method (i.e. conforms to the
-      optax API).
+      parameters and a batch of electron positions, returns the log of the
+      magnitude of the (wavefunction) network  evaluated at those positions.
+    optimizer_update: callable for transforming the gradients into an update (ie
+      conforms to the optax API).
     full_det: If true, evaluate all electrons in a single determinant.
       Otherwise, evaluate products of alpha- and beta-spin determinants.
 
@@ -168,7 +174,7 @@ def make_pretrain_step(batch_envelope_fn,
     val_and_grad = jax.value_and_grad(loss_fn, argnums=1)
     loss_val, search_direction = val_and_grad(data, params, target)
     search_direction = constants.pmean(search_direction)
-    updates, state = optimizer.update(search_direction, state, params)
+    updates, state = optimizer_update(search_direction, state, params)
     params = optax.apply_updates(params, updates)
     data, key, logprob, _ = mcmc.mh_update(params, batch_network, data, key,
                                            logprob, 0)
@@ -177,26 +183,35 @@ def make_pretrain_step(batch_envelope_fn,
   return pretrain_step
 
 
-def pretrain_hartree_fock(params,
-                          data,
-                          batch_network,
-                          sharded_key,
-                          molecule,
-                          electrons,
-                          scf_approx,
-                          envelope_type='full',
-                          full_det=False,
-                          iterations=1000):
+def pretrain_hartree_fock(
+    params: networks.ParamTree,
+    data: jnp.ndarray,
+    batch_network: networks.FermiNetLike,
+    batch_orbitals: FermiNetOrbitals,
+    sharded_key: chex.PRNGKey,
+    atoms: jnp.ndarray,
+    charges: jnp.ndarray,
+    electrons: Tuple[int, int],
+    scf_approx: scf.Scf,
+    envelope_type: str = 'full',
+    full_det: bool = False,
+    iterations: int = 1000,
+    logger: Optional[Callable[[int, float], None]] = None,
+):
   """Performs training to match initialization as closely as possible to HF.
 
   Args:
     params: Network parameters.
     data: MCMC configurations.
     batch_network: callable with signature f(params, data), which given network
-      parameters and a *batch* of electron positions, returns the entire
-      (wavefunction) network  evaluated at those positions.
+      parameters and a batch of electron positions, returns the log of the
+      magnitude of the (wavefunction) network  evaluated at those positions.
+    batch_orbitals: callable with signature f(params, data), which given network
+      parameters and a batch of electron positions, returns the orbitals in
+      the network evaluated at those positions.
     sharded_key: JAX RNG state (sharded) per device.
-    molecule: list of hamiltonian.Atom objects describing the system.
+    atoms: (natom, 3) array of atom positions.
+    charges: (natom) array of atom nuclear charges.
     electrons: tuple of number of electrons of each spin.
     scf_approx: an scf.Scf object that contains the result of a PySCF
       calculation.
@@ -205,26 +220,19 @@ def pretrain_hartree_fock(params,
     full_det: If true, evaluate all electrons in a single determinant.
       Otherwise, evaluate products of alpha- and beta-spin determinants.
     iterations: number of pretraining iterations to perform.
+    logger: Callable with signature (step, value) which externally logs the
+      pretraining loss.
 
   Returns:
     params, data: Updated network parameters and MCMC configurations such that
     the orbitals in the network closely match Hartree-Foch and the MCMC
     configurations are drawn from the log probability of the network.
   """
-  atoms = jnp.stack([jnp.array(atom.coords) for atom in molecule])
-  charges = jnp.array([atom.charge for atom in molecule])
+  # Pretraining is slow on larger systems (very low GPU utilization) because the
+  # Hartree-Fock orbitals are evaluated on CPU and only on a single host.
+  # Implementing the basis set in JAX would enable using GPUs and allow
+  # eval_orbitals to be pmapped.
 
-  # batch orbitals
-  batch_orbitals = jax.vmap(
-      lambda p, y: networks.fermi_net_orbitals(  # pylint: disable=g-long-lambda
-          p,
-          y,
-          atoms,
-          electrons,
-          envelope_type=envelope_type,
-          full_det=full_det)[0],
-      (None, 0),
-      0)
   optimizer = optax.adam(3.e-4)
   opt_state_pt = constants.pmap(optimizer.init)(params)
 
@@ -246,7 +254,7 @@ def pretrain_hartree_fock(params,
       batch_envelope_fn,
       batch_orbitals,
       batch_network,
-      optimizer,
+      optimizer.update,
       full_det=full_det)
   pretrain_step = constants.pmap(pretrain_step)
   pnetwork = constants.pmap(batch_network)
@@ -258,4 +266,6 @@ def pretrain_hartree_fock(params,
     data, params, opt_state_pt, loss, logprob = pretrain_step(
         data, target, params, opt_state_pt, subkeys, logprob)
     logging.info('Pretrain iter %05d: %g', t, loss[0])
+    if logger:
+      logger(t, loss[0])
   return params, data
