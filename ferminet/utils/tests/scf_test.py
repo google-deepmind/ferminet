@@ -95,7 +95,7 @@ class ScfTest(parameterized.TestCase):
     mo_vals = hf.eval_mos(xs)
     self.assertLen(mo_vals, 2)  # alpha-spin orbitals and beta-spin orbitals.
     for spin_mo_vals in mo_vals:
-      # Evalute npts points on M orbitals/functions - (npts, M) array.
+      # Evaluate npts points on M orbitals/functions - (npts, M) array.
       self.assertEqual(spin_mo_vals.shape, (npts, hf._mol.nao_nr()))
 
 

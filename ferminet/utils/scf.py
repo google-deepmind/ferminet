@@ -53,7 +53,7 @@ class Scf:
     pyscf_mol: the PySCF 'Molecule'. If this is passed to the init,
       the molecule, nelectrons, and basis will not be used, and the
       calculations will be performed on the existing pyscf_mol
-    restricted: If true, use the restriced Hartree-Fock method, otherwise use
+    restricted: If true, use the restricted Hartree-Fock method, otherwise use
       the unrestricted Hartree-Fock method.
   """
 
