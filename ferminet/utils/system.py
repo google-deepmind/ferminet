@@ -296,6 +296,9 @@ def pyscf_mol_to_internal_representation(
           'electrons': mol.nelec,
       },
       'pretrain': {
-          'basis': mol.basis
+          # If mol.basis isn't a string, assume that mol is passed into
+          # pretraining as well and pretraining uses the basis already set in
+          # mol, rather than complicating the configuration here.
+          'basis': mol.basis if isinstance(mol.basis, str) else None,
       },
   })
