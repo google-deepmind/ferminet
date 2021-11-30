@@ -94,6 +94,42 @@ def local_kinetic_energy(
   return _lapl_over_f
 
 
+def potential_electron_electron(r_ee: jnp.ndarray) -> jnp.ndarray:
+  """Returns the electron-electron potential.
+
+  Args:
+    r_ee: Shape (neletrons, nelectrons, :). r_ee[i,j,0] gives the distance
+      between electrons i and j. Other elements in the final axes are not
+      required.
+  """
+  return jnp.sum(jnp.triu(1 / r_ee[..., 0], k=1))
+
+
+def potential_electron_nuclear(charges: jnp.ndarray,
+                               r_ae: jnp.ndarray) -> jnp.ndarray:
+  """Returns the electron-nuclearpotential.
+
+  Args:
+    charges: Shape (natoms). Nuclear charges of the atoms.
+    r_ae: Shape (nelectrons, natoms). r_ae[i, j] gives the distance between
+      electron i and atom j.
+  """
+  return -jnp.sum(charges / r_ae[..., 0])
+
+
+def potential_nuclear_nuclear(charges: jnp.ndarray,
+                              atoms: jnp.ndarray) -> jnp.ndarray:
+  """Returns the electron-nuclearpotential.
+
+  Args:
+    charges: Shape (natoms). Nuclear charges of the atoms.
+    atoms: Shape (natoms, ndim). Positions of the atoms.
+  """
+  r_aa = jnp.linalg.norm(atoms[None, ...] - atoms[:, None], axis=-1)
+  return jnp.sum(
+      jnp.triu((charges[None, ...] * charges[..., None]) / r_aa, k=1))
+
+
 def potential_energy(r_ae: jnp.ndarray, r_ee: jnp.ndarray, atoms: jnp.ndarray,
                      charges: jnp.ndarray) -> jnp.ndarray:
   """Returns the potential energy for this electron configuration.
@@ -107,12 +143,9 @@ def potential_energy(r_ae: jnp.ndarray, r_ee: jnp.ndarray, atoms: jnp.ndarray,
     atoms: Shape (natoms, ndim). Positions of the atoms.
     charges: Shape (natoms). Nuclear charges of the atoms.
   """
-  v_ee = jnp.sum(jnp.triu(1 / r_ee[..., 0], k=1))
-  v_ae = -jnp.sum(charges / r_ae[..., 0])  # pylint: disable=invalid-unary-operand-type
-  r_aa = jnp.linalg.norm(atoms[None, ...] - atoms[:, None], axis=-1)
-  v_aa = jnp.sum(
-      jnp.triu((charges[None, ...] * charges[..., None]) / r_aa, k=1))
-  return v_ee + v_ae + v_aa
+  return (potential_electron_electron(r_ee) +
+          potential_electron_nuclear(charges, r_ae) +
+          potential_nuclear_nuclear(charges, atoms))
 
 
 def local_energy(f: networks.FermiNetLike,
