@@ -117,7 +117,7 @@ class HamiltonianTest(jtu.JaxTestCase):
     charges = np.ones(shape=(1,))
     params = np.zeros(shape=(1,))
     local_energy = hamiltonian.local_energy(
-        h_atom_log_psi_signed, atoms, charges, spins=(1, 0), use_scan=False)
+        h_atom_log_psi_signed, atoms, charges, nspins=(1, 0), use_scan=False)
 
     xs = np.random.normal(size=(100, 3))
     key = jax.random.PRNGKey(4)
@@ -144,18 +144,18 @@ class LaplacianTest(jtu.JaxTestCase):
     natoms = 2
     np.random.seed(12)
     atoms = np.random.uniform(low=-5.0, high=5.0, size=(natoms, 3))
-    spins = (3, 4)
+    nspins = (3, 4)
     charges = list(range(3, 3+natoms*2, 2))
     batch = 10
     cfg = base_config.default()
     cfg.network.detnet.hidden_dims = ((8, 4),)*2
     cfg.network.detnet.determinants = 2
     network_init, signed_network = networks.make_fermi_net(
-        atoms, spins, charges, **cfg.network.detnet)
+        atoms, nspins, charges, **cfg.network.detnet)
     network = lambda params, x: signed_network(params, x)[1]
     key = jax.random.PRNGKey(47)
     params = network_init(key)
-    xs = np.random.normal(scale=5, size=(batch, sum(spins) * 3))
+    xs = np.random.normal(scale=5, size=(batch, sum(nspins) * 3))
     t_l_fn = jax.jit(
         jax.vmap(hamiltonian.local_kinetic_energy(network), in_axes=(None, 0)))
     t_l = t_l_fn(params, xs)

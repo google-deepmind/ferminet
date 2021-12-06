@@ -44,7 +44,7 @@ LogFermiNetLike = Callable[[ParamTree, jnp.ndarray], jnp.ndarray]
 def init_fermi_net_params(
     key: jnp.ndarray,
     atoms: jnp.ndarray,
-    spins: Tuple[int, int],
+    nspins: Tuple[int, int],
     envelope_type: str = 'full',
     bias_orbitals: bool = False,
     use_last_layer: bool = False,
@@ -60,7 +60,7 @@ def init_fermi_net_params(
   Args:
     key: JAX RNG state.
     atoms: (natom, 3) array of atom positions.
-    spins: Tuple of the number of spin-up and spin-down electrons.
+    nspins: Tuple of the number of spin-up and spin-down electrons.
     envelope_type: Envelope to use to impose orbitals go to zero at infinity.
       See fermi_net_orbitals.
     bias_orbitals: If true, include a bias in the final linear layer to shape
@@ -100,7 +100,7 @@ def init_fermi_net_params(
 
   natom = atoms.shape[0]
   in_dims = (natom*4, 4)
-  active_spin_channels = [spin for spin in spins if spin > 0]
+  active_spin_channels = [spin for spin in nspins if spin > 0]
   nchannels = len(active_spin_channels)
   if nchannels == 0:
     raise ValueError('No electrons present!')
@@ -175,7 +175,7 @@ def init_fermi_net_params(
   else:
     params['envelope'] = [{} for _ in active_spin_channels]
     for i, spin in enumerate(active_spin_channels):
-      nparam = sum(spins)*determinants if full_det else spin*determinants
+      nparam = sum(nspins) * determinants if full_det else spin * determinants
       params['envelope'][i]['pi'] = jnp.ones((natom, nparam))
       if envelope_type == 'isotropic':
         params['envelope'][i]['sigma'] = jnp.ones((natom, nparam))
@@ -232,7 +232,7 @@ def init_fermi_net_params(
                                     '%s orbitals' % orb[1])
 
   for i, spin in enumerate(active_spin_channels):
-    nparam = sum(spins)*determinants if full_det else spin*determinants
+    nparam = sum(nspins) * determinants if full_det else spin * determinants
     key, subkey = jax.random.split(key)
     params['orbital'].append({})
     params['orbital'][i]['w'] = (jax.random.normal(
@@ -290,13 +290,13 @@ def construct_input_features(
   return ae, ee, r_ae, r_ee[..., None]
 
 
-def _partition_spins(spins: Sequence[int]) -> Sequence[int]:
+def _partition_spins(nspins: Sequence[int]) -> Sequence[int]:
   """Returns the indices for splitting an array into spin channels."""
-  return list(itertools.accumulate(spins))[:-1]
+  return list(itertools.accumulate(nspins))[:-1]
 
 
 def construct_symmetric_features(h_one: jnp.ndarray, h_two: jnp.ndarray,
-                                 spins: Tuple[int, int]) -> jnp.ndarray:
+                                 nspins: Tuple[int, int]) -> jnp.ndarray:
   """Combines intermediate features from rank-one and -two streams.
 
   Args:
@@ -304,7 +304,7 @@ def construct_symmetric_features(h_one: jnp.ndarray, h_two: jnp.ndarray,
       the output size of the previous layer.
     h_two: set of two-electron features. Shape: (nelectrons, nelectrons, n2),
       where n2 is the output size of the previous layer.
-    spins: number of spin-up and spin-down electrons.
+    nspins: number of spin-up and spin-down electrons.
 
   Returns:
     array containing the permutation-equivariant features: the input set of
@@ -314,7 +314,7 @@ def construct_symmetric_features(h_one: jnp.ndarray, h_two: jnp.ndarray,
     both spin-up and spin-down electrons and (nelectrons, 2*n1, n2) otherwise.
   """
   # Split features into spin up and spin down electrons
-  spin_partitions = _partition_spins(spins)
+  spin_partitions = _partition_spins(nspins)
   h_ones = jnp.split(h_one, spin_partitions, axis=0)
   h_twos = jnp.split(h_two, spin_partitions, axis=0)
 
@@ -393,7 +393,7 @@ def output_envelope(ae, params):
   return jnp.sum(jnp.log(jnp.sum(jnp.exp(-r_ae + params['pi']), axis=1)))
 
 
-def exact_cusp_envelope(ae, r_ee, params, charges, spins):
+def exact_cusp_envelope(ae, r_ee, params, charges, nspins):
   """Combine exact cusp conditions and envelope on the output into one."""
   # No cusp at zero
   sigma = jnp.expand_dims(params['sigma'], -1)
@@ -406,7 +406,7 @@ def exact_cusp_envelope(ae, r_ee, params, charges, spins):
   a_cusp = jnp.sum(charges / (1. + r_ae))
 
   # electronic cusp
-  spin_partitions = _partition_spins(spins)
+  spin_partitions = _partition_spins(nspins)
   r_ees = [jnp.split(r, spin_partitions, axis=1)
            for r in jnp.split(r_ee, spin_partitions, axis=0)]
   # Sum over same-spin electrons twice but different-spin once, which
@@ -502,9 +502,10 @@ def linear_layer(x, w, b=None):
 vmap_linear_layer = jax.vmap(linear_layer, in_axes=(0, None, None), out_axes=0)
 
 
-def fermi_net_orbitals(params, x,
+def fermi_net_orbitals(params,
+                       x,
                        atoms=None,
-                       spins=(None, None),
+                       nspins=(None, None),
                        envelope_type=None,
                        full_det=True):
   """Forward evaluation of the Fermionic Neural Network up to the orbitals.
@@ -524,7 +525,7 @@ def fermi_net_orbitals(params, x,
         multiplicative envelope.
     x: The input data, a 3N dimensional vector.
     atoms: Array with positions of atoms.
-    spins: Tuple with number of spin up and spin down electrons.
+    nspins: Tuple with number of spin up and spin down electrons.
     envelope_type: a string that specifies kind of envelope. One of:
       `isotropic`: envelope is the same in every direction
       `diagonal`: envelope has diagonal covariance
@@ -570,7 +571,7 @@ def fermi_net_orbitals(params, x,
   h_two = ee  # two-electron features
   residual = lambda x, y: (x + y) / jnp.sqrt(2.0) if x.shape == y.shape else y
   for i in range(len(params['double'])):
-    h_one_in = construct_symmetric_features(h_one, h_two, spins)
+    h_one_in = construct_symmetric_features(h_one, h_two, nspins)
 
     # Execute next layer
     h_one_next = jnp.tanh(linear_layer(h_one_in, **params['single'][i]))
@@ -579,19 +580,19 @@ def fermi_net_orbitals(params, x,
     h_one = residual(h_one, h_one_next)
     h_two = residual(h_two, h_two_next)
   if len(params['double']) != len(params['single']):
-    h_one_in = construct_symmetric_features(h_one, h_two, spins)
+    h_one_in = construct_symmetric_features(h_one, h_two, nspins)
     h_one_next = jnp.tanh(linear_layer(h_one_in, **params['single'][-1]))
     h_one = residual(h_one, h_one_next)
     h_to_orbitals = h_one
   else:
-    h_to_orbitals = construct_symmetric_features(h_one, h_two, spins)
+    h_to_orbitals = construct_symmetric_features(h_one, h_two, nspins)
   if envelope_type in ('sto', 'sto-poly'):
     h_to_orbitals = envelope(to_env, params['envelope']) * h_to_orbitals
   # Note split creates arrays of size 0 for spin channels without any electrons.
-  h_to_orbitals = jnp.split(h_to_orbitals, _partition_spins(spins), axis=0)
+  h_to_orbitals = jnp.split(h_to_orbitals, _partition_spins(nspins), axis=0)
   # Drop unoccupied spin channels
-  h_to_orbitals = [h for h, spin in zip(h_to_orbitals, spins) if spin > 0]
-  active_spin_channels = [spin for spin in spins if spin > 0]
+  h_to_orbitals = [h for h, spin in zip(h_to_orbitals, nspins) if spin > 0]
+  active_spin_channels = [spin for spin in nspins if spin > 0]
   active_spin_partitions = _partition_spins(active_spin_channels)
 
   orbitals = [
@@ -602,17 +603,21 @@ def fermi_net_orbitals(params, x,
                 zip(jnp.split(to_env, active_spin_partitions, axis=0),
                     orbitals, params['envelope'])]
   # Reshape into matrices.
-  orbitals = [jnp.reshape(orbital, [spin, -1, sum(spins) if full_det else spin])
-              for spin, orbital in zip(active_spin_channels, orbitals)]
+  orbitals = [
+      jnp.reshape(orbital,
+                  [spin, -1, sum(nspins) if full_det else spin])
+      for spin, orbital in zip(active_spin_channels, orbitals)
+  ]
   orbitals = [jnp.transpose(orbital, (1, 0, 2)) for orbital in orbitals]
   if full_det:
     orbitals = [jnp.concatenate(orbitals, axis=1)]
   return orbitals, to_env
 
 
-def fermi_net(params, x,
+def fermi_net(params,
+              x,
               atoms=None,
-              spins=(None, None),
+              nspins=(None, None),
               charges=None,
               envelope_type='full',
               full_det=True):
@@ -633,7 +638,7 @@ def fermi_net(params, x,
         multiplicative envelope.
     x: The input data, a 3N dimensional vector.
     atoms: Array with positions of atoms.
-    spins: Tuple with number of spin up and spin down electrons.
+    nspins: Tuple with number of spin up and spin down electrons.
     charges: The charges of the atoms. Only needed if using exact cusps.
     envelope_type: a string that specifies kind of envelope. One of:
       `isotropic`: envelope is the same in every direction
@@ -649,24 +654,26 @@ def fermi_net(params, x,
     and log absolute of the network evaluated at x.
   """
 
-  orbitals, to_env = fermi_net_orbitals(params, x,
-                                        atoms=atoms,
-                                        spins=spins,
-                                        envelope_type=envelope_type,
-                                        full_det=full_det)
+  orbitals, to_env = fermi_net_orbitals(
+      params,
+      x,
+      atoms=atoms,
+      nspins=nspins,
+      envelope_type=envelope_type,
+      full_det=full_det)
   output = logdet_matmul(orbitals)
   if envelope_type == 'output':
     output = output[0], output[1] + output_envelope(to_env, params['envelope'])
   if envelope_type == 'exact_cusp':
     to_env, r_ee = to_env
     output = output[0], output[1] + exact_cusp_envelope(
-        to_env, r_ee, params['envelope'], charges, spins)
+        to_env, r_ee, params['envelope'], charges, nspins)
   return output
 
 
 def make_fermi_net(
     atoms: jnp.ndarray,
-    spins: Tuple[int, int],
+    nspins: Tuple[int, int],
     charges: jnp.ndarray,
     envelope_type: str = 'full',
     bias_orbitals: bool = False,
@@ -681,7 +688,7 @@ def make_fermi_net(
 
   Args:
     atoms: (natom, 3) array of atom positions.
-    spins: Tuple of the number of spin-up and spin-down electrons.
+    nspins: Tuple of the number of spin-up and spin-down electrons.
     charges: (natom) array of atom nuclear charges.
     envelope_type: Envelope to use to impose orbitals go to zero at infinity.
       See fermi_net_orbitals.
@@ -713,7 +720,7 @@ def make_fermi_net(
   init = functools.partial(
       init_fermi_net_params,
       atoms=atoms,
-      spins=spins,
+      nspins=nspins,
       envelope_type=envelope_type,
       bias_orbitals=bias_orbitals,
       use_last_layer=use_last_layer,
@@ -726,7 +733,7 @@ def make_fermi_net(
   network = functools.partial(
       fermi_net,
       atoms=atoms,
-      spins=spins,
+      nspins=nspins,
       charges=charges,
       envelope_type=envelope_type,
       full_det=full_det)

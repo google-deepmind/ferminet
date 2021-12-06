@@ -43,7 +43,7 @@ class MakeLocalEnergy(Protocol):
                f: networks.FermiNetLike,
                atoms: jnp.ndarray,
                charges: jnp.ndarray,
-               spins: Sequence[int],
+               nspins: Sequence[int],
                use_scan: bool = False,
                **kwargs: Any) -> LocalEnergy:
     """Builds the LocalEnergy function.
@@ -53,7 +53,7 @@ class MakeLocalEnergy(Protocol):
         wavefunction.
       atoms: atomic positions.
       charges: nuclear charges.
-      spins: Number of particles of each spin.
+      nspins: Number of particles of each spin.
       use_scan: Whether to use a `lax.scan` for computing the laplacian.
       **kwargs: additional kwargs to use for creating the specific Hamiltonian.
     """
@@ -151,7 +151,7 @@ def potential_energy(r_ae: jnp.ndarray, r_ee: jnp.ndarray, atoms: jnp.ndarray,
 def local_energy(f: networks.FermiNetLike,
                  atoms: jnp.ndarray,
                  charges: jnp.ndarray,
-                 spins: Sequence[int],
+                 nspins: Sequence[int],
                  use_scan: bool = False) -> LocalEnergy:
   """Creates the function to evaluate the local energy.
 
@@ -160,7 +160,7 @@ def local_energy(f: networks.FermiNetLike,
       wavefunction given the network parameters and configurations data.
     atoms: Shape (natoms, ndim). Positions of the atoms.
     charges: Shape (natoms). Nuclear charges of the atoms.
-    spins: Number of particles of each spin.
+    nspins: Number of particles of each spin.
     use_scan: Whether to use a `lax.scan` for computing the laplacian.
 
   Returns:
@@ -168,7 +168,7 @@ def local_energy(f: networks.FermiNetLike,
     energy of the wavefunction given the parameters params, RNG state key,
     and a single MCMC configuration in data.
   """
-  del spins
+  del nspins
   log_abs_f = lambda *args, **kwargs: f(*args, **kwargs)[1]
   ke = local_kinetic_energy(log_abs_f, use_scan=use_scan)
 

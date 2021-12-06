@@ -179,7 +179,7 @@ def train(cfg: ml_collections.ConfigDict):
   # Convert mol config into array of atomic positions and charges
   atoms = jnp.stack([jnp.array(atom.coords) for atom in cfg.system.molecule])
   charges = jnp.array([atom.charge for atom in cfg.system.molecule])
-  spins = cfg.system.electrons
+  nspins = cfg.system.electrons
 
   if cfg.debug.deterministic:
     seed = 23
@@ -201,7 +201,9 @@ def train(cfg: ml_collections.ConfigDict):
 
   hf_solution = hartree_fock if cfg.pretrain.method == 'direct_init' else None
   network_init, signed_network = networks.make_fermi_net(
-      atoms, spins, charges,
+      atoms,
+      nspins,
+      charges,
       envelope_type=cfg.network.envelope_type,
       bias_orbitals=cfg.network.bias_orbitals,
       use_last_layer=cfg.network.use_last_layer,
@@ -258,7 +260,7 @@ def train(cfg: ml_collections.ConfigDict):
     orbitals = functools.partial(
         networks.fermi_net_orbitals,
         atoms=atoms,
-        spins=cfg.system.electrons,
+        nspins=cfg.system.electrons,
         envelope_type=cfg.network.envelope_type,
         full_det=cfg.network.full_det)
     batch_orbitals = jax.vmap(
@@ -300,7 +302,7 @@ def train(cfg: ml_collections.ConfigDict):
         f=signed_network,
         atoms=atoms,
         charges=charges,
-        spins=spins,
+        nspins=nspins,
         use_scan=False,
         **cfg.system.make_local_energy_kwargs)
   else:
@@ -308,7 +310,7 @@ def train(cfg: ml_collections.ConfigDict):
         f=signed_network,
         atoms=atoms,
         charges=charges,
-        spins=spins,
+        nspins=nspins,
         use_scan=False)
   total_energy = qmc_loss_functions.make_loss(
       network,

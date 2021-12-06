@@ -79,7 +79,7 @@ class NetworksTest(jtu.JaxTestCase):
     key, *subkeys = random.split(key, num=3)
     atoms = random.normal(subkeys[0], shape=(4, 3))
     charges = random.normal(subkeys[1], shape=(4,))
-    spins = (3, 4)
+    nspins = (3, 4)
 
     key, subkey = random.split(key)
     data1 = random.normal(subkey, shape=(21,))
@@ -89,7 +89,7 @@ class NetworksTest(jtu.JaxTestCase):
     params = networks.init_fermi_net_params(
         subkey,
         atoms=atoms,
-        spins=spins,
+        nspins=nspins,
         hidden_dims=((16, 16), (16, 16)),
         envelope_type=envelope)
 
@@ -108,16 +108,16 @@ class NetworksTest(jtu.JaxTestCase):
       params['envelope']['pi'] = random.normal(
           subkeys[1], params['envelope']['pi'].shape)
 
-    out1 = networks.fermi_net(params, data1, atoms, spins, charges,
-                              envelope_type=envelope)
+    out1 = networks.fermi_net(
+        params, data1, atoms, nspins, charges, envelope_type=envelope)
 
-    out2 = networks.fermi_net(params, data2, atoms, spins, charges,
-                              envelope_type=envelope)
+    out2 = networks.fermi_net(
+        params, data2, atoms, nspins, charges, envelope_type=envelope)
     self.assertAllClose(out1[1], out2[1], check_dtypes=False)
     self.assertAllClose(out1[0], -1*out2[0], check_dtypes=False)
 
-    out3 = networks.fermi_net(params, data3, atoms, spins, charges,
-                              envelope_type=envelope)
+    out3 = networks.fermi_net(
+        params, data3, atoms, nspins, charges, envelope_type=envelope)
     self.assertAllClose(out1[1], out3[1], check_dtypes=False)
     self.assertAllClose(out1[0], -1*out3[0], check_dtypes=False)
 
@@ -202,25 +202,24 @@ class NetworksTest(jtu.JaxTestCase):
     dtype = np.float32
     hidden_units_one = 8  # 128
     hidden_units_two = 4  # 32
-    spins = (6, 5)
+    nspins = (6, 5)
     h_one = np.random.uniform(
-        low=-5, high=5, size=(sum(spins), hidden_units_one)).astype(dtype)
+        low=-5, high=5, size=(sum(nspins), hidden_units_one)).astype(dtype)
     h_two = np.random.uniform(
-        low=-5,
-        high=5,
-        size=(sum(spins), sum(spins), hidden_units_two)).astype(dtype)
+        low=-5, high=5,
+        size=(sum(nspins), sum(nspins), hidden_units_two)).astype(dtype)
     h_two = h_two + np.transpose(h_two, axes=(1, 0, 2))
-    features = networks.construct_symmetric_features(h_one, h_two, spins)
+    features = networks.construct_symmetric_features(h_one, h_two, nspins)
     # Swap electrons
-    swaps = np.arange(sum(spins))
-    np.random.shuffle(swaps[:spins[0]])
-    np.random.shuffle(swaps[spins[0]:])
+    swaps = np.arange(sum(nspins))
+    np.random.shuffle(swaps[:nspins[0]])
+    np.random.shuffle(swaps[nspins[0]:])
     inverse_swaps = [0] * len(swaps)
     for i, j in enumerate(swaps):
       inverse_swaps[j] = i
     inverse_swaps = np.asarray(inverse_swaps)
     features_swap = networks.construct_symmetric_features(
-        h_one[swaps], h_two[swaps][:, swaps], spins)
+        h_one[swaps], h_two[swaps][:, swaps], nspins)
     self.assertAllClose(features, features_swap[inverse_swaps])
 
   @parameterized.parameters(
@@ -229,22 +228,22 @@ class NetworksTest(jtu.JaxTestCase):
   def test_fermi_net(self, vmap, **network_options):
     # Warning: this only tests we can build and run the network. It does not
     # test correctness of output nor test changing network width or depth.
-    spins = (6, 5)
+    nspins = (6, 5)
     atoms = jnp.asarray([[0., 0., 0.2], [1.2, 1., -0.2], [2.5, -0.8, 0.6]])
     charges = jnp.asarray([2, 5, 7])
     key = jax.random.PRNGKey(42)
 
-    init, fermi_net = networks.make_fermi_net(atoms, spins, charges,
+    init, fermi_net = networks.make_fermi_net(atoms, nspins, charges,
                                               **network_options)
 
     key, subkey = jax.random.split(key)
     if vmap:
       batch = 10
-      xs = jax.random.uniform(subkey, shape=(batch, sum(spins), 3))
+      xs = jax.random.uniform(subkey, shape=(batch, sum(nspins), 3))
       fermi_net = jax.vmap(fermi_net, in_axes=(None, 0))
       expected_shape = (batch,)
     else:
-      xs = jax.random.uniform(subkey, shape=(sum(spins), 3))
+      xs = jax.random.uniform(subkey, shape=(sum(nspins), 3))
       expected_shape = ()
 
     key, subkey = jax.random.split(key)
@@ -258,17 +257,17 @@ class NetworksTest(jtu.JaxTestCase):
       self.assertSequenceEqual(sign_psi.shape, expected_shape)
       self.assertSequenceEqual(log_psi.shape, expected_shape)
 
-  @parameterized.parameters((spins, full_det)
-                            for spins, full_det in itertools.product([(
+  @parameterized.parameters((nspins, full_det)
+                            for nspins, full_det in itertools.product([(
                                 1, 0), (2, 0), (0, 1)], [True, False]))
-  def test_spin_polarised_fermi_net(self, spins, full_det):
+  def test_spin_polarised_fermi_net(self, nspins, full_det):
     atoms = jnp.zeros(shape=(1, 3))
     charges = jnp.ones(shape=1)
     key = jax.random.PRNGKey(42)
-    init, fermi_net = networks.make_fermi_net(atoms, spins, charges)
+    init, fermi_net = networks.make_fermi_net(atoms, nspins, charges)
     key, subkey1, subkey2 = jax.random.split(key, num=3)
     params = init(subkey1)
-    xs = jax.random.uniform(subkey2, shape=(sum(spins) * 3,))
+    xs = jax.random.uniform(subkey2, shape=(sum(nspins) * 3,))
     # Test fermi_net runs without raising exceptions for spin-polarised systems.
     sign_out, log_out = fermi_net(params, xs)
     self.assertEqual(sign_out.size, 1)
