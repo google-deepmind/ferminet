@@ -55,6 +55,7 @@ def _config_params():
   for optimizer in ('kfac', 'adam'):
     yield ('H', optimizer)
   yield ('Li', 'lamb')
+  yield ('Li', 'none')
 
 
 class QmcTest(jtu.JaxTestCase):
