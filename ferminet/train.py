@@ -430,7 +430,8 @@ def train(cfg: ml_collections.ConfigDict):
         aux_data = stats['aux']
       elif cfg.optim.optimizer == 'none':
         data, pmove = mcmc_step(params, data, subkeys, mcmc_width)
-        loss, aux_data = total_energy(params, data)
+        sharded_key, subkeys = kfac_utils.p_split(sharded_key)
+        loss, aux_data = total_energy(params, subkeys, data)
       else:
         data, params, opt_state, loss, aux_data, pmove = step(
             shared_t,
