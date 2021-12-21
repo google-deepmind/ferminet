@@ -308,7 +308,7 @@ def construct_symmetric_features(h_one: jnp.ndarray, h_two: jnp.ndarray,
     one-electron features, the mean of the one-electron features over each
     (occupied) spin channel, and the mean of the two-electron features over each
     (occupied) spin channel. Output shape (nelectrons, 3*n1 + 2*n2) if there are
-    both spin-up and spin-down electrons and (nelectrons, 2*n1, n2) otherwise.
+    both spin-up and spin-down electrons and (nelectrons, 2*n1 + n2) otherwise.
   """
   # Split features into spin up and spin down electrons
   spin_partitions = _partition_spins(spins)

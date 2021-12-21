@@ -55,7 +55,7 @@ def init_electrons(
       devices.
 
   Returns:
-    array of (batch_size, nalpha*nbeta*ndim) of initial (random) electron
+    array of (batch_size, (nalpha+nbeta)*ndim) of initial (random) electron
     positions in the initial MCMC configurations and ndim is the dimensionality
     of the space (i.e. typically 3).
   """
