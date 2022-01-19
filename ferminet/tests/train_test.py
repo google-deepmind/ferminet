@@ -50,12 +50,13 @@ def setUpModule():
 
 
 def _config_params():
-  for params in itertools.product(('Li', 'LiH'), ('kfac', 'adam')):
-    yield params
-  for optimizer in ('kfac', 'adam'):
-    yield ('H', optimizer)
-  yield ('Li', 'lamb')
-  yield ('Li', 'none')
+  for system, optimizer in itertools.product(('Li', 'LiH'), ('kfac', 'adam')):
+    yield {'system': system, 'optimizer': optimizer}
+  for optimizer in ('kfac', 'adam', 'lamb', 'none'):
+    yield {
+        'system': 'H' if optimizer in ('kfac', 'adam') else 'Li',
+        'optimizer': optimizer
+    }
 
 
 class QmcTest(jtu.JaxTestCase):
