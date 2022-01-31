@@ -59,6 +59,7 @@ def _config_params():
     }
 
 
+@jtu.with_config(jax_numpy_rank_promotion='allow')
 class QmcTest(jtu.JaxTestCase):
 
   def setUp(self):
@@ -97,6 +98,7 @@ MOL_STRINGS = [
 ]
 
 
+@jtu.with_config(jax_numpy_rank_promotion='allow')
 class QmcPyscfMolTest(jtu.JaxTestCase):
 
   def setUp(self):
