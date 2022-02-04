@@ -64,6 +64,7 @@ def _network_options():
     yield dict(zip(all_options.keys(), options))
 
 
+@jtu.with_config(jax_numpy_rank_promotion='allow')
 class NetworksTest(jtu.JaxTestCase):
 
   @parameterized.named_parameters(jtu.cases_from_list(
