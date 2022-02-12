@@ -57,6 +57,7 @@ def kinetic_from_hessian_log(log_f):
   return kinetic_operator
 
 
+@jtu.with_config(jax_numpy_rank_promotion='allow')
 class HamiltonianTest(jtu.JaxTestCase):
 
   def test_local_kinetic_energy(self):
@@ -128,6 +129,7 @@ class HamiltonianTest(jtu.JaxTestCase):
     self.assertArraysAllClose(energies, -0.5 * np.ones_like(energies))
 
 
+@jtu.with_config(jax_numpy_rank_promotion='allow')
 class LaplacianTest(jtu.JaxTestCase):
 
   def test_laplacian(self):
