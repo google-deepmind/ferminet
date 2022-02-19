@@ -28,6 +28,7 @@ from ferminet import loss as qmc_loss_functions
 from ferminet import mcmc
 from ferminet import networks
 from ferminet import pretrain
+from ferminet.utils import statistics
 from ferminet.utils import system
 from ferminet.utils import writers
 import jax
@@ -247,7 +248,7 @@ def train(cfg: ml_collections.ConfigDict):
     mcmc_width_ckpt = None
 
   # Set up logging
-  train_schema = ['step', 'energy', 'variance', 'pmove']
+  train_schema = ['step', 'energy', 'ewmean', 'ewvar', 'pmove']
 
   # Initialisation done. We now want to have different PRNG streams on each
   # device. Shard the key over devices
@@ -397,6 +398,7 @@ def train(cfg: ml_collections.ConfigDict):
                  total_energy(params, subkeys, data)[0])
 
   time_of_last_ckpt = time.time()
+  weighted_stats = None
 
   if cfg.optim.optimizer == 'none' and opt_state_ckpt is not None:
     # If opt_state_ckpt is None, then we're restarting from a previous inference
@@ -427,13 +429,13 @@ def train(cfg: ml_collections.ConfigDict):
             momentum=shared_mom,
             damping=shared_damping)
         loss = stats['loss']
-        aux_data = stats['aux']
+        unused_aux_data = stats['aux']
       elif cfg.optim.optimizer == 'none':
         data, pmove = mcmc_step(params, data, subkeys, mcmc_width)
         sharded_key, subkeys = kfac_utils.p_split(sharded_key)
-        loss, aux_data = total_energy(params, subkeys, data)
+        loss, unused_aux_data = total_energy(params, subkeys, data)
       else:
-        data, params, opt_state, loss, aux_data, pmove = step(
+        data, params, opt_state, loss, unused_aux_data, pmove = step(
             shared_t,
             data,
             params,
@@ -442,11 +444,14 @@ def train(cfg: ml_collections.ConfigDict):
             mcmc_width)
         shared_t = shared_t + 1
 
-      # due to pmean, loss, variance and pmove should be the same across
+      # due to pmean, loss, and pmove should be the same across
       # devices.
       loss = loss[0]
-      variance = aux_data.variance[0]
       pmove = pmove[0]
+      # per batch variance isn't informative. Use weighted mean and variance
+      # instead.
+      weighted_stats = statistics.exponentialy_weighted_stats(
+          alpha=0.1, observation=loss, previous_stats=weighted_stats)
 
       # Update MCMC move width
       if t > 0 and t % cfg.mcmc.adapt_frequency == 0:
@@ -466,13 +471,14 @@ def train(cfg: ml_collections.ConfigDict):
       # Logging
       if t % cfg.log.stats_frequency == 0:
         logging.info(
-            'Step %05d: %03.4f E_h, variance=%03.4f E_h^2, pmove=%0.2f', t,
-            loss, variance, pmove)
+            'Step %05d: %03.4f E_h, exp. variance=%03.4f E_h^2, pmove=%0.2f', t,
+            loss, weighted_stats.variance, pmove)
         writer.write(
             t,
             step=t,
             energy=np.asarray(loss),
-            variance=np.asarray(variance),
+            ewmean=np.asarray(weighted_stats.mean),
+            ewvar=np.asarray(weighted_stats.variance),
             pmove=np.asarray(pmove))
 
       # Checkpointing
