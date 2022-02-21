@@ -54,6 +54,8 @@ def init_electrons(
     electrons: tuple of number of alpha and beta electrons.
     batch_size: total number of MCMC configurations to generate across all
       devices.
+    init_width: width of (atom-centred) Gaussian used to generate initial
+      electron configurations.
 
   Returns:
     array of (batch_size, nalpha*nbeta*ndim) of initial (random) electron
