@@ -78,15 +78,15 @@ def local_kinetic_energy(
     eye = jnp.eye(n)
     grad_f = jax.grad(f, argnums=1)
     grad_f_closure = lambda x: grad_f(params, x)
-    primal, linfunc = jax.linearize(grad_f_closure, data)
+    primal, dgrad_f = jax.linearize(grad_f_closure, data)
 
     if use_scan:
       _, diagonal = lax.scan(
-          lambda i, _: (i + 1, linfunc(eye[i])[i]), 0, None, length=n)
+          lambda i, _: (i + 1, dgrad_f(eye[i])[i]), 0, None, length=n)
       result = -0.5 * jnp.sum(diagonal)
     else:
       result = -0.5 * lax.fori_loop(
-          0, n, lambda i, val: val + linfunc(eye[i])[i], 0.0)
+          0, n, lambda i, val: val + dgrad_f(eye[i])[i], 0.0)
     return result - 0.5 * jnp.sum(primal ** 2)
 
   return _lapl_over_f
