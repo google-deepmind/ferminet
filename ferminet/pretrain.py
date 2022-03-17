@@ -19,6 +19,7 @@ from typing import Callable, Optional, Sequence, Tuple, Union
 from absl import logging
 import chex
 from ferminet import constants
+from ferminet import envelopes
 from ferminet import mcmc
 from ferminet import networks
 from ferminet.utils import scf
@@ -151,7 +152,7 @@ def make_pretrain_step(batch_envelope_fn,
     """One iteration of pretraining to match HF."""
     n = jnp.array([tgt.shape[-1] for tgt in target]).sum()
 
-    def loss_fn(x, p, target):
+    def loss_fn(p, x, target):
       env = jnp.exp(batch_envelope_fn(p['envelope'], x) / n)
       env = jnp.reshape(env, [env.shape[-1], 1, 1, 1])
       if full_det:
@@ -171,8 +172,8 @@ def make_pretrain_step(batch_envelope_fn,
         ]).sum()
       return constants.pmean(result)
 
-    val_and_grad = jax.value_and_grad(loss_fn, argnums=1)
-    loss_val, search_direction = val_and_grad(data, params, target)
+    val_and_grad = jax.value_and_grad(loss_fn, argnums=0)
+    loss_val, search_direction = val_and_grad(params, data, target)
     search_direction = constants.pmean(search_direction)
     updates, state = optimizer_update(search_direction, state, params)
     params = optax.apply_updates(params, updates)
@@ -184,17 +185,16 @@ def make_pretrain_step(batch_envelope_fn,
 
 
 def pretrain_hartree_fock(
+    *,
     params: networks.ParamTree,
     data: jnp.ndarray,
     batch_network: networks.FermiNetLike,
     batch_orbitals: FermiNetOrbitals,
+    network_options: networks.FermiNetOptions,
     sharded_key: chex.PRNGKey,
     atoms: jnp.ndarray,
-    charges: jnp.ndarray,
     electrons: Tuple[int, int],
     scf_approx: scf.Scf,
-    envelope_type: str = 'full',
-    full_det: bool = False,
     iterations: int = 1000,
     logger: Optional[Callable[[int, float], None]] = None,
 ):
@@ -209,16 +209,12 @@ def pretrain_hartree_fock(
     batch_orbitals: callable with signature f(params, data), which given network
       parameters and a batch of electron positions, returns the orbitals in
       the network evaluated at those positions.
+    network_options: FermiNet network options.
     sharded_key: JAX RNG state (sharded) per device.
     atoms: (natom, 3) array of atom positions.
-    charges: (natom) array of atom nuclear charges.
     electrons: tuple of number of electrons of each spin.
     scf_approx: an scf.Scf object that contains the result of a PySCF
       calculation.
-    envelope_type: type of envelope applied to orbitals. See networks and
-      base_config for details.
-    full_det: If true, evaluate all electrons in a single determinant.
-      Otherwise, evaluate products of alpha- and beta-spin determinants.
     iterations: number of pretraining iterations to perform.
     logger: Callable with signature (step, value) which externally logs the
       pretraining loss.
@@ -236,16 +232,11 @@ def pretrain_hartree_fock(
   optimizer = optax.adam(3.e-4)
   opt_state_pt = constants.pmap(optimizer.init)(params)
 
-  if envelope_type == 'exact_cusp':
+  if network_options.envelope_type == envelopes.EnvelopeType.POST_DETERMINANT:
 
-    def envelope_fn(p, x):
-      ae, _, _, r_ee = networks.construct_input_features(x, atoms)
-      return networks.exact_cusp_envelope(ae, r_ee, p, charges, electrons)
-  elif envelope_type == 'output':
-
-    def envelope_fn(p, x):
-      ae, _, _, _ = networks.construct_input_features(x, atoms)
-      return networks.output_envelope(ae, p)
+    def envelope_fn(params, x):
+      ae, r_ae, _, r_ee = networks.construct_input_features(x, atoms)
+      return network_options.envelope(ae=ae, r_ae=r_ae, r_ee=r_ee, **params)
   else:
     envelope_fn = lambda p, x: 0.0
   batch_envelope_fn = jax.vmap(envelope_fn, (None, 0))
@@ -255,7 +246,7 @@ def pretrain_hartree_fock(
       batch_orbitals,
       batch_network,
       optimizer.update,
-      full_det=full_det)
+      full_det=network_options.full_det)
   pretrain_step = constants.pmap(pretrain_step)
   pnetwork = constants.pmap(batch_network)
   logprob = 2. * pnetwork(params, data)

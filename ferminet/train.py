@@ -290,7 +290,7 @@ def train(cfg: ml_collections.ConfigDict):
         basis=cfg.pretrain.basis)
 
   hf_solution = hartree_fock if cfg.pretrain.method == 'direct_init' else None
-  network_init, signed_network = networks.make_fermi_net(
+  network_init, signed_network, network_options = networks.make_fermi_net(
       atoms,
       nspins,
       charges,
@@ -352,8 +352,8 @@ def train(cfg: ml_collections.ConfigDict):
         networks.fermi_net_orbitals,
         atoms=atoms,
         nspins=cfg.system.electrons,
-        envelope_type=cfg.network.envelope_type,
-        full_det=cfg.network.full_det)
+        options=network_options,
+    )
     batch_orbitals = jax.vmap(
         lambda params, data: orbitals(params, data)[0],
         in_axes=(None, 0),
@@ -364,13 +364,11 @@ def train(cfg: ml_collections.ConfigDict):
         data=data,
         batch_network=batch_network,
         batch_orbitals=batch_orbitals,
+        network_options=network_options,
         sharded_key=subkeys,
         atoms=atoms,
-        charges=charges,
         electrons=cfg.system.electrons,
         scf_approx=hartree_fock,
-        envelope_type=cfg.network.envelope_type,
-        full_det=cfg.network.full_det,
         iterations=cfg.pretrain.iterations)
 
   # Main training

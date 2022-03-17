@@ -12,13 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Tests for ferminet.tests.networks."""
+"""Tests for ferminet.networks."""
 
 import itertools
 
 from absl.testing import absltest
 from absl.testing import parameterized
 import chex
+from ferminet import envelopes
 from ferminet import networks
 import jax
 from jax import random
@@ -34,13 +35,22 @@ def rand_default():
   return generator
 
 
+def _antisymmtry_options():
+  for envelope in envelopes.EnvelopeLabel:
+    yield {
+        'testcase_name': f'_envelope={envelope}',
+        'envelope': envelope,
+        'dtype': np.float32,
+    }
+
+
 def _network_options():
   """Yields the set of all combinations of options to pass into test_fermi_net.
 
   Example output:
   {
     'vmap': True,
-    'envelope_type': 'isotropic',
+    'envelope_type': envelopes.EnvelopeLabel.ISOTROPIC,
     'bias_orbitals': False,
     'full_det': True,
     'use_last_layer': False,
@@ -50,9 +60,7 @@ def _network_options():
   # Key for each option and corresponding values to test.
   all_options = {
       'vmap': [True, False],
-      'envelope_type': [
-          'isotropic', 'diagonal', 'full', 'sto', 'sto-poly', 'output'
-      ],
+      'envelope_type': list(envelopes.EnvelopeLabel),
       'bias_orbitals': [True, False],
       'full_det': [True, False],
       'use_last_layer': [True, False],
@@ -64,17 +72,19 @@ def _network_options():
     yield dict(zip(all_options.keys(), options))
 
 
+def _slogdet_options():
+  for shape in [(1, 1, 1), (10, 2, 2), (10, 3, 3)]:
+    yield {'testcase_name': f'_shape={shape}', 'shape': shape}
+
+
 @jtu.with_config(jax_numpy_rank_promotion='allow')
 class NetworksTest(jtu.JaxTestCase):
 
-  @parameterized.named_parameters(jtu.cases_from_list(
-      {'testcase_name':  # pylint: disable=g-complex-comprehension
-       '_envelope={}'.format(envelope),
-       'envelope': envelope, 'dtype': dtype}
-      for envelope in ['isotropic', 'diagonal', 'full', 'output', 'exact_cusp']
-      for dtype in [np.float32]))
+  @parameterized.named_parameters(_antisymmtry_options())
   def test_antisymmetry(self, envelope, dtype):
     """Check that the Fermi Net is symmetric."""
+    del dtype  # unused
+
     key = random.PRNGKey(42)
 
     key, *subkeys = random.split(key, num=3)
@@ -83,16 +93,29 @@ class NetworksTest(jtu.JaxTestCase):
     nspins = (3, 4)
 
     key, subkey = random.split(key)
-    data1 = random.normal(subkey, shape=(21,))
+    data1 = random.normal(subkey, shape=(sum(nspins)*3,))
     data2 = jnp.concatenate((data1[3:6], data1[:3], data1[6:]))
     data3 = jnp.concatenate((data1[:9], data1[12:15], data1[9:12], data1[15:]))
     key, subkey = random.split(key)
+    kwargs = {}
+    if envelope == envelopes.EnvelopeLabel.EXACT_CUSP:
+      kwargs.update({'charges': charges, 'nspins': nspins})
+    envelope_type, envelope_init, envelope_apply = envelopes.get_envelope(
+        envelope, **kwargs)
+    options = networks.FermiNetOptions(
+        hidden_dims=((16, 16), (16, 16)),
+        envelope_label=envelope,
+        envelope_type=envelope_type,
+        envelope=envelope_apply,
+    )
+
     params = networks.init_fermi_net_params(
         subkey,
         atoms=atoms,
         nspins=nspins,
-        hidden_dims=((16, 16), (16, 16)),
-        envelope_type=envelope)
+        options=options,
+        envelope_init=envelope_init,
+    )
 
     # Randomize parameters of envelope
     if isinstance(params['envelope'], list):
@@ -109,65 +132,24 @@ class NetworksTest(jtu.JaxTestCase):
       params['envelope']['pi'] = random.normal(
           subkeys[1], params['envelope']['pi'].shape)
 
-    out1 = networks.fermi_net(
-        params, data1, atoms, nspins, charges, envelope_type=envelope)
+    out1 = networks.fermi_net(params, data1, atoms, nspins, options)
 
-    out2 = networks.fermi_net(
-        params, data2, atoms, nspins, charges, envelope_type=envelope)
+    out2 = networks.fermi_net(params, data2, atoms, nspins, options)
     self.assertAllClose(out1[1], out2[1], check_dtypes=False)
     self.assertAllClose(out1[0], -1*out2[0], check_dtypes=False)
 
-    out3 = networks.fermi_net(
-        params, data3, atoms, nspins, charges, envelope_type=envelope)
+    out3 = networks.fermi_net(params, data3, atoms, nspins, options)
     self.assertAllClose(out1[1], out3[1], check_dtypes=False)
     self.assertAllClose(out1[0], -1*out3[0], check_dtypes=False)
 
-  @parameterized.named_parameters(jtu.cases_from_list(
-      {'testcase_name':  # pylint: disable=g-complex-comprehension
-       '_shape={}'.format(jtu.format_shape_dtype_string(shape, dtype)),
-       'shape': shape, 'dtype': dtype, 'rng': rng}
-      for shape in [(1, 1, 1), (10, 2, 2), (10, 3, 3)]
-      for dtype in [np.float32]
-      for rng in [rand_default()]))
-  def test_slogdet(self, shape, dtype, rng):
+  @parameterized.named_parameters(_slogdet_options())
+  def test_slogdet(self, shape, dtype=np.float32):
+    rng = rand_default()
     a = rng(shape, dtype)
     s1, ld1 = networks.slogdet(a)
     s2, ld2 = np.linalg.slogdet(a)
     self.assertAllClose(s1, s2, check_dtypes=False)
     self.assertAllClose(ld1, ld2, check_dtypes=False)
-
-  @parameterized.named_parameters(jtu.cases_from_list(
-      {'testcase_name':  # pylint: disable=g-complex-comprehension
-       '_shape1={}_shape2={}'.format(shapes[0], shapes[1]), 'shapes': shapes}
-      for shapes in [[(3, 4, 5), (5, 6, 4, 2)],
-                     [(3, 4, 1), (1, 6, 4, 2)],
-                     [(3, 1, 5), (5, 6, 1, 2)],
-                     [(3, 1, 1), (1, 6, 1, 2)]]))
-  def test_apply_covariance(self, shapes):
-    rng = rand_default()
-    dtype = np.float32
-    x = rng(shapes[0], dtype)
-    y = rng(shapes[1], dtype)
-    self.assertAllClose(networks.apply_covariance(x, y),
-                        jnp.einsum('ijk,kmjn->ijmn', x, y),
-                        check_dtypes=False)
-
-  @parameterized.named_parameters(jtu.cases_from_list(
-      {'testcase_name':  # pylint: disable=g-complex-comprehension
-       '_shape1={}_shape2={}'.format(shapes[0], shapes[1]), 'shapes': shapes}
-      for shapes in [[(3, 4, 5), (5, 6, 4)],
-                     [(3, 4, 1), (1, 6, 4)],
-                     [(3, 1, 5), (5, 6, 1)],
-                     [(3, 1, 1), (1, 6, 1)]]))
-  def test_reduced_apply_covariance(self, shapes):
-    rng = rand_default()
-    dtype = np.float32
-    x = rng(shapes[0], dtype)
-    y = rng(shapes[1], dtype)
-    self.assertAllClose(
-        jnp.squeeze(networks.apply_covariance(x, jnp.expand_dims(y, -1)),
-                    axis=-1),
-        jnp.einsum('ijk,klj->ijl', x, y), check_dtypes=False)
 
   def test_create_input_features(self):
     dtype = np.float32
@@ -207,7 +189,8 @@ class NetworksTest(jtu.JaxTestCase):
     h_one = np.random.uniform(
         low=-5, high=5, size=(sum(nspins), hidden_units_one)).astype(dtype)
     h_two = np.random.uniform(
-        low=-5, high=5,
+        low=-5,
+        high=5,
         size=(sum(nspins), sum(nspins), hidden_units_two)).astype(dtype)
     h_two = h_two + np.transpose(h_two, axes=(1, 0, 2))
     features = networks.construct_symmetric_features(h_one, h_two, nspins)
@@ -234,8 +217,8 @@ class NetworksTest(jtu.JaxTestCase):
     charges = jnp.asarray([2, 5, 7])
     key = jax.random.PRNGKey(42)
 
-    init, fermi_net = networks.make_fermi_net(atoms, nspins, charges,
-                                              **network_options)
+    init, fermi_net, _ = networks.make_fermi_net(atoms, nspins, charges,
+                                                 **network_options)
 
     key, subkey = jax.random.split(key)
     if vmap:
@@ -248,7 +231,9 @@ class NetworksTest(jtu.JaxTestCase):
       expected_shape = ()
 
     key, subkey = jax.random.split(key)
-    if (network_options['envelope_type'] in ('sto', 'sto-poly') and
+    sto_envelopes = (envelopes.EnvelopeLabel.STO,
+                     envelopes.EnvelopeLabel.STO_POLY)
+    if (network_options['envelope_type'] in sto_envelopes and
         network_options['bias_orbitals']):
       with self.assertRaises(ValueError):
         init(subkey)
@@ -265,7 +250,7 @@ class NetworksTest(jtu.JaxTestCase):
     atoms = jnp.zeros(shape=(1, 3))
     charges = jnp.ones(shape=1)
     key = jax.random.PRNGKey(42)
-    init, fermi_net = networks.make_fermi_net(atoms, nspins, charges)
+    init, fermi_net, _ = networks.make_fermi_net(atoms, nspins, charges)
     key, subkey1, subkey2 = jax.random.split(key, num=3)
     params = init(subkey1)
     xs = jax.random.uniform(subkey2, shape=(sum(nspins) * 3,))

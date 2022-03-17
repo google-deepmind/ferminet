@@ -15,12 +15,12 @@
 """Tests for ferminet.hamiltonian."""
 
 from absl.testing import absltest
+from absl.testing import parameterized
 from ferminet import base_config
 from ferminet import hamiltonian
 from ferminet import networks
 import jax
 import jax.numpy as jnp
-import jax.test_util as jtu
 import numpy as np
 
 
@@ -57,19 +57,18 @@ def kinetic_from_hessian_log(log_f):
   return kinetic_operator
 
 
-@jtu.with_config(jax_numpy_rank_promotion='allow')
-class HamiltonianTest(jtu.JaxTestCase):
+class HamiltonianTest(parameterized.TestCase):
 
   def test_local_kinetic_energy(self):
 
-    param = 1.0
+    dummy_params = {}
     xs = np.random.normal(size=(3,))
     expected_kinetic_energy = -(1 - 2 / np.abs(np.linalg.norm(xs))) / 2
 
     kinetic = hamiltonian.local_kinetic_energy(h_atom_log_psi)
-    kinetic_energy = kinetic(param, xs)
-
-    self.assertArraysAllClose(kinetic_energy, expected_kinetic_energy)
+    kinetic_energy = kinetic(dummy_params, xs)
+    np.testing.assert_allclose(
+        kinetic_energy, expected_kinetic_energy, rtol=1.e-5)
 
   def test_potential_energy_null(self):
 
@@ -81,7 +80,7 @@ class HamiltonianTest(jtu.JaxTestCase):
     atoms = np.zeros(shape=(1, 3))
     charges = np.zeros(shape=(1,))
     v = hamiltonian.potential_energy(r_ae, r_ee, atoms, charges)
-    self.assertAllClose(v, 0.0)
+    np.testing.assert_allclose(v, 0.0, rtol=1E-5)
 
   def test_potential_energy_ee(self):
 
@@ -93,7 +92,7 @@ class HamiltonianTest(jtu.JaxTestCase):
     mask = ~np.eye(r_ee.shape[0], dtype=bool)
     expected_v_ee = 0.5 * np.sum(1.0 / r_ee[mask])
     v = hamiltonian.potential_energy(r_ae, r_ee[..., None], atoms, charges)
-    self.assertAllClose(v, expected_v_ee)
+    np.testing.assert_allclose(v, expected_v_ee, rtol=1E-5)
 
   def test_potential_energy_he2_ion(self):
 
@@ -110,13 +109,13 @@ class HamiltonianTest(jtu.JaxTestCase):
     v_ae = np.prod(charges) / np.linalg.norm(np.diff(atoms, axis=0))
     expected_v = v_ee + v_ae
     v = hamiltonian.potential_energy(r_ae[..., None], r_ee, atoms, charges)
-    self.assertAllClose(v, expected_v)
+    np.testing.assert_allclose(v, expected_v, rtol=1E-5)
 
   def test_local_energy(self):
 
     atoms = np.zeros(shape=(1, 3))
     charges = np.ones(shape=(1,))
-    params = np.zeros(shape=(1,))
+    dummy_params = {}
     local_energy = hamiltonian.local_energy(
         h_atom_log_psi_signed, atoms, charges, nspins=(1, 0), use_scan=False)
 
@@ -124,36 +123,39 @@ class HamiltonianTest(jtu.JaxTestCase):
     key = jax.random.PRNGKey(4)
     keys = jax.random.split(key, num=xs.shape[0])
     batch_local_energy = jax.vmap(local_energy, in_axes=(None, 0, 0))
-    energies = batch_local_energy(params, keys, xs)
+    energies = batch_local_energy(dummy_params, keys, xs)
 
-    self.assertArraysAllClose(energies, -0.5 * np.ones_like(energies))
+    np.testing.assert_allclose(
+        energies, -0.5 * np.ones_like(energies), rtol=1E-5)
 
 
-@jtu.with_config(jax_numpy_rank_promotion='allow')
-class LaplacianTest(jtu.JaxTestCase):
+class LaplacianTest(parameterized.TestCase):
 
   def test_laplacian(self):
 
     xs = np.random.uniform(size=(100, 3))
+    dummy_params = {}
     t_l = jax.vmap(
         hamiltonian.local_kinetic_energy(h_atom_log_psi),
-        in_axes=(None, 0))(None, xs)
+        in_axes=(None, 0))(dummy_params, xs)
     hess_t = jax.vmap(
         kinetic_from_hessian(h_atom_log_psi), in_axes=(None, 0))(None, xs)
-    self.assertArraysAllClose(t_l, hess_t)
+    np.testing.assert_allclose(t_l, hess_t, rtol=1E-5)
 
-  def test_fermi_net_laplacian(self):
+  @parameterized.parameters([True, False])
+  def test_fermi_net_laplacian(self, full_det):
     natoms = 2
     np.random.seed(12)
     atoms = np.random.uniform(low=-5.0, high=5.0, size=(natoms, 3))
-    nspins = (3, 4)
+    nspins = (2, 3)
     charges = list(range(3, 3+natoms*2, 2))
-    batch = 10
+    batch = 4
     cfg = base_config.default()
+    cfg.network.full_det = full_det
     cfg.network.detnet.hidden_dims = ((8, 4),)*2
     cfg.network.detnet.determinants = 2
-    network_init, signed_network = networks.make_fermi_net(
-        atoms, nspins, charges, **cfg.network.detnet)
+    network_init, signed_network, _ = networks.make_fermi_net(
+        atoms, nspins, charges, full_det=full_det, **cfg.network.detnet)
     network = lambda params, x: signed_network(params, x)[1]
     key = jax.random.PRNGKey(47)
     params = network_init(key)
@@ -171,7 +173,7 @@ class LaplacianTest(jtu.JaxTestCase):
       # substantially affect floating point expressions. See
       # https://github.com/google/jax/issues/6566.
       atol, rtol = 4.e-3, 4.e-3
-    self.assertArraysAllClose(t_l, hess_t, atol=atol, rtol=rtol)
+    np.testing.assert_allclose(t_l, hess_t, atol=atol, rtol=rtol)
 
 
 if __name__ == '__main__':

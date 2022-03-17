@@ -25,7 +25,6 @@ from ferminet import base_config
 from ferminet import train
 from ferminet.configs import atom
 from ferminet.configs import diatomic
-from jax import test_util as jtu
 import pyscf
 
 FLAGS = flags.FLAGS
@@ -59,8 +58,7 @@ def _config_params():
     }
 
 
-@jtu.with_config(jax_numpy_rank_promotion='allow')
-class QmcTest(jtu.JaxTestCase):
+class QmcTest(parameterized.TestCase):
 
   def setUp(self):
     super(QmcTest, self).setUp()
@@ -98,8 +96,7 @@ MOL_STRINGS = [
 ]
 
 
-@jtu.with_config(jax_numpy_rank_promotion='allow')
-class QmcPyscfMolTest(jtu.JaxTestCase):
+class QmcPyscfMolTest(parameterized.TestCase):
 
   def setUp(self):
     super(QmcPyscfMolTest, self).setUp()
