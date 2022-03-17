@@ -17,7 +17,7 @@
 import functools
 import importlib
 import time
-from typing import Sequence
+from typing import Optional, Sequence, Tuple, Union
 
 from absl import logging
 import chex
@@ -36,6 +36,7 @@ import jax.numpy as jnp
 import ml_collections
 import numpy as np
 import optax
+from typing_extensions import Protocol
 
 from kfac_ferminet_alpha import optimizer as kfac_optim
 from kfac_ferminet_alpha import utils as kfac_utils
@@ -60,7 +61,7 @@ def init_electrons(
       electron configurations.
 
   Returns:
-    array of (batch_size, nalpha*nbeta*ndim) of initial (random) electron
+    array of (batch_size, (nalpha+nbeta)*ndim) of initial (random) electron
     positions in the initial MCMC configurations and ndim is the dimensionality
     of the space (i.e. typically 3).
   """
@@ -97,29 +98,50 @@ def init_electrons(
       jax.random.normal(subkey, shape=(batch_size, electron_positions.size)))
 
 
-def make_training_step(mcmc_step, val_and_grad, opt_update):
-  """Factory to create traning step for non-KFAC optimizers.
+# All optimizer states (KFAC and optax-based).
+OptimizerState = Union[optax.OptState, kfac_optim.State]
+OptUpdateResults = Tuple[networks.ParamTree, Optional[OptimizerState],
+                         jnp.ndarray,
+                         Optional[qmc_loss_functions.AuxiliaryLossData]]
 
-  Args:
-    mcmc_step: Callable which performs the set of MCMC steps. See make_mcmc_step
-      for creating the callable.
-    val_and_grad: Callable f(params, data) which evaluates the loss, auxiliary
-      data and gradients of the loss given network parameters and MCMC
-      configurations.
-    opt_update: Callable f(t, gradients, params, state) which updates the
-      network parameters according to an optimizer policy and returns the
-      updated network parameters and optimization state.
 
-  Returns:
-    step, a callable which performs a set of MCMC steps and then an optimization
-    update. See the step docstring for details.
-  """
-  @functools.partial(constants.pmap, donate_argnums=(1, 2, 3, 4))
-  def step(t, data, params, state, key, mcmc_width):
-    """A full update iteration (except for KFAC): MCMC steps + optimization.
+class OptUpdate(Protocol):
+
+  def __call__(self, params: networks.ParamTree,
+               data: jnp.ndarray,
+               opt_state: optax.OptState,
+               key: chex.PRNGKey) -> OptUpdateResults:
+    """Evaluates the loss and gradients and updates the parameters accordingly.
 
     Args:
-      t: training step iteration.
+      params: network parameters.
+      data: electron positions.
+      opt_state: optimizer internal state.
+      key: RNG state.
+
+    Returns:
+      Tuple of (params, opt_state, loss, aux_data), where params and opt_state
+      are the updated parameters and optimizer state, loss is the evaluated loss
+      and aux_data auxiliary data (see AuxiliaryLossData docstring).
+    """
+
+
+StepResults = Tuple[jnp.ndarray, networks.ParamTree, Optional[optax.OptState],
+                    jnp.ndarray, qmc_loss_functions.AuxiliaryLossData,
+                    jnp.ndarray]
+
+
+class Step(Protocol):
+
+  def __call__(self,
+               data: jnp.ndarray,
+               params: networks.ParamTree,
+               state: OptimizerState,
+               key: chex.PRNGKey,
+               mcmc_width: jnp.ndarray) -> StepResults:
+    """Performs one set of MCMC moves and an optimization step.
+
+    Args:
       data: batch of MCMC configurations.
       params: network parameters.
       state: optimizer internal state.
@@ -127,7 +149,7 @@ def make_training_step(mcmc_step, val_and_grad, opt_update):
       mcmc_width: width of MCMC move proposal. See mcmc.make_mcmc_step.
 
     Returns:
-      Tuple of (data, params, state, loss, pmove).
+      Tuple of (data, params, state, loss, aux_data, pmove).
         data: Updated MCMC configurations drawn from the network given the
           *input* network parameters.
         params: updated network parameters after the gradient update.
@@ -138,16 +160,80 @@ def make_training_step(mcmc_step, val_and_grad, opt_update):
           loss of the system.
         pmove: probability that a proposed MCMC move was accepted.
     """
+
+
+def make_training_step(
+    mcmc_step,
+    optimizer_step: OptUpdate,
+) -> Step:
+  """Factory to create traning step for non-KFAC optimizers.
+
+  Args:
+    mcmc_step: Callable which performs the set of MCMC steps. See make_mcmc_step
+      for creating the callable.
+    optimizer_step: OptUpdate callable which evaluates the forward and backward
+      passes and updates the parameters and optimizer state, as required.
+
+  Returns:
+    step, a callable which performs a set of MCMC steps and then an optimization
+    update. See the Step protocol for details.
+  """
+  @functools.partial(constants.pmap, donate_argnums=(1, 2, 3, 4))
+  def step(data: jnp.ndarray,
+           params: networks.ParamTree, state: Optional[optax.OptState],
+           key: chex.PRNGKey, mcmc_width: jnp.ndarray) -> StepResults:
+    """A full update iteration (except for KFAC): MCMC steps + optimization."""
     # MCMC loop
-    # Should this be created outside the function?
     mcmc_key, loss_key = jax.random.split(key, num=2)
     data, pmove = mcmc_step(params, data, mcmc_key, mcmc_width)
 
     # Optimization step
-    (loss, aux_data), search_direction = val_and_grad(params, loss_key, data)
-    search_direction = constants.pmean(search_direction)
-    state, params = opt_update(t, search_direction, params, state)
-    return data, params, state, loss, aux_data, pmove
+    new_params, state, loss, aux_data = optimizer_step(params, data, state,
+                                                       loss_key)
+    return data, new_params, state, loss, aux_data, pmove
+
+  return step
+
+
+def make_kfac_training_step(mcmc_step, damping: float,
+                            optimizer: kfac_optim.Optimizer) -> Step:
+  """Factory to create traning step for KFAC optimizers.
+
+  Args:
+    mcmc_step: Callable which performs the set of MCMC steps. See make_mcmc_step
+      for creating the callable.
+    damping: value of damping to use for each KFAC update step.
+    optimizer: KFAC optimizer instance.
+
+  Returns:
+    step, a callable which performs a set of MCMC steps and then an optimization
+    update. See the Step protocol for details.
+  """
+  mcmc_step = constants.pmap(mcmc_step, donate_argnums=1)
+  shared_mom = kfac_utils.replicate_all_local_devices(jnp.zeros([]))
+  shared_damping = kfac_utils.replicate_all_local_devices(jnp.asarray(damping))
+
+  def step(data: jnp.ndarray,
+           params: networks.ParamTree, state: kfac_optim.State,
+           key: chex.PRNGKey, mcmc_width: jnp.ndarray) -> StepResults:
+    """A full update iteration for KFAC: MCMC steps + optimization."""
+    # KFAC requires control of the loss and gradient eval, so everything called
+    # here must be already pmapped.
+
+    # MCMC loop
+    mcmc_keys, loss_keys = kfac_utils.p_split(key)
+    new_data, pmove = mcmc_step(params, data, mcmc_keys, mcmc_width)
+
+    # Optimization step
+    new_params, state, stats = optimizer.step(
+        params=params,
+        state=state,
+        rng=loss_keys,
+        data_iterator=iter([new_data]),
+        momentum=shared_mom,
+        damping=shared_damping)
+    return new_data, new_params, state, stats['loss'], stats['aux'], pmove
+
   return step
 
 
@@ -196,13 +282,12 @@ def train(cfg: ml_collections.ConfigDict):
 
   if cfg.pretrain.method == 'direct_init' or (
       cfg.pretrain.method == 'hf' and cfg.pretrain.iterations > 0):
-    if cfg.system.pyscf_mol:
-      hartree_fock = pretrain.get_hf(
-          pyscf_mol=cfg.system.pyscf_mol, restricted=False)
-    else:
-      hartree_fock = pretrain.get_hf(
-          cfg.system.molecule, cfg.system.electrons,
-          basis=cfg.pretrain.basis, restricted=False)
+    hartree_fock = pretrain.get_hf(
+        pyscf_mol=cfg.system.get('pyscf_mol'),
+        molecule=cfg.system.molecule,
+        nspins=nspins,
+        restricted=False,
+        basis=cfg.pretrain.basis)
 
   hf_solution = hartree_fock if cfg.pretrain.method == 'direct_init' else None
   network_init, signed_network = networks.make_fermi_net(
@@ -219,8 +304,9 @@ def train(cfg: ml_collections.ConfigDict):
   params = network_init(subkey)
   params = kfac_utils.replicate_all_local_devices(params)
   # Often just need log|psi(x)|.
-  network = lambda params, x: signed_network(params, x)[1]
-  batch_network = jax.vmap(network, (None, 0), 0)  # batched network
+  network = lambda *args, **kwargs: signed_network(*args, **kwargs)[1]  # type: networks.LogFermiNetLike
+  batch_network = jax.vmap(
+      network, in_axes=(None, 0), out_axes=0)  # batched network
 
   # Set up checkpointing and restore params/data if necessary
   # Mirror behaviour of checkpoints in TF FermiNet.
@@ -274,14 +360,14 @@ def train(cfg: ml_collections.ConfigDict):
         out_axes=0)
     sharded_key, subkeys = kfac_utils.p_split(sharded_key)
     params, data = pretrain.pretrain_hartree_fock(
-        params,
-        data,
-        batch_network,
-        batch_orbitals,
-        subkeys,
-        atoms,
-        charges,
-        cfg.system.electrons,
+        params=params,
+        data=data,
+        batch_network=batch_network,
+        batch_orbitals=batch_orbitals,
+        sharded_key=subkeys,
+        atoms=atoms,
+        charges=charges,
+        electrons=cfg.system.electrons,
         scf_approx=hartree_fock,
         envelope_type=cfg.network.envelope_type,
         full_det=cfg.network.full_det,
@@ -296,7 +382,8 @@ def train(cfg: ml_collections.ConfigDict):
       device_batch_size,
       steps=cfg.mcmc.steps,
       atoms=atoms_to_mcmc,
-      one_electron_moves=cfg.mcmc.one_electron)
+      one_electron_moves=cfg.mcmc.one_electron,
+  )
   # Construct loss and optimizer
   if cfg.system.make_local_energy_fn:
     local_energy_module, local_energy_fn = (
@@ -322,16 +409,27 @@ def train(cfg: ml_collections.ConfigDict):
       local_energy,
       clip_local_energy=cfg.optim.clip_el)
   # Compute the learning rate
-  def learning_rate_schedule(t):
+  def learning_rate_schedule(t_: jnp.ndarray) -> jnp.ndarray:
     return cfg.optim.lr.rate * jnp.power(
-        (1.0 / (1.0 + (t/cfg.optim.lr.delay))), cfg.optim.lr.decay)
+        (1.0 / (1.0 + (t_/cfg.optim.lr.delay))), cfg.optim.lr.decay)
   # Differentiate wrt parameters (argument 0)
   val_and_grad = jax.value_and_grad(total_energy, argnums=0, has_aux=True)
-  if cfg.optim.optimizer == 'adam':
+
+  # Construct and setup optimizer
+  if cfg.optim.optimizer == 'none':
+    optimizer = None
+  elif cfg.optim.optimizer == 'adam':
     optimizer = optax.chain(
         optax.scale_by_adam(**cfg.optim.adam),
         optax.scale_by_schedule(learning_rate_schedule),
         optax.scale(-1.))
+  elif cfg.optim.optimizer == 'lamb':
+    optimizer = optax.chain(
+        optax.clip_by_global_norm(1.0),
+        optax.scale_by_adam(eps=1e-7),
+        optax.scale_by_trust_ratio(),
+        optax.scale_by_schedule(learning_rate_schedule),
+        optax.scale(-1))
   elif cfg.optim.optimizer == 'kfac':
     optimizer = kfac_optim.Optimizer(
         val_and_grad,
@@ -353,32 +451,43 @@ def train(cfg: ml_collections.ConfigDict):
     sharded_key, subkeys = kfac_utils.p_split(sharded_key)
     opt_state = optimizer.init(params, subkeys, data)
     opt_state = opt_state_ckpt or opt_state  # avoid overwriting ckpted state
-  elif cfg.optim.optimizer == 'lamb':
-    optimizer = optax.chain(
-        optax.clip_by_global_norm(1.0),
-        optax.scale_by_adam(eps=1e-7),
-        optax.scale_by_trust_ratio(),
-        optax.scale_by_schedule(learning_rate_schedule),
-        optax.scale(-1))
-  elif cfg.optim.optimizer == 'none':
-    opt_state = None
   else:
     raise ValueError(f'Not a recognized optimizer: {cfg.optim.optimizer}')
 
-  if cfg.optim.optimizer != 'kfac' and cfg.optim.optimizer != 'none':
+  if not optimizer:
+    opt_state = None
+
+    def energy_eval(params: networks.ParamTree, data: jnp.ndarray,
+                    opt_state: Optional[optax.OptState],
+                    key: chex.PRNGKey) -> OptUpdateResults:
+      loss, aux_data = total_energy(params, key, data)
+      return params, opt_state, loss, aux_data
+
+    step = make_training_step(
+        mcmc_step=mcmc_step,
+        optimizer_step=energy_eval)
+  elif isinstance(optimizer, optax.GradientTransformation):
+    # optax/optax-compatible optimizer (ADAM, LAMB, ...)
     opt_state = jax.pmap(optimizer.init)(params)
     opt_state = opt_state_ckpt or opt_state  # avoid overwriting ckpted state
-    def opt_update(t, grad, params, opt_state):
-      del t  # Unused.
+
+    def opt_update(params: networks.ParamTree, data: jnp.ndarray,
+                   opt_state: Optional[optax.OptState],
+                   key: chex.PRNGKey) -> OptUpdateResults:
+      (loss, aux_data), grad = val_and_grad(params, key, data)
+      grad = constants.pmean(grad)
       updates, opt_state = optimizer.update(grad, opt_state, params)
       params = optax.apply_updates(params, updates)
-      return opt_state, params
-    step = make_training_step(mcmc_step, val_and_grad, opt_update)
-  # Only the pmapped MCMC step is needed after this point
-  mcmc_step = constants.pmap(mcmc_step, donate_argnums=1)
-  total_energy = constants.pmap(total_energy)
+      return params, opt_state, loss, aux_data
 
-  # The actual training loop
+    step = make_training_step(mcmc_step=mcmc_step, optimizer_step=opt_update)
+  elif isinstance(optimizer, kfac_optim.Optimizer):
+    step = make_kfac_training_step(
+        mcmc_step=mcmc_step,
+        damping=cfg.optim.kfac.damping,
+        optimizer=optimizer)
+  else:
+    raise ValueError(f'Unknown optimizer: {optimizer}')
 
   if mcmc_width_ckpt is not None:
     mcmc_width = kfac_utils.replicate_all_local_devices(mcmc_width_ckpt[0])
@@ -386,20 +495,32 @@ def train(cfg: ml_collections.ConfigDict):
     mcmc_width = kfac_utils.replicate_all_local_devices(
         jnp.asarray(cfg.mcmc.move_width))
   pmoves = np.zeros(cfg.mcmc.adapt_frequency)
-  shared_t = kfac_utils.replicate_all_local_devices(jnp.zeros([]))
-  shared_mom = kfac_utils.replicate_all_local_devices(jnp.zeros([]))
-  shared_damping = kfac_utils.replicate_all_local_devices(
-      jnp.asarray(cfg.optim.kfac.damping))
 
   if t_init == 0:
     logging.info('Burning in MCMC chain for %d steps', cfg.mcmc.burn_in)
+
+    def null_update(params: networks.ParamTree, data: jnp.ndarray,
+                    opt_state: Optional[optax.OptState],
+                    key: chex.PRNGKey) -> OptUpdateResults:
+      del data, key
+      return params, opt_state, jnp.zeros(1), None
+
+    burn_in_step = make_training_step(
+        mcmc_step=mcmc_step, optimizer_step=null_update)
+
     for t in range(cfg.mcmc.burn_in):
       sharded_key, subkeys = kfac_utils.p_split(sharded_key)
-      data, pmove = mcmc_step(params, data, subkeys, mcmc_width)
+      data, params, *_ = burn_in_step(
+          data=data,
+          params=params,
+          state=None,
+          key=subkeys,
+          mcmc_width=mcmc_width)
     logging.info('Completed burn-in MCMC steps')
     sharded_key, subkeys = kfac_utils.p_split(sharded_key)
-    logging.info('Initial energy: %03.4f E_h',
-                 total_energy(params, subkeys, data)[0])
+    ptotal_energy = constants.pmap(total_energy)
+    initial_energy, _ = ptotal_energy(params, subkeys, data)
+    logging.info('Initial energy: %03.4f E_h', initial_energy[0])
 
   time_of_last_ckpt = time.time()
   weighted_stats = None
@@ -419,43 +540,24 @@ def train(cfg: ml_collections.ConfigDict):
       directory=ckpt_save_path,
       iteration_key=None,
       log=False) as writer:
+    # Main training loop
     for t in range(t_init, cfg.optim.iterations):
       sharded_key, subkeys = kfac_utils.p_split(sharded_key)
-      if cfg.optim.optimizer == 'kfac':
-        data, pmove = mcmc_step(params, data, subkeys, mcmc_width)
-        # Need this split because MCMC step above used subkeys already
-        sharded_key, subkeys = kfac_utils.p_split(sharded_key)
-        params, opt_state, stats = optimizer.step(  # pytype: disable=attribute-error
-            params=params,
-            state=opt_state,
-            rng=subkeys,
-            data_iterator=iter([data]),
-            momentum=shared_mom,
-            damping=shared_damping)
-        loss = stats['loss']
-        unused_aux_data = stats['aux']
-      elif cfg.optim.optimizer == 'none':
-        data, pmove = mcmc_step(params, data, subkeys, mcmc_width)
-        sharded_key, subkeys = kfac_utils.p_split(sharded_key)
-        loss, unused_aux_data = total_energy(params, subkeys, data)
-      else:
-        data, params, opt_state, loss, unused_aux_data, pmove = step(
-            shared_t,
-            data,
-            params,
-            opt_state,
-            subkeys,
-            mcmc_width)
-        shared_t = shared_t + 1
+      data, params, opt_state, loss, unused_aux_data, pmove = step(
+          data=data,
+          params=params,
+          state=opt_state,
+          key=subkeys,
+          mcmc_width=mcmc_width)
 
       # due to pmean, loss, and pmove should be the same across
       # devices.
       loss = loss[0]
-      pmove = pmove[0]
       # per batch variance isn't informative. Use weighted mean and variance
       # instead.
       weighted_stats = statistics.exponentialy_weighted_stats(
           alpha=0.1, observation=loss, previous_stats=weighted_stats)
+      pmove = pmove[0]
 
       # Update MCMC move width
       if t > 0 and t % cfg.mcmc.adapt_frequency == 0:
