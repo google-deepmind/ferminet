@@ -46,6 +46,7 @@ def init_electrons(
     molecule: Sequence[system.Atom],
     electrons: Sequence[int],
     batch_size: int,
+    init_width: float,
 ) -> jnp.ndarray:
   """Initializes electron positions around each atom.
 
@@ -55,6 +56,8 @@ def init_electrons(
     electrons: tuple of number of alpha and beta electrons.
     batch_size: total number of MCMC configurations to generate across all
       devices.
+    init_width: width of (atom-centred) Gaussian used to generate initial
+      electron configurations.
 
   Returns:
     array of (batch_size, nalpha*nbeta*ndim) of initial (random) electron
@@ -90,6 +93,7 @@ def init_electrons(
   key, subkey = jax.random.split(key)
   return (
       electron_positions +
+      init_width *
       jax.random.normal(subkey, shape=(batch_size, electron_positions.size)))
 
 
@@ -240,7 +244,7 @@ def train(cfg: ml_collections.ConfigDict):
     logging.info('No checkpoint found. Training new model.')
     key, subkey = jax.random.split(key)
     data = init_electrons(subkey, cfg.system.molecule, cfg.system.electrons,
-                          cfg.batch_size)
+                          cfg.batch_size, cfg.mcmc.init_width)
     data = jnp.reshape(data, data_shape + data.shape[1:])
     data = kfac_utils.broadcast_all_local_devices(data)
     t_init = 0

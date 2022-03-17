@@ -145,7 +145,7 @@ def default() -> ml_collections.ConfigDict:
           'steps': 10,  # Number of MCMC steps to make between network updates.
           # Width of (atom-centred) Gaussian used to generate initial electron
           # configurations.
-          'init_width': 0.8,
+          'init_width': 1.0,
           # Width of Gaussian used for random moves for RMW or step size for
           # HMC.
           'move_width': 0.02,
