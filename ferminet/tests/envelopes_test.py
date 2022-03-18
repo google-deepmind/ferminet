@@ -21,10 +21,12 @@ import jax.numpy as jnp
 import numpy as np
 
 
-def _shape_options():
+def _shape_options(dim2=None):
   shapes = [[(3, 4, 5), (5, 6, 4, 2)], [(3, 4, 1), (1, 6, 4, 2)],
             [(3, 1, 5), (5, 6, 1, 2)], [(3, 1, 1), (1, 6, 1, 2)]]
   for shape1, shape2 in shapes:
+    if dim2:
+      shape2 = shape2[:dim2]
     yield {
         'testcase_name': f'_shape1={shape1}_shape2={shape2}',
         'shapes': (shape1, shape2),
@@ -43,7 +45,7 @@ class ApplyCovarianceTest(parameterized.TestCase):
         envelopes._apply_covariance(x, y),
         jnp.einsum('ijk,kmjn->ijmn', x, y))
 
-  @parameterized.named_parameters(_shape_options())
+  @parameterized.named_parameters(_shape_options(dim2=3))
   def test_reduced_apply_covariance(self, shapes):
     rng = np.random.RandomState(0).standard_normal
     dtype = np.float32
