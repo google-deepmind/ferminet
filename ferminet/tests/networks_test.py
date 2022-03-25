@@ -23,7 +23,6 @@ from ferminet import envelopes
 from ferminet import networks
 import jax
 from jax import random
-from jax import test_util as jtu
 import jax.numpy as jnp
 import numpy as np
 
@@ -77,8 +76,7 @@ def _slogdet_options():
     yield {'testcase_name': f'_shape={shape}', 'shape': shape}
 
 
-@jtu.with_config(jax_numpy_rank_promotion='allow')
-class NetworksTest(jtu.JaxTestCase):
+class NetworksTest(parameterized.TestCase):
 
   @parameterized.named_parameters(_antisymmtry_options())
   def test_antisymmetry(self, envelope, dtype):
@@ -135,12 +133,12 @@ class NetworksTest(jtu.JaxTestCase):
     out1 = networks.fermi_net(params, data1, atoms, nspins, options)
 
     out2 = networks.fermi_net(params, data2, atoms, nspins, options)
-    self.assertAllClose(out1[1], out2[1], check_dtypes=False)
-    self.assertAllClose(out1[0], -1*out2[0], check_dtypes=False)
+    np.testing.assert_allclose(out1[1], out2[1], atol=1E-5, rtol=1E-5)
+    np.testing.assert_allclose(out1[0], -1*out2[0], atol=1E-5, rtol=1E-5)
 
     out3 = networks.fermi_net(params, data3, atoms, nspins, options)
-    self.assertAllClose(out1[1], out3[1], check_dtypes=False)
-    self.assertAllClose(out1[0], -1*out3[0], check_dtypes=False)
+    np.testing.assert_allclose(out1[1], out3[1], atol=1E-5, rtol=1E-5)
+    np.testing.assert_allclose(out1[0], -1*out3[0], atol=1E-5, rtol=1E-5)
 
   @parameterized.named_parameters(_slogdet_options())
   def test_slogdet(self, shape, dtype=np.float32):
@@ -148,8 +146,8 @@ class NetworksTest(jtu.JaxTestCase):
     a = rng(shape, dtype)
     s1, ld1 = networks.slogdet(a)
     s2, ld2 = np.linalg.slogdet(a)
-    self.assertAllClose(s1, s2, check_dtypes=False)
-    self.assertAllClose(ld1, ld2, check_dtypes=False)
+    np.testing.assert_allclose(s1, s2, atol=1E-5, rtol=1E-5)
+    np.testing.assert_allclose(ld1, ld2, atol=1E-5, rtol=1E-5)
 
   def test_create_input_features(self):
     dtype = np.float32
@@ -172,13 +170,14 @@ class NetworksTest(jtu.JaxTestCase):
     with self.subTest('check forward pass'):
       chex.assert_tree_all_finite(input_features)
       # |r_i - r_j| should be zero.
-      self.assertAllClose(np.diag(r_ee), np.zeros(6))
+      np.testing.assert_allclose(np.diag(r_ee), np.zeros(6), atol=1E-5)
     with self.subTest('check backwards pass'):
       # Most importantly, check the gradient of the electron-electron distances,
       # |x_i - x_j|, is masked out for i==j.
       chex.assert_tree_all_finite(d_input_features)
       # We mask out the |r_i-r_j| terms for i == j. Check these are zero.
-      self.assertAllClose(d_r_ee_zeros, np.zeros_like(d_r_ee_zeros))
+      np.testing.assert_allclose(
+          d_r_ee_zeros, np.zeros_like(d_r_ee_zeros), atol=1E-5, rtol=1E-5)
       self.assertTrue(np.all(np.abs(d_r_ee_non_zeros) > 0.0))
 
   def test_construct_symmetric_features(self):
@@ -204,11 +203,10 @@ class NetworksTest(jtu.JaxTestCase):
     inverse_swaps = np.asarray(inverse_swaps)
     features_swap = networks.construct_symmetric_features(
         h_one[swaps], h_two[swaps][:, swaps], nspins)
-    self.assertAllClose(features, features_swap[inverse_swaps])
+    np.testing.assert_allclose(
+        features, features_swap[inverse_swaps], atol=1E-5, rtol=1E-5)
 
-  @parameterized.parameters(
-      _network_options()
-  )
+  @parameterized.parameters(_network_options())
   def test_fermi_net(self, vmap, **network_options):
     # Warning: this only tests we can build and run the network. It does not
     # test correctness of output nor test changing network width or depth.
@@ -247,6 +245,7 @@ class NetworksTest(jtu.JaxTestCase):
                             for nspins, full_det in itertools.product([(
                                 1, 0), (2, 0), (0, 1)], [True, False]))
   def test_spin_polarised_fermi_net(self, nspins, full_det):
+    del full_det  # unused
     atoms = jnp.zeros(shape=(1, 3))
     charges = jnp.ones(shape=1)
     key = jax.random.PRNGKey(42)
