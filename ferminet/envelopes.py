@@ -96,7 +96,7 @@ class Envelope(Protocol):
 
 def _apply_covariance(x: jnp.ndarray, y: jnp.ndarray) -> jnp.ndarray:
   """Equivalent to jnp.einsum('ijk,kmjn->ijmn', x, y)."""
-  # TODO(pfau): avoid first reshape, just make params['sigma'] rank 3
+  # We can avoid first reshape - just make params['sigma'] rank 3
   i, _, _ = x.shape
   k, m, j, n = y.shape
   x = x.transpose((1, 0, 2))
@@ -248,7 +248,7 @@ def make_sto_poly_envelope() -> Tuple[EnvelopeType, EnvelopeInit, Envelope]:
             pi: jnp.ndarray, sigma: jnp.ndarray) -> jnp.ndarray:
     """Computes a Slater-type orbital envelope."""
     del r_ae, r_ee  # unused
-    # TODO(botev): register KFAC tags and blocks.
+    # Should register KFAC tags and blocks.
     # Envelope: exp(-sigma*r_ae) * (sum_i r_ae^i * pi_i)
     ae_sigma = _apply_covariance(ae, sigma)
     ae_sigma = curvature_tags_and_blocks.register_qmc1(
@@ -279,7 +279,7 @@ def make_output_envelope() -> Tuple[EnvelopeType, EnvelopeInit, Envelope]:
             pi: jnp.ndarray, sigma: jnp.ndarray) -> jnp.ndarray:
     """Fully anisotropic envelope, but only one output in log space."""
     del r_ae, r_ee  # unused
-    # TODO(botev): register KFAC tags and blocks.
+    # Should register KFAC tags and blocks.
     sigma = jnp.expand_dims(sigma, -1)
     ae_sigma = jnp.squeeze(_apply_covariance(ae, sigma), axis=-1)
     r_ae_sigma = jnp.linalg.norm(ae_sigma, axis=2)
@@ -307,12 +307,11 @@ def make_exact_cusp_envelope(
     """Combine exact cusp conditions and envelope on the output into one."""
     # No cusp at zero
     del r_ae  # unused
-    # TODO(botev): register KFAC tags and blocks.
+    # Should register KFAC tags and blocks.
     sigma = jnp.expand_dims(sigma, -1)
     ae_sigma = jnp.squeeze(_apply_covariance(ae, sigma), axis=-1)
     soft_r_ae = jnp.sqrt(jnp.sum(1. + ae_sigma**2, axis=2))
     env = jnp.sum(jnp.log(jnp.sum(jnp.exp(-soft_r_ae + pi), axis=1)))
-    # TODO(pfau): look into soft envelope without cusps
 
     # atomic cusp
     r_ae = jnp.linalg.norm(ae, axis=2)
