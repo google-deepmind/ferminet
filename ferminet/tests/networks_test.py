@@ -241,15 +241,15 @@ class NetworksTest(parameterized.TestCase):
       self.assertSequenceEqual(sign_psi.shape, expected_shape)
       self.assertSequenceEqual(log_psi.shape, expected_shape)
 
-  @parameterized.parameters((nspins, full_det)
-                            for nspins, full_det in itertools.product([(
-                                1, 0), (2, 0), (0, 1)], [True, False]))
+  @parameterized.parameters(
+      tuple(itertools.product([(1, 0), (2, 0), (0, 1)], [True, False])))
   def test_spin_polarised_fermi_net(self, nspins, full_det):
     del full_det  # unused
     atoms = jnp.zeros(shape=(1, 3))
     charges = jnp.ones(shape=1)
     key = jax.random.PRNGKey(42)
-    init, fermi_net, _ = networks.make_fermi_net(atoms, nspins, charges)
+    init, fermi_net, _ = networks.make_fermi_net(
+        atoms, nspins, charges, full_det=full_det)
     key, subkey1, subkey2 = jax.random.split(key, num=3)
     params = init(subkey1)
     xs = jax.random.uniform(subkey2, shape=(sum(nspins) * 3,))
