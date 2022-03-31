@@ -242,7 +242,7 @@ class NetworksTest(parameterized.TestCase):
       self.assertSequenceEqual(log_psi.shape, expected_shape)
 
   @parameterized.parameters(
-      tuple(itertools.product([(1, 0), (2, 0), (0, 1)], [True, False])))
+      *(itertools.product([(1, 0), (2, 0), (0, 1)], [True, False])))
   def test_spin_polarised_fermi_net(self, nspins, full_det):
     atoms = jnp.zeros(shape=(1, 3))
     charges = jnp.ones(shape=1)
