@@ -244,7 +244,6 @@ class NetworksTest(parameterized.TestCase):
   @parameterized.parameters(
       tuple(itertools.product([(1, 0), (2, 0), (0, 1)], [True, False])))
   def test_spin_polarised_fermi_net(self, nspins, full_det):
-    del full_det  # unused
     atoms = jnp.zeros(shape=(1, 3))
     charges = jnp.ones(shape=1)
     key = jax.random.PRNGKey(42)
