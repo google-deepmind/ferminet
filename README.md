@@ -45,7 +45,8 @@ python -m pytest
 ferminet uses the `ConfigDict` from
 [ml_collections](https://github.com/google/ml_collections) to configure the
 system. A few example scripts are included under `ferminet/configs/`. These are
-mostly for testing so need additional
+mostly for testing so may need additional settings for a production-level
+calculation.
 
 ```shell
 ferminet --config ferminet/configs/atom.py --config.system.atom Li --config.batch_size 256 --config.pretrain.iterations 100
@@ -69,7 +70,7 @@ can create a config file containing:
 from ferminet import base_config
 from ferminet.utils import system
 
-# Settings in a a config files are loaded by executing the the get_config
+# Settings in a config files are loaded by executing the the get_config
 # function.
 def get_config():
   # Get default options.
