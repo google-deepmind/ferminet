@@ -16,8 +16,7 @@
 
 import functools
 import jax
-
-from kfac_ferminet_alpha import utils as kfac_utils
+import kfac_jax
 
 
 # Axis name we pmap over.
@@ -28,5 +27,6 @@ PMAP_AXIS_NAME = 'qmc_pmap_axis'
 pmap = functools.partial(jax.pmap, axis_name=PMAP_AXIS_NAME)
 
 # Shortcut for kfac utils
-psum = functools.partial(kfac_utils.psum_if_pmap, axis_name=PMAP_AXIS_NAME)
-pmean = functools.partial(kfac_utils.pmean_if_pmap, axis_name=PMAP_AXIS_NAME)
+psum = functools.partial(kfac_jax.utils.psum_if_pmap, axis_name=PMAP_AXIS_NAME)
+pmean = functools.partial(
+    kfac_jax.utils.pmean_if_pmap, axis_name=PMAP_AXIS_NAME)

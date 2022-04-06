@@ -23,6 +23,7 @@ from absl import logging
 import chex
 from ferminet import checkpoint
 from ferminet import constants
+from ferminet import curvature_tags_and_blocks
 from ferminet import hamiltonian
 from ferminet import loss as qmc_loss_functions
 from ferminet import mcmc
@@ -33,13 +34,11 @@ from ferminet.utils import system
 from ferminet.utils import writers
 import jax
 import jax.numpy as jnp
+import kfac_jax
 import ml_collections
 import numpy as np
 import optax
 from typing_extensions import Protocol
-
-from kfac_ferminet_alpha import optimizer as kfac_optim
-from kfac_ferminet_alpha import utils as kfac_utils
 
 
 def init_electrons(
@@ -99,7 +98,7 @@ def init_electrons(
 
 
 # All optimizer states (KFAC and optax-based).
-OptimizerState = Union[optax.OptState, kfac_optim.State]
+OptimizerState = Union[optax.OptState, kfac_jax.optimizer.OptimizerState]
 OptUpdateResults = Tuple[networks.ParamTree, Optional[OptimizerState],
                          jnp.ndarray,
                          Optional[qmc_loss_functions.AuxiliaryLossData]]
@@ -196,7 +195,7 @@ def make_training_step(
 
 
 def make_kfac_training_step(mcmc_step, damping: float,
-                            optimizer: kfac_optim.Optimizer) -> Step:
+                            optimizer: kfac_jax.Optimizer) -> Step:
   """Factory to create traning step for KFAC optimizers.
 
   Args:
@@ -210,18 +209,19 @@ def make_kfac_training_step(mcmc_step, damping: float,
     update. See the Step protocol for details.
   """
   mcmc_step = constants.pmap(mcmc_step, donate_argnums=1)
-  shared_mom = kfac_utils.replicate_all_local_devices(jnp.zeros([]))
-  shared_damping = kfac_utils.replicate_all_local_devices(jnp.asarray(damping))
+  shared_mom = kfac_jax.utils.replicate_all_local_devices(jnp.zeros([]))
+  shared_damping = kfac_jax.utils.replicate_all_local_devices(
+      jnp.asarray(damping))
 
   def step(data: jnp.ndarray,
-           params: networks.ParamTree, state: kfac_optim.State,
+           params: networks.ParamTree, state: kfac_jax.optimizer.OptimizerState,
            key: chex.PRNGKey, mcmc_width: jnp.ndarray) -> StepResults:
     """A full update iteration for KFAC: MCMC steps + optimization."""
     # KFAC requires control of the loss and gradient eval, so everything called
     # here must be already pmapped.
 
     # MCMC loop
-    mcmc_keys, loss_keys = kfac_utils.p_split(key)
+    mcmc_keys, loss_keys = kfac_jax.utils.p_split(key)
     new_data, pmove = mcmc_step(params, data, mcmc_keys, mcmc_width)
 
     # Optimization step
@@ -302,7 +302,7 @@ def train(cfg: ml_collections.ConfigDict):
       **cfg.network.detnet)
   key, subkey = jax.random.split(key)
   params = network_init(subkey)
-  params = kfac_utils.replicate_all_local_devices(params)
+  params = kfac_jax.utils.replicate_all_local_devices(params)
   # Often just need log|psi(x)|.
   network = lambda *args, **kwargs: signed_network(*args, **kwargs)[1]  # type: networks.LogFermiNetLike
   batch_network = jax.vmap(
@@ -332,7 +332,7 @@ def train(cfg: ml_collections.ConfigDict):
     data = init_electrons(subkey, cfg.system.molecule, cfg.system.electrons,
                           cfg.batch_size, cfg.mcmc.init_width)
     data = jnp.reshape(data, data_shape + data.shape[1:])
-    data = kfac_utils.broadcast_all_local_devices(data)
+    data = kfac_jax.utils.broadcast_all_local_devices(data)
     t_init = 0
     opt_state_ckpt = None
     mcmc_width_ckpt = None
@@ -342,7 +342,7 @@ def train(cfg: ml_collections.ConfigDict):
 
   # Initialisation done. We now want to have different PRNG streams on each
   # device. Shard the key over devices
-  sharded_key = kfac_utils.make_different_rng_key_on_all_devices(key)
+  sharded_key = kfac_jax.utils.make_different_rng_key_on_all_devices(key)
 
   # Pretraining to match Hartree-Fock
 
@@ -358,7 +358,7 @@ def train(cfg: ml_collections.ConfigDict):
         lambda params, data: orbitals(params, data)[0],
         in_axes=(None, 0),
         out_axes=0)
-    sharded_key, subkeys = kfac_utils.p_split(sharded_key)
+    sharded_key, subkeys = kfac_jax.utils.p_split(sharded_key)
     params, data = pretrain.pretrain_hartree_fock(
         params=params,
         data=data,
@@ -429,7 +429,7 @@ def train(cfg: ml_collections.ConfigDict):
         optax.scale_by_schedule(learning_rate_schedule),
         optax.scale(-1))
   elif cfg.optim.optimizer == 'kfac':
-    optimizer = kfac_optim.Optimizer(
+    optimizer = kfac_jax.Optimizer(
         val_and_grad,
         l2_reg=cfg.optim.kfac.l2_reg,
         norm_constraint=cfg.optim.kfac.norm_constraint,
@@ -443,10 +443,13 @@ def train(cfg: ml_collections.ConfigDict):
         register_only_generic=cfg.optim.kfac.register_only_generic,
         estimation_mode='fisher_exact',
         multi_device=True,
-        pmap_axis_name=constants.PMAP_AXIS_NAME
+        pmap_axis_name=constants.PMAP_AXIS_NAME,
+        auto_register_kwargs=dict(
+            graph_patterns=curvature_tags_and_blocks.GRAPH_PATTERNS,
+        ),
         # debug=True
     )
-    sharded_key, subkeys = kfac_utils.p_split(sharded_key)
+    sharded_key, subkeys = kfac_jax.utils.p_split(sharded_key)
     opt_state = optimizer.init(params, subkeys, data)
     opt_state = opt_state_ckpt or opt_state  # avoid overwriting ckpted state
   else:
@@ -479,7 +482,7 @@ def train(cfg: ml_collections.ConfigDict):
       return params, opt_state, loss, aux_data
 
     step = make_training_step(mcmc_step=mcmc_step, optimizer_step=opt_update)
-  elif isinstance(optimizer, kfac_optim.Optimizer):
+  elif isinstance(optimizer, kfac_jax.Optimizer):
     step = make_kfac_training_step(
         mcmc_step=mcmc_step,
         damping=cfg.optim.kfac.damping,
@@ -488,9 +491,9 @@ def train(cfg: ml_collections.ConfigDict):
     raise ValueError(f'Unknown optimizer: {optimizer}')
 
   if mcmc_width_ckpt is not None:
-    mcmc_width = kfac_utils.replicate_all_local_devices(mcmc_width_ckpt[0])
+    mcmc_width = kfac_jax.utils.replicate_all_local_devices(mcmc_width_ckpt[0])
   else:
-    mcmc_width = kfac_utils.replicate_all_local_devices(
+    mcmc_width = kfac_jax.utils.replicate_all_local_devices(
         jnp.asarray(cfg.mcmc.move_width))
   pmoves = np.zeros(cfg.mcmc.adapt_frequency)
 
@@ -507,7 +510,7 @@ def train(cfg: ml_collections.ConfigDict):
         mcmc_step=mcmc_step, optimizer_step=null_update)
 
     for t in range(cfg.mcmc.burn_in):
-      sharded_key, subkeys = kfac_utils.p_split(sharded_key)
+      sharded_key, subkeys = kfac_jax.utils.p_split(sharded_key)
       data, params, *_ = burn_in_step(
           data=data,
           params=params,
@@ -515,7 +518,7 @@ def train(cfg: ml_collections.ConfigDict):
           key=subkeys,
           mcmc_width=mcmc_width)
     logging.info('Completed burn-in MCMC steps')
-    sharded_key, subkeys = kfac_utils.p_split(sharded_key)
+    sharded_key, subkeys = kfac_jax.utils.p_split(sharded_key)
     ptotal_energy = constants.pmap(total_energy)
     initial_energy, _ = ptotal_energy(params, subkeys, data)
     logging.info('Initial energy: %03.4f E_h', initial_energy[0])
@@ -540,7 +543,7 @@ def train(cfg: ml_collections.ConfigDict):
       log=False) as writer:
     # Main training loop
     for t in range(t_init, cfg.optim.iterations):
-      sharded_key, subkeys = kfac_utils.p_split(sharded_key)
+      sharded_key, subkeys = kfac_jax.utils.p_split(sharded_key)
       data, params, opt_state, loss, unused_aux_data, pmove = step(
           data=data,
           params=params,

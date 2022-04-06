@@ -26,11 +26,11 @@ from ferminet.utils import scf
 from ferminet.utils import system
 import jax
 from jax import numpy as jnp
+import kfac_jax
 import numpy as np
 import optax
 import pyscf
 
-from kfac_ferminet_alpha import utils as kfac_utils
 
 # Given the parameters and electron positions, return arrays(s) of the orbitals.
 # See networks.fermi_net_orbitals. (Note only the orbitals, and not envelope
@@ -253,7 +253,7 @@ def pretrain_hartree_fock(
 
   for t in range(iterations):
     target = eval_orbitals(scf_approx, data, electrons)
-    sharded_key, subkeys = kfac_utils.p_split(sharded_key)
+    sharded_key, subkeys = kfac_jax.utils.p_split(sharded_key)
     data, params, opt_state_pt, loss, logprob = pretrain_step(
         data, target, params, opt_state_pt, subkeys, logprob)
     logging.info('Pretrain iter %05d: %g', t, loss[0])

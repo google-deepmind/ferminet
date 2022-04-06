@@ -22,8 +22,7 @@ from ferminet import hamiltonian
 from ferminet import networks
 import jax
 import jax.numpy as jnp
-
-from kfac_ferminet_alpha import loss_functions
+import kfac_jax
 
 
 # Evaluation of total energy.
@@ -121,7 +120,7 @@ def make_loss(network: networks.LogFermiNetLike,
     primals = primals[0], primals[2]
     tangents = tangents[0], tangents[2]
     psi_primal, psi_tangent = jax.jvp(batch_network, primals, tangents)
-    loss_functions.register_normal_predictive_distribution(psi_primal[:, None])
+    kfac_jax.register_normal_predictive_distribution(psi_primal[:, None])
     primals_out = loss, aux_data
     device_batch_size = jnp.shape(aux_data.local_energy)[0]
     tangents_out = (jnp.dot(psi_tangent, diff) / device_batch_size, aux_data)

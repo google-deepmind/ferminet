@@ -172,7 +172,7 @@ def make_full_envelope() -> Tuple[EnvelopeType, EnvelopeInit, Envelope]:
     """Computes a fully anisotropic exponentially-decaying envelope."""
     del r_ae, r_ee  # unused
     ae_sigma = _apply_covariance(ae, sigma)
-    ae_sigma = curvature_tags_and_blocks.register_qmc1(
+    ae_sigma = curvature_tags_and_blocks.register_qmc(
         ae_sigma, ae, sigma, type='full')
     r_ae_sigma = jnp.linalg.norm(ae_sigma, axis=2)
     return jnp.sum(jnp.exp(-r_ae_sigma) * pi, axis=1)
@@ -211,7 +211,7 @@ def make_sto_envelope() -> Tuple[EnvelopeType, EnvelopeInit, Envelope]:
     """Computes a Slater-type orbital envelope: exp(-sigma*r_ae) * r_ae^n * pi."""
     del r_ae, r_ee  # unused
     ae_sigma = _apply_covariance(ae, sigma)
-    ae_sigma = curvature_tags_and_blocks.register_qmc1(
+    ae_sigma = curvature_tags_and_blocks.register_qmc(
         ae_sigma, ae, sigma, type='full')
     r_ae_sigma = jnp.linalg.norm(ae_sigma, axis=2)
     exp_r_ae = jnp.exp(-r_ae_sigma + jnp.exp(n) * jnp.log(r_ae_sigma))
@@ -251,7 +251,7 @@ def make_sto_poly_envelope() -> Tuple[EnvelopeType, EnvelopeInit, Envelope]:
     # Should register KFAC tags and blocks.
     # Envelope: exp(-sigma*r_ae) * (sum_i r_ae^i * pi_i)
     ae_sigma = _apply_covariance(ae, sigma)
-    ae_sigma = curvature_tags_and_blocks.register_qmc1(
+    ae_sigma = curvature_tags_and_blocks.register_qmc(
         ae_sigma, ae, sigma, type='full')
     r_ae_sigma = jnp.linalg.norm(ae_sigma, axis=2)
     exp_r_ae = jnp.exp(-r_ae_sigma)

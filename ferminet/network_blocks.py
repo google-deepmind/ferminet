@@ -17,7 +17,6 @@
 import itertools
 from typing import Optional, Sequence
 
-from ferminet import curvature_tags_and_blocks
 import jax
 import jax.numpy as jnp
 
@@ -50,7 +49,6 @@ def linear_layer(x: jnp.ndarray,
     x w + b if b is given, x w otherwise.
   """
   y = jnp.dot(x, w)
-  y = y + b if b is not None else y
-  return curvature_tags_and_blocks.register_repeated_dense(y, x, w, b)
+  return y + b if b is not None else y
 
 vmap_linear_layer = jax.vmap(linear_layer, in_axes=(0, None, None), out_axes=0)
