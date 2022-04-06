@@ -264,8 +264,8 @@ def init_to_hf_solution(
   for i, spin in enumerate(active_spin_channels):
     # Initialize last layer to match Hartree-Fock weights on basis set.
     # pylint: disable=protected-access
-    norb = hf_solution._mean_field.mo_coeff[i].shape[0]
-    mat = hf_solution._mean_field.mo_coeff[i][:, :spin]
+    norb = hf_solution.mean_field.mo_coeff[i].shape[0]
+    mat = hf_solution.mean_field.mo_coeff[i][:, :spin]
     # pylint: enable=protected-access
     w = orbital_layer[i]['w']
     for j in range(determinants):
