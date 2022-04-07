@@ -115,7 +115,13 @@ class Scf:
       self.mean_field = pyscf.scf.RHF(self._mol)
     else:
       self.mean_field = pyscf.scf.UHF(self._mol)
-    self.mean_field.kernel(dm0=dm0)
+    try:
+      self.mean_field.kernel(dm0=dm0)
+    except TypeError:
+      logging.info('Mean-field solver does not support specifying an initial '
+                   'density matrix.')
+      # 1e solvers (e.g. uhf.HF1e) do not take any keyword arguments.
+      self.mean_field.kernel()
     return self.mean_field
 
   def eval_mos(self, positions: np.ndarray,
