@@ -29,6 +29,7 @@ from ferminet import loss as qmc_loss_functions
 from ferminet import mcmc
 from ferminet import networks
 from ferminet import pretrain
+from ferminet.utils import multi_host
 from ferminet.utils import statistics
 from ferminet.utils import system
 from ferminet.utils import writers
@@ -249,17 +250,20 @@ def train(cfg: ml_collections.ConfigDict):
   """
   # Device logging
   num_devices = jax.local_device_count()
-  logging.info('Starting QMC with %i XLA devices', num_devices)
-  if cfg.batch_size % num_devices != 0:
+  num_hosts = jax.device_count() // num_devices
+  logging.info('Starting QMC with %i XLA devices per host '
+               'across %i hosts.', num_devices, num_hosts)
+  if cfg.batch_size % (num_devices * num_hosts) != 0:
     raise ValueError('Batch size must be divisible by number of devices, '
                      'got batch size {} for {} devices.'.format(
-                         cfg.batch_size, num_devices))
+                         cfg.batch_size, num_devices * num_hosts))
   if cfg.system.ndim != 3:
     # The network (at least the input feature construction) and initial MCMC
     # molecule configuration (via system.Atom) assume 3D systems. This can be
     # lifted with a little work.
     raise ValueError('Only 3D systems are currently supported.')
-  device_batch_size = cfg.batch_size // num_devices  # batch size per device
+  host_batch_size = cfg.batch_size // num_hosts  # batch size per host
+  device_batch_size = host_batch_size // num_devices  # batch size per device
   data_shape = (num_devices, device_batch_size)
 
   # Check if mol is a pyscf molecule and convert to internal representation
@@ -275,7 +279,8 @@ def train(cfg: ml_collections.ConfigDict):
   if cfg.debug.deterministic:
     seed = 23
   else:
-    seed = int(1e6 * time.time())
+    seed = 1e6 * time.time()
+    seed = int(multi_host.broadcast_to_hosts(seed))
   key = jax.random.PRNGKey(seed)
 
   # Create parameters, network, and vmaped/pmaped derivations
@@ -288,6 +293,11 @@ def train(cfg: ml_collections.ConfigDict):
         nspins=nspins,
         restricted=False,
         basis=cfg.pretrain.basis)
+    # broadcast the result of PySCF from host 0 to all other hosts
+    hartree_fock.mean_field.mo_coeff = tuple([
+        multi_host.broadcast_to_hosts(x)
+        for x in hartree_fock.mean_field.mo_coeff
+    ])
 
   hf_solution = hartree_fock if cfg.pretrain.method == 'direct_init' else None
   network_init, signed_network, network_options = networks.make_fermi_net(
@@ -325,12 +335,18 @@ def train(cfg: ml_collections.ConfigDict):
 
   if ckpt_restore_filename:
     t_init, data, params, opt_state_ckpt, mcmc_width_ckpt = checkpoint.restore(
-        ckpt_restore_filename, cfg.batch_size)
+        ckpt_restore_filename, host_batch_size)
   else:
     logging.info('No checkpoint found. Training new model.')
     key, subkey = jax.random.split(key)
-    data = init_electrons(subkey, cfg.system.molecule, cfg.system.electrons,
-                          cfg.batch_size, cfg.mcmc.init_width)
+    # make sure data on each host is initialized differently
+    subkey = jax.random.fold_in(subkey, jax.process_index())
+    data = init_electrons(
+        subkey,
+        cfg.system.molecule,
+        cfg.system.electrons,
+        batch_size=host_batch_size,
+        init_width=cfg.mcmc.init_width)
     data = jnp.reshape(data, data_shape + data.shape[1:])
     data = kfac_jax.utils.broadcast_all_local_devices(data)
     t_init = 0
