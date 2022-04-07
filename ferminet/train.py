@@ -238,12 +238,14 @@ def make_kfac_training_step(mcmc_step, damping: float,
   return step
 
 
-def train(cfg: ml_collections.ConfigDict):
+def train(cfg: ml_collections.ConfigDict, writer_manager=None):
   """Runs training loop for QMC.
 
   Args:
     cfg: ConfigDict containing the system and training parameters to run on. See
       base_config.default for more details.
+    writer_manager: context manager with a write method for logging output. If
+      None, a default writer (ferminet.utils.writers.Writer) is used.
 
   Raises:
     ValueError: if an illegal or unsupported value in cfg is detected.
@@ -551,12 +553,14 @@ def train(cfg: ml_collections.ConfigDict):
     logging.info('Setting initial iteration to 0.')
     t_init = 0
 
-  with writers.Writer(
-      name='train_stats',
-      schema=train_schema,
-      directory=ckpt_save_path,
-      iteration_key=None,
-      log=False) as writer:
+  if writer_manager is None:
+    writer_manager = writers.Writer(
+        name='train_stats',
+        schema=train_schema,
+        directory=ckpt_save_path,
+        iteration_key=None,
+        log=False)
+  with writer_manager as writer:
     # Main training loop
     for t in range(t_init, cfg.optim.iterations):
       sharded_key, subkeys = kfac_jax.utils.p_split(sharded_key)
