@@ -17,6 +17,7 @@
 from absl.testing import absltest
 from absl.testing import parameterized
 from ferminet import network_blocks
+import numpy as np
 
 
 class NetworkBlocksTest(parameterized.TestCase):
@@ -31,6 +32,15 @@ class NetworkBlocksTest(parameterized.TestCase):
   ])
   def test_array_partitions(self, sizes, expected_indices):
     self.assertEqual(network_blocks.array_partitions(sizes), expected_indices)
+
+  @parameterized.parameters(
+      {'shape': shape} for shape in [(1, 1, 1), (10, 2, 2), (10, 3, 3)])
+  def test_slogdet(self, shape, dtype=np.float32):
+    a = np.random.normal(size=shape).astype(dtype)
+    s1, ld1 = network_blocks.slogdet(a)
+    s2, ld2 = np.linalg.slogdet(a)
+    np.testing.assert_allclose(s1, s2, atol=1E-5, rtol=1E-5)
+    np.testing.assert_allclose(ld1, ld2, atol=1E-5, rtol=1E-5)
 
 
 if __name__ == '__main__':

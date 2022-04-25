@@ -17,6 +17,7 @@
 import enum
 from typing import Any, Mapping, Optional, Sequence, Tuple, Union
 
+import attr
 from ferminet import curvature_tags_and_blocks
 from ferminet import network_blocks
 from ferminet import sto
@@ -71,7 +72,7 @@ class EnvelopeInit(Protocol):
     """
 
 
-class Envelope(Protocol):
+class EnvelopeApply(Protocol):
 
   def __call__(self, *, ae: jnp.ndarray, r_ae: jnp.ndarray, r_ee: jnp.ndarray,
                **kwargs: jnp.ndarray) -> jnp.ndarray:
@@ -94,6 +95,13 @@ class Envelope(Protocol):
     """
 
 
+@attr.s(auto_attribs=True)
+class Envelope:
+  apply_type: EnvelopeType
+  init: EnvelopeInit
+  apply: EnvelopeApply
+
+
 def _apply_covariance(x: jnp.ndarray, y: jnp.ndarray) -> jnp.ndarray:
   """Equivalent to jnp.einsum('ijk,kmjn->ijmn', x, y)."""
   # We can avoid first reshape - just make params['sigma'] rank 3
@@ -105,7 +113,7 @@ def _apply_covariance(x: jnp.ndarray, y: jnp.ndarray) -> jnp.ndarray:
   return vdot(x, y).reshape((j, i, m, n)).transpose((1, 0, 2, 3))
 
 
-def make_isotropic_envelope() -> Tuple[EnvelopeType, EnvelopeInit, Envelope]:
+def make_isotropic_envelope() -> Envelope:
   """Creates an isotropic exponentially decaying multiplicative envelope."""
 
   def init(natom: int, output_dims: Sequence[int], hf: Optional[scf.Scf] = None,
@@ -125,10 +133,10 @@ def make_isotropic_envelope() -> Tuple[EnvelopeType, EnvelopeInit, Envelope]:
     del ae, r_ee  # unused
     return jnp.sum(jnp.exp(-r_ae * sigma) * pi, axis=1)
 
-  return EnvelopeType.PRE_DETERMINANT, init, apply
+  return Envelope(EnvelopeType.PRE_DETERMINANT, init, apply)
 
 
-def make_diagonal_envelope() -> Tuple[EnvelopeType, EnvelopeInit, Envelope]:
+def make_diagonal_envelope() -> Envelope:
   """Creats a diagonal exponentially-decaying multiplicative envelope."""
 
   def init(natom: int, output_dims: Sequence[int], hf: Optional[scf.Scf] = None,
@@ -149,10 +157,10 @@ def make_diagonal_envelope() -> Tuple[EnvelopeType, EnvelopeInit, Envelope]:
     r_ae_sigma = jnp.linalg.norm(ae[..., None] * sigma, axis=2)
     return jnp.sum(jnp.exp(-r_ae_sigma) * pi, axis=1)
 
-  return EnvelopeType.PRE_DETERMINANT, init, apply
+  return Envelope(EnvelopeType.PRE_DETERMINANT, init, apply)
 
 
-def make_full_envelope() -> Tuple[EnvelopeType, EnvelopeInit, Envelope]:
+def make_full_envelope() -> Envelope:
   """Computes a fully anisotropic exponentially-decaying envelope."""
 
   def init(natom: int, output_dims: Sequence[int], hf: Optional[scf.Scf] = None,
@@ -177,10 +185,10 @@ def make_full_envelope() -> Tuple[EnvelopeType, EnvelopeInit, Envelope]:
     r_ae_sigma = jnp.linalg.norm(ae_sigma, axis=2)
     return jnp.sum(jnp.exp(-r_ae_sigma) * pi, axis=1)
 
-  return EnvelopeType.PRE_DETERMINANT, init, apply
+  return Envelope(EnvelopeType.PRE_DETERMINANT, init, apply)
 
 
-def make_sto_envelope() -> Tuple[EnvelopeType, EnvelopeInit, Envelope]:
+def make_sto_envelope() -> Envelope:
   """Creates a Slater-type orbital envelope: exp(-sigma*r_ae) * r_ae^n * pi."""
 
   def init(natom: int, output_dims: int, hf: Optional[scf.Scf] = None,
@@ -218,10 +226,10 @@ def make_sto_envelope() -> Tuple[EnvelopeType, EnvelopeInit, Envelope]:
     out = jnp.sum(exp_r_ae * pi, axis=1)
     return out
 
-  return EnvelopeType.PRE_ORBITAL, init, apply
+  return Envelope(EnvelopeType.PRE_ORBITAL, init, apply)
 
 
-def make_sto_poly_envelope() -> Tuple[EnvelopeType, EnvelopeInit, Envelope]:
+def make_sto_poly_envelope() -> Envelope:
   """Creates a Slater-type orbital envelope."""
 
   def init(natom: int, output_dims: int, hf: Optional[scf.Scf] = None,
@@ -260,10 +268,10 @@ def make_sto_poly_envelope() -> Tuple[EnvelopeType, EnvelopeInit, Envelope]:
     out = jnp.sum(exp_r_ae * jnp.sum(poly_r_ae * pi, axis=3), axis=1)
     return out
 
-  return EnvelopeType.PRE_ORBITAL, init, apply
+  return Envelope(EnvelopeType.PRE_ORBITAL, init, apply)
 
 
-def make_output_envelope() -> Tuple[EnvelopeType, EnvelopeInit, Envelope]:
+def make_output_envelope() -> Envelope:
   """Creates an anisotropic multiplicative envelope to apply to determinants."""
 
   def init(natom: int, output_dims: int, hf: Optional[scf.Scf] = None,
@@ -285,12 +293,11 @@ def make_output_envelope() -> Tuple[EnvelopeType, EnvelopeInit, Envelope]:
     r_ae_sigma = jnp.linalg.norm(ae_sigma, axis=2)
     return jnp.sum(jnp.log(jnp.sum(jnp.exp(-r_ae_sigma + pi), axis=1)))
 
-  return EnvelopeType.POST_DETERMINANT, init, apply
+  return Envelope(EnvelopeType.POST_DETERMINANT, init, apply)
 
 
-def make_exact_cusp_envelope(
-    nspins: Tuple[int, int],
-    charges: jnp.ndarray) -> Tuple[EnvelopeType, EnvelopeInit, Envelope]:
+def make_exact_cusp_envelope(nspins: Tuple[int, int],
+                             charges: jnp.ndarray) -> Envelope:
   """Creates an envelope satisfying cusp conditions to apply to determinants."""
 
   def init(natom: int, output_dims: int, hf: Optional[scf.Scf] = None,
@@ -330,13 +337,13 @@ def make_exact_cusp_envelope(
         jnp.sum(1. / (1. + r_ees[0][1])))
     return env + a_cusp - 0.5 * e_cusp
 
-  return EnvelopeType.POST_DETERMINANT, init, apply
+  return Envelope(EnvelopeType.POST_DETERMINANT, init, apply)
 
 
 def get_envelope(
     envelope_label: EnvelopeLabel,
     **kwargs: Any,
-) -> Tuple[EnvelopeType, EnvelopeInit, Envelope]:
+) -> Envelope:
   """Gets the desired multiplicative envelope function.
 
   Args:

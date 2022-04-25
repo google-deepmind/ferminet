@@ -13,6 +13,7 @@
 # limitations under the License.
 
 """Implementation of Fermionic Neural Network in JAX."""
+import enum
 import functools
 from typing import Any, Iterable, Mapping, Optional, Sequence, Tuple, Union
 
@@ -34,6 +35,8 @@ ParamTree = Union[jnp.ndarray, Iterable['ParamTree'], Mapping[Any, 'ParamTree']]
 # pytype: enable=not-supported-yet
 # Parameters for a single part of the network are just a dict.
 Param = Mapping[str, jnp.ndarray]
+
+## Interfaces (public) ##
 
 
 class InitFermiNet(Protocol):
@@ -70,12 +73,58 @@ class LogFermiNetLike(Protocol):
         dimensionality of the system.
     """
 
+## Interfaces (network components) ##
+
+
+class FeatureInit(Protocol):
+
+  def __call__(self) -> Tuple[Tuple[int, int], Param]:
+    """Creates the learnable parameters for the feature input layer.
+
+    Returns:
+      Tuple of ((x, y), params), where x and y are the number of one-electron
+      features per electron and number of two-electron features per pair of
+      electrons respectively, and params is a (potentially empty) mapping of
+      learnable parameters associated with the feature construction layer.
+    """
+
+
+class FeatureApply(Protocol):
+
+  def __call__(self, ae: jnp.ndarray, r_ae: jnp.ndarray, ee: jnp.ndarray,
+               r_ee: jnp.ndarray,
+               **params: jnp.ndarray) -> Tuple[jnp.ndarray, jnp.ndarray]:
+    """Creates the features to pass into the network.
+
+    Args:
+      ae: electron-atom vectors. Shape: (nelectron, natom, 3).
+      r_ae: electron-atom distances. Shape: (nelectron, natom, 1).
+      ee: electron-electron vectors. Shape: (nelectron, nelectron, 3).
+      r_ee: electron-electron distances. Shape: (nelectron, nelectron).
+      **params: learnable parameters, as initialised in the corresponding
+        FeatureInit function.
+    """
+
 
 @attr.s(auto_attribs=True)
+class FeatureLayer:
+  init: FeatureInit
+  apply: FeatureApply
+
+
+class FeatureLayerType(enum.Enum):
+  STANDARD = enum.auto()
+
+
+## Network settings ##
+
+
+@attr.s(auto_attribs=True, kw_only=True)
 class FermiNetOptions:
   """Options controlling the FermiNet architecture.
 
   Attributes:
+    ndim: dimension of system. Change only with caution.
     hidden_dims: Tuple of pairs, where each pair contains the number of hidden
       units in the one-electron and two-electron stream in the corresponding
       layer of the FermiNet. The number of layers is given by the length of the
@@ -91,25 +140,27 @@ class FermiNetOptions:
       the outputs into orbitals.
     envelope_label: Envelope to use to impose orbitals go to zero at infinity.
       See envelopes module.
-    envelope_type: Where to apply the envelope in the network.
-    envelope: Envelope callable to create the multiplicative envelope.
-    ndim: dimension of system. Change only with caution.
+    envelope: Envelope object to create and apply the multiplicative envelope.
+    feature_layer: Feature object to create and apply the input features for the
+      one- and two-electron layers.
   """
+  ndim: int = 3
   hidden_dims: FermiLayers = ((256, 32), (256, 32), (256, 32), (256, 32))
   use_last_layer: bool = False
   determinants: int = 16
   full_det: bool = True
   bias_orbitals: bool = False
   envelope_label: envelopes.EnvelopeLabel = envelopes.EnvelopeLabel.ISOTROPIC
-  envelope_type: envelopes.EnvelopeType = attr.ib(
-      default=attr.Factory(
-          lambda self: envelopes.get_envelope(self.envelope_label)[0],
-          takes_self=True))
   envelope: envelopes.Envelope = attr.ib(
       default=attr.Factory(
-          lambda self: envelopes.get_envelope(self.envelope_label)[-1],
+          lambda self: envelopes.get_envelope(self.envelope_label),
           takes_self=True))
-  ndim: int = 3
+  feature_layer: FeatureLayer = attr.ib(
+      default=attr.Factory(
+          lambda self: make_ferminet_features(ndim=self.ndim), takes_self=True))
+
+
+## Network initialisation ##
 
 
 def init_layers(
@@ -154,24 +205,22 @@ def init_layers(
   double = []
   ndouble_layers = len(dims_two_in)
   for i in range(len(dims_one_in)):
-    single.append({})
     key, subkey = jax.random.split(key)
-    single[-1]['w'] = (
-        jax.random.normal(subkey, shape=(dims_one_in[i], dims_one_out[i])) /
-        jnp.sqrt(float(dims_one_in[i])))
-
-    key, subkey = jax.random.split(key)
-    single[-1]['b'] = jax.random.normal(subkey, shape=(dims_one_out[i],))
+    single.append(
+        network_blocks.init_linear_layer(
+            subkey,
+            in_dim=dims_one_in[i],
+            out_dim=dims_one_out[i],
+            include_bias=True))
 
     if i < ndouble_layers:
-      double.append({})
       key, subkey = jax.random.split(key)
-      double[-1]['w'] = (
-          jax.random.normal(subkey, shape=(dims_two_in[i], dims_two_out[i])) /
-          jnp.sqrt(float(dims_two_in[i])))
-
-      key, subkey = jax.random.split(key)
-      double[-1]['b'] = jax.random.normal(subkey, shape=(dims_two_out[i],))
+      double.append(
+          network_blocks.init_linear_layer(
+              subkey,
+              in_dim=dims_two_in[i],
+              out_dim=dims_two_out[i],
+              include_bias=True))
 
   return single, double
 
@@ -197,22 +246,19 @@ def init_orbital_shaping(
   orbitals = []
   for nspin_orbital in nspin_orbitals:
     key, subkey = jax.random.split(key)
-    weight = (
-        jax.random.normal(subkey, shape=(input_dim, nspin_orbital)) /
-        jnp.sqrt(float(input_dim)))
-    if bias_orbitals:
-      key, subkey = jax.random.split(key)
-      bias = jax.random.normal(subkey, shape=(nspin_orbital,))
-      orbitals.append({'w': weight, 'b': bias})
-    else:
-      orbitals.append({'w': weight})
+    orbitals.append(
+        network_blocks.init_linear_layer(
+            subkey,
+            in_dim=input_dim,
+            out_dim=nspin_orbital,
+            include_bias=bias_orbitals))
   return orbitals
 
 
 def init_to_hf_solution(
     hf_solution: scf.Scf,
-    single_layers: Sequence[Mapping[str, jnp.ndarray]],
-    orbital_layer: Sequence[Mapping[str, jnp.ndarray]],
+    single_layers: Sequence[Param],
+    orbital_layer: Sequence[Param],
     determinants: int,
     active_spin_channels: Sequence[int],
     eps: float = 0.01) -> Tuple[Sequence[Param], Sequence[Param]]:
@@ -263,10 +309,8 @@ def init_to_hf_solution(
   orbital_layer = jax.tree_map(lambda param: param * eps, orbital_layer)
   for i, spin in enumerate(active_spin_channels):
     # Initialize last layer to match Hartree-Fock weights on basis set.
-    # pylint: disable=protected-access
     norb = hf_solution.mean_field.mo_coeff[i].shape[0]
     mat = hf_solution.mean_field.mo_coeff[i][:, :spin]
-    # pylint: enable=protected-access
     w = orbital_layer[i]['w']
     for j in range(determinants):
       w = w.at[:norb, j * spin:(j + 1) * spin].set(mat)
@@ -279,7 +323,6 @@ def init_fermi_net_params(
     atoms: jnp.ndarray,
     nspins: Tuple[int, ...],
     options: FermiNetOptions,
-    envelope_init: envelopes.EnvelopeInit,
     hf_solution: Optional[scf.Scf] = None,
     eps: float = 0.01,
 ) -> ParamTree:
@@ -292,7 +335,6 @@ def init_fermi_net_params(
       or the total number of electrons. If the latter, the spins are instead
       given as an input to the network.
     options: network options.
-    envelope_init: callable to initialise the parameters for the envelope.
     hf_solution: If present, initialise the parameters to match the Hartree-Fock
       solution. Otherwise a random initialisation is use.
     eps: If hf_solution is present, scale all weights and biases except the
@@ -309,7 +351,7 @@ def init_fermi_net_params(
   if hf_solution is not None:
     if options.use_last_layer:
       raise ValueError('Cannot use last layer w/HF init')
-    if options.envelope_type not in ('sto', 'sto-poly'):
+    if options.envelope.apply_type not in ('sto', 'sto-poly'):
       raise ValueError('When using HF init, '
                        'envelope_type must be `sto` or `sto-poly`.')
 
@@ -317,6 +359,10 @@ def init_fermi_net_params(
   nchannels = len(active_spin_channels)
   if nchannels == 0:
     raise ValueError('No electrons present!')
+
+  params = {}
+  (num_one_features, num_two_features), params['input'] = (
+      options.feature_layer.init())
 
   # The input to layer L of the one-electron stream is from
   # construct_symmetric_features and shape (nelectrons, nfeatures), where
@@ -328,19 +374,24 @@ def init_fermi_net_params(
 
   natom, ndim = atoms.shape
   # one-electron stream, per electron:
-  #  - electron-atom vectors (ndim/atom) and distances (1/atom),
+  #  - one-electron features per atom (default: electron-atom vectors
+  #    (ndim/atom) and distances (1/atom)),
   # two-electron stream, per pair of electrons:
-  #  - electron-eletron vector (dim) and distance (1)
-  in_dims = (natom * (ndim + 1), (ndim + 1))
+  #  - two-electron features per electron pair (default: electron-electron
+  #    vector (dim) and distance (1))
+  feature_one_dims = natom * num_one_features
+  feature_two_dims = num_two_features
   dims_one_in = (
-      [nfeatures(in_dims[0], in_dims[1])] +
+      [nfeatures(feature_one_dims, feature_two_dims)] +
       [nfeatures(hdim[0], hdim[1]) for hdim in options.hidden_dims[:-1]])
   dims_one_out = [hdim[0] for hdim in options.hidden_dims]
   if options.use_last_layer:
-    dims_two_in = [in_dims[1]] + [hdim[1] for hdim in options.hidden_dims[:-1]]
+    dims_two_in = ([feature_two_dims] +
+                   [hdim[1] for hdim in options.hidden_dims[:-1]])
     dims_two_out = [hdim[1] for hdim in options.hidden_dims]
   else:
-    dims_two_in = [in_dims[1]] + [hdim[1] for hdim in options.hidden_dims[:-2]]
+    dims_two_in = ([feature_two_dims] +
+                   [hdim[1] for hdim in options.hidden_dims[:-2]])
     dims_two_out = [hdim[1] for hdim in options.hidden_dims[:-1]]
 
   if not options.use_last_layer:
@@ -363,8 +414,6 @@ def init_fermi_net_params(
       norbitals = nspin * options.determinants
     nspin_orbitals.append(norbitals)
 
-  params = {}
-
   # Layer initialisation
   key, subkey = jax.random.split(key, num=2)
   params['single'], params['double'] = init_layers(
@@ -375,18 +424,18 @@ def init_fermi_net_params(
       dims_two_out=dims_two_out)
 
   # create envelope params
-  if options.envelope_type == envelopes.EnvelopeType.PRE_ORBITAL:
+  if options.envelope.apply_type == envelopes.EnvelopeType.PRE_ORBITAL:
     # Applied to output from final layer of 1e stream.
     output_dims = dims_orbital_in
-  elif options.envelope_type == envelopes.EnvelopeType.PRE_DETERMINANT:
+  elif options.envelope.apply_type == envelopes.EnvelopeType.PRE_DETERMINANT:
     # Applied to orbitals.
     output_dims = nspin_orbitals
-  elif options.envelope_type == envelopes.EnvelopeType.POST_DETERMINANT:
+  elif options.envelope.apply_type == envelopes.EnvelopeType.POST_DETERMINANT:
     # Applied to all determinants.
     output_dims = 1
   else:
     raise ValueError('Unknown envelope type')
-  params['envelope'] = envelope_init(
+  params['envelope'] = options.envelope.init(
       natom=natom, output_dims=output_dims, hf=hf_solution, ndim=ndim)
 
   # orbital shaping
@@ -407,6 +456,8 @@ def init_fermi_net_params(
         eps=eps)
 
   return params
+
+## Network layers ##
 
 
 def construct_input_features(
@@ -442,6 +493,25 @@ def construct_input_features(
   return ae, ee, r_ae, r_ee[..., None]
 
 
+def make_ferminet_features(charges: Optional[jnp.ndarray] = None,
+                           nspins: Optional[Tuple[int, ...]] = None,
+                           ndim: int = 3) -> FeatureLayer:
+  """Returns the init and apply functions for the standard features."""
+
+  del charges, nspins
+
+  def init() -> Tuple[Tuple[int, int], Param]:
+    return (ndim + 1, ndim + 1), {}
+
+  def apply(ae, r_ae, ee, r_ee) -> Tuple[jnp.ndarray, jnp.ndarray]:
+    ae_features = jnp.concatenate((r_ae, ae), axis=2)
+    ae_features = jnp.reshape(ae_features, [jnp.shape(ae_features)[0], -1])
+    ee_features = jnp.concatenate((r_ee, ee), axis=2)
+    return ae_features, ee_features
+
+  return FeatureLayer(init=init, apply=apply)
+
+
 def construct_symmetric_features(h_one: jnp.ndarray, h_two: jnp.ndarray,
                                  nspins: Tuple[int, int]) -> jnp.ndarray:
   """Combines intermediate features from rank-one and -two streams.
@@ -475,78 +545,11 @@ def construct_symmetric_features(h_one: jnp.ndarray, h_two: jnp.ndarray,
   return jnp.concatenate([h_one] + g_one + g_two, axis=1)
 
 
-def slogdet(x):
-  """Computes sign and log of determinants of matrices.
-
-  This is a jnp.linalg.slogdet with a special (fast) path for small matrices.
-
-  Args:
-    x: square matrix.
-
-  Returns:
-    sign, (natural) logarithm of the determinant of x.
-  """
-  if x.shape[-1] == 1:
-    sign = jnp.sign(x[..., 0, 0])
-    logdet = jnp.log(jnp.abs(x[..., 0, 0]))
-  else:
-    sign, logdet = jnp.linalg.slogdet(x)
-
-  return sign, logdet
-
-
-def logdet_matmul(xs: Sequence[jnp.ndarray],
-                  w: Optional[jnp.ndarray] = None) -> jnp.ndarray:
-  """Combines determinants and takes dot product with weights in log-domain.
-
-  We use the log-sum-exp trick to reduce numerical instabilities.
-
-  Args:
-    xs: FermiNet orbitals in each determinant. Either of length 1 with shape
-      (ndet, nelectron, nelectron) (full_det=True) or length 2 with shapes
-      (ndet, nalpha, nalpha) and (ndet, nbeta, nbeta) (full_det=False,
-      determinants are factorised into block-diagonals for each spin channel).
-    w: weight of each determinant. If none, a uniform weight is assumed.
-
-  Returns:
-    sum_i w_i D_i in the log domain, where w_i is the weight of D_i, the i-th
-    determinant (or product of the i-th determinant in each spin channel, if
-    full_det is not used).
-  """
-  # Special case to avoid taking log(0) if any matrix is of size 1x1.
-  # We can avoid this by not going into the log domain and skipping the
-  # log-sum-exp trick.
-  det1 = functools.reduce(
-      lambda a, b: a * b,
-      [x.reshape(-1) for x in xs if x.shape[-1] == 1],
-      1
-  )
-
-  # Compute the logdet for all matrices larger than 1x1
-  sign_in, logdet = functools.reduce(
-      lambda a, b: (a[0] * b[0], a[1] + b[1]),
-      [slogdet(x) for x in xs if x.shape[-1] > 1],
-      (1, 0)
-  )
-  # log-sum-exp trick
-  maxlogdet = jnp.max(logdet)
-  det = sign_in * det1 * jnp.exp(logdet - maxlogdet)
-
-  if w is None:
-    result = jnp.sum(det)
-  else:
-    result = jnp.dot(det, w)
-
-  sign_out = jnp.sign(result)
-  log_out = jnp.log(jnp.abs(result)) + maxlogdet
-  return sign_out, log_out
-
-
 def fermi_net_orbitals(
     params,
-    pos,
-    atoms=None,
-    nspins=(None, None),
+    pos: jnp.ndarray,
+    atoms: jnp.ndarray,
+    nspins: Tuple[int, ...],
     options: FermiNetOptions = FermiNetOptions(),
 ):
   """Forward evaluation of the Fermionic Neural Network up to the orbitals.
@@ -570,10 +573,10 @@ def fermi_net_orbitals(
     options: Network configuration.
 
   Returns:
-    One (two matrices if full_det is False) that exchange columns under the
-    exchange of inputs, and a tuple of (ae, r_ae, r_ee), the atom-electron
-    vectors, distances and electron-electron distances.
-
+    One matrix (two matrices if options.full_det is False) that exchange columns
+    under the exchange of inputs of shape (ndet, nalpha+nbeta, nalpha+nbeta) (or
+    (ndet, nalpha, nalpha) and (ndet, nbeta, nbeta)) and a tuple of (ae, r_ae,
+    r_ee), the atom-electron vectors, distances and electron-electron distances.
   """
 
   ae, ee, r_ae, r_ee = construct_input_features(pos, atoms)
@@ -603,8 +606,8 @@ def fermi_net_orbitals(
     h_to_orbitals = h_one
   else:
     h_to_orbitals = construct_symmetric_features(h_one, h_two, nspins)
-  if options.envelope_type == envelopes.EnvelopeType.PRE_ORBITAL:
-    envelope_factor = options.envelope(
+  if options.envelope.apply_type == envelopes.EnvelopeType.PRE_ORBITAL:
+    envelope_factor = options.envelope.apply(
         ae=ae, r_ae=r_ae, r_ee=r_ee, **params['envelope'])
     h_to_orbitals = envelope_factor * h_to_orbitals
   # Note split creates arrays of size 0 for spin channels without any electrons.
@@ -621,12 +624,12 @@ def fermi_net_orbitals(
   ]
 
   # Apply envelopes if required.
-  if options.envelope_type == envelopes.EnvelopeType.PRE_DETERMINANT:
+  if options.envelope.apply_type == envelopes.EnvelopeType.PRE_DETERMINANT:
     ae_channels = jnp.split(ae, active_spin_partitions, axis=0)
     r_ae_channels = jnp.split(r_ae, active_spin_partitions, axis=0)
     r_ee_channels = jnp.split(r_ee, active_spin_partitions, axis=0)
     for i in range(len(active_spin_channels)):
-      orbitals[i] = orbitals[i] * options.envelope(
+      orbitals[i] = orbitals[i] * options.envelope.apply(
           ae=ae_channels[i],
           r_ae=r_ae_channels[i],
           r_ee=r_ee_channels[i],
@@ -644,12 +647,14 @@ def fermi_net_orbitals(
     orbitals = [jnp.concatenate(orbitals, axis=1)]
   return orbitals, (ae, r_ae, r_ee)
 
+## FermiNet ##
+
 
 def fermi_net(
     params,
-    pos,
-    atoms=None,
-    nspins=(None, None),
+    pos: jnp.ndarray,
+    atoms: jnp.ndarray,
+    nspins: Tuple[int, ...],
     options: FermiNetOptions = FermiNetOptions(),
 ):
   """Forward evaluation of the Fermionic Neural Network for a single datum.
@@ -684,13 +689,10 @@ def fermi_net(
       nspins=nspins,
       options=options,
   )
-  output = logdet_matmul(orbitals)
-  if options.envelope_type == envelopes.EnvelopeType.POST_DETERMINANT:
-    output = output[0], output[1] + options.envelope(
-        ae=ae,
-        r_ae=r_ae,
-        r_ee=r_ee,
-        **params['envelope'])
+  output = network_blocks.logdet_matmul(orbitals)
+  if options.envelope.apply_type == envelopes.EnvelopeType.POST_DETERMINANT:
+    output = output[0], output[1] + options.envelope.apply(
+        ae=ae, r_ae=r_ae, r_ee=r_ee, **params['envelope'])
   return output
 
 
@@ -698,7 +700,9 @@ def make_fermi_net(
     atoms: jnp.ndarray,
     nspins: Tuple[int, int],
     charges: jnp.ndarray,
-    envelope_type: Union[str, envelopes.EnvelopeLabel] = 'isotropic',
+    *,
+    envelope: Union[str, envelopes.EnvelopeLabel] = 'isotropic',
+    feature_layer: Union[str, FeatureLayerType] = FeatureLayerType.STANDARD,
     bias_orbitals: bool = False,
     use_last_layer: bool = False,
     hf_solution: Optional[scf.Scf] = None,
@@ -713,8 +717,8 @@ def make_fermi_net(
     atoms: (natom, ndim) array of atom positions.
     nspins: Tuple of the number of spin-up and spin-down electrons.
     charges: (natom) array of atom nuclear charges.
-    envelope_type: Envelope to use to impose orbitals go to zero at infinity.
-      See fermi_net_orbitals.
+    envelope: Envelope to use to impose orbitals go to zero at infinity.
+    feature_layer: Input feature construction.
     bias_orbitals: If true, include a bias in the final linear layer to shape
       the outputs into orbitals.
     use_last_layer: If true, the outputs of the one- and two-electron streams
@@ -739,19 +743,23 @@ def make_fermi_net(
   """
   del after_determinants
 
-  if isinstance(envelope_type, str):
-    envelope_type = envelope_type.upper().replace('-', '_')
-    envelope_label = envelopes.EnvelopeLabel[envelope_type]
+  if isinstance(envelope, str):
+    envelope = envelope.upper().replace('-', '_')
+    envelope_label = envelopes.EnvelopeLabel[envelope]
   else:
     # support naming scheme used in config files.
-    envelope_label = envelope_type
+    envelope_label = envelope
   if envelope_label == envelopes.EnvelopeLabel.EXACT_CUSP:
     envelope_kwargs = {'nspins': nspins, 'charges': charges}
   else:
     envelope_kwargs = {}
 
-  envelope_type, envelope_init, envelope_apply = envelopes.get_envelope(
-      envelope_label, **envelope_kwargs)
+  if isinstance(feature_layer, str):
+    feature_layer = FeatureLayerType[feature_layer.upper()]
+  if feature_layer == FeatureLayerType.STANDARD:
+    feature_layer_fns = make_ferminet_features(charges, nspins)
+  else:
+    raise ValueError(f'Unsupported feature layer type: {feature_layer}')
 
   options = FermiNetOptions(
       hidden_dims=hidden_dims,
@@ -760,8 +768,8 @@ def make_fermi_net(
       full_det=full_det,
       bias_orbitals=bias_orbitals,
       envelope_label=envelope_label,
-      envelope_type=envelope_type,
-      envelope=envelope_apply,
+      envelope=envelopes.get_envelope(envelope_label, **envelope_kwargs),
+      feature_layer=feature_layer_fns,
   )
 
   init = functools.partial(
@@ -769,7 +777,6 @@ def make_fermi_net(
       atoms=atoms,
       nspins=nspins,
       options=options,
-      envelope_init=envelope_init,
       hf_solution=hf_solution,
   )
   network = functools.partial(

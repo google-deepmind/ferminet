@@ -232,11 +232,13 @@ def pretrain_hartree_fock(
   optimizer = optax.adam(3.e-4)
   opt_state_pt = constants.pmap(optimizer.init)(params)
 
-  if network_options.envelope_type == envelopes.EnvelopeType.POST_DETERMINANT:
+  if (network_options.envelope.apply_type ==
+      envelopes.EnvelopeType.POST_DETERMINANT):
 
     def envelope_fn(params, x):
       ae, r_ae, _, r_ee = networks.construct_input_features(x, atoms)
-      return network_options.envelope(ae=ae, r_ae=r_ae, r_ee=r_ee, **params)
+      return network_options.envelope.apply(
+          ae=ae, r_ae=r_ae, r_ee=r_ee, **params)
   else:
     envelope_fn = lambda p, x: 0.0
   batch_envelope_fn = jax.vmap(envelope_fn, (None, 0))

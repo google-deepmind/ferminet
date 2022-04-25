@@ -38,7 +38,7 @@ def _antisymmtry_options():
   for envelope in envelopes.EnvelopeLabel:
     yield {
         'testcase_name': f'_envelope={envelope}',
-        'envelope': envelope,
+        'envelope_label': envelope,
         'dtype': np.float32,
     }
 
@@ -49,7 +49,7 @@ def _network_options():
   Example output:
   {
     'vmap': True,
-    'envelope_type': envelopes.EnvelopeLabel.ISOTROPIC,
+    'envelope': envelopes.EnvelopeLabel.ISOTROPIC,
     'bias_orbitals': False,
     'full_det': True,
     'use_last_layer': False,
@@ -59,7 +59,7 @@ def _network_options():
   # Key for each option and corresponding values to test.
   all_options = {
       'vmap': [True, False],
-      'envelope_type': list(envelopes.EnvelopeLabel),
+      'envelope': list(envelopes.EnvelopeLabel),
       'bias_orbitals': [True, False],
       'full_det': [True, False],
       'use_last_layer': [True, False],
@@ -71,15 +71,10 @@ def _network_options():
     yield dict(zip(all_options.keys(), options))
 
 
-def _slogdet_options():
-  for shape in [(1, 1, 1), (10, 2, 2), (10, 3, 3)]:
-    yield {'testcase_name': f'_shape={shape}', 'shape': shape}
-
-
 class NetworksTest(parameterized.TestCase):
 
   @parameterized.named_parameters(_antisymmtry_options())
-  def test_antisymmetry(self, envelope, dtype):
+  def test_antisymmetry(self, envelope_label, dtype):
     """Check that the Fermi Net is symmetric."""
     del dtype  # unused
 
@@ -96,23 +91,18 @@ class NetworksTest(parameterized.TestCase):
     data3 = jnp.concatenate((data1[:9], data1[12:15], data1[9:12], data1[15:]))
     key, subkey = random.split(key)
     kwargs = {}
-    if envelope == envelopes.EnvelopeLabel.EXACT_CUSP:
+    if envelope_label == envelopes.EnvelopeLabel.EXACT_CUSP:
       kwargs.update({'charges': charges, 'nspins': nspins})
-    envelope_type, envelope_init, envelope_apply = envelopes.get_envelope(
-        envelope, **kwargs)
     options = networks.FermiNetOptions(
         hidden_dims=((16, 16), (16, 16)),
-        envelope_label=envelope,
-        envelope_type=envelope_type,
-        envelope=envelope_apply,
-    )
+        envelope_label=envelope_label,
+        envelope=envelopes.get_envelope(envelope_label, **kwargs))
 
     params = networks.init_fermi_net_params(
         subkey,
         atoms=atoms,
         nspins=nspins,
         options=options,
-        envelope_init=envelope_init,
     )
 
     # Randomize parameters of envelope
@@ -139,15 +129,6 @@ class NetworksTest(parameterized.TestCase):
     out3 = networks.fermi_net(params, data3, atoms, nspins, options)
     np.testing.assert_allclose(out1[1], out3[1], atol=1E-5, rtol=1E-5)
     np.testing.assert_allclose(out1[0], -1*out3[0], atol=1E-5, rtol=1E-5)
-
-  @parameterized.named_parameters(_slogdet_options())
-  def test_slogdet(self, shape, dtype=np.float32):
-    rng = rand_default()
-    a = rng(shape, dtype)
-    s1, ld1 = networks.slogdet(a)
-    s2, ld2 = np.linalg.slogdet(a)
-    np.testing.assert_allclose(s1, s2, atol=1E-5, rtol=1E-5)
-    np.testing.assert_allclose(ld1, ld2, atol=1E-5, rtol=1E-5)
 
   def test_create_input_features(self):
     dtype = np.float32
@@ -231,7 +212,7 @@ class NetworksTest(parameterized.TestCase):
     key, subkey = jax.random.split(key)
     sto_envelopes = (envelopes.EnvelopeLabel.STO,
                      envelopes.EnvelopeLabel.STO_POLY)
-    if (network_options['envelope_type'] in sto_envelopes and
+    if (network_options['envelope'] in sto_envelopes and
         network_options['bias_orbitals']):
       with self.assertRaises(ValueError):
         init(subkey)
