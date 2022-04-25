@@ -108,11 +108,12 @@ class NetworksTest(parameterized.TestCase):
     # Randomize parameters of envelope
     if isinstance(params['envelope'], list):
       for i in range(len(params['envelope'])):
-        key, *subkeys = random.split(key, num=3)
-        params['envelope'][i]['sigma'] = random.normal(
-            subkeys[0], params['envelope'][i]['sigma'].shape)
-        params['envelope'][i]['pi'] = random.normal(
-            subkeys[1], params['envelope'][i]['pi'].shape)
+        if params['envelope'][i]:
+          key, *subkeys = random.split(key, num=3)
+          params['envelope'][i]['sigma'] = random.normal(
+              subkeys[0], params['envelope'][i]['sigma'].shape)
+          params['envelope'][i]['pi'] = random.normal(
+              subkeys[1], params['envelope'][i]['pi'].shape)
     else:
       key, *subkeys = random.split(key, num=3)
       params['envelope']['sigma'] = random.normal(

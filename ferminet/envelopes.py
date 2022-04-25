@@ -41,6 +41,7 @@ class EnvelopeLabel(enum.Enum):
   ISOTROPIC = enum.auto()
   DIAGONAL = enum.auto()
   FULL = enum.auto()
+  NULL = enum.auto()
   STO = enum.auto()
   STO_POLY = enum.auto()
   OUTPUT = enum.auto()
@@ -137,7 +138,7 @@ def make_isotropic_envelope() -> Envelope:
 
 
 def make_diagonal_envelope() -> Envelope:
-  """Creats a diagonal exponentially-decaying multiplicative envelope."""
+  """Creates a diagonal exponentially-decaying multiplicative envelope."""
 
   def init(natom: int, output_dims: Sequence[int], hf: Optional[scf.Scf] = None,
            ndim: int = 3) -> Sequence[Mapping[str, jnp.ndarray]]:
@@ -184,6 +185,22 @@ def make_full_envelope() -> Envelope:
         ae_sigma, ae, sigma, type='full')
     r_ae_sigma = jnp.linalg.norm(ae_sigma, axis=2)
     return jnp.sum(jnp.exp(-r_ae_sigma) * pi, axis=1)
+
+  return Envelope(EnvelopeType.PRE_DETERMINANT, init, apply)
+
+
+def make_null_envelope() -> Envelope:
+  """Creates an no-op (identity) envelope."""
+
+  def init(natom: int, output_dims: Sequence[int], hf: Optional[scf.Scf] = None,
+           ndim: int = 3) -> Sequence[Mapping[str, jnp.ndarray]]:
+    del natom, ndim, hf  # unused
+    return [{} for _ in output_dims]
+
+  def apply(*, ae: jnp.ndarray, r_ae: jnp.ndarray,
+            r_ee: jnp.ndarray) -> jnp.ndarray:
+    del ae, r_ae, r_ee
+    return jnp.ones(shape=(1,))
 
   return Envelope(EnvelopeType.PRE_DETERMINANT, init, apply)
 
@@ -360,6 +377,7 @@ def get_envelope(
       EnvelopeLabel.ISOTROPIC: make_isotropic_envelope,
       EnvelopeLabel.DIAGONAL: make_diagonal_envelope,
       EnvelopeLabel.FULL: make_full_envelope,
+      EnvelopeLabel.NULL: make_null_envelope,
       EnvelopeLabel.OUTPUT: make_output_envelope,
       EnvelopeLabel.EXACT_CUSP: make_exact_cusp_envelope,
   }
