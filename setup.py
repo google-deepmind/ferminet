@@ -26,7 +26,8 @@ REQUIRED_PACKAGES = [
     'h5py',
     'jax',
     'jaxlib',
-    'kfac_jax',
+    # TODO(b/230487443) - use released version of kfac.
+    'kfac_jax @ git+https://github.com/deepmind/kfac-jax',
     'ml-collections',
     'optax',
     'numpy',
