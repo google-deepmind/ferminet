@@ -2,15 +2,13 @@ name: CI
 
 on:
   # Trigger the workflow on push or pull request,
-  # only on the master or jax branches
+  # only on the main branch
   push:
     branches:
-      - master
-      - jax
+      - main
   pull_request:
     branches:
-      - master
-      - jax
+      - main
   workflow_dispatch:
 
 jobs:
@@ -18,7 +16,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: [3.7]
+        python-version: [3.8]
 
     steps:
     - uses: actions/checkout@v2
@@ -57,18 +55,18 @@ jobs:
       matrix:
         include:
           - name-prefix: "all tests"
-            python-version: 3.7
-            os: ubuntu-latest
-            package-overrides: "none"
-          - name-prefix: "all tests"
             python-version: 3.8
             os: ubuntu-latest
             package-overrides: "none"
+          - name-prefix: "all tests"
+            python-version: 3.9
+            os: ubuntu-latest
+            package-overrides: "none"
           - name-prefix: "with internal numpy"
-            python-version: 3.6
+            python-version: 3.9
             os: ubuntu-latest
             # Test with numpy version that matches Google-internal version
-            package-overrides: "numpy==1.16.4"
+            package-overrides: "numpy==1.21.5"
     steps:
     - uses: actions/checkout@v2
     - name: Set up Python ${{ matrix.python-version }}
