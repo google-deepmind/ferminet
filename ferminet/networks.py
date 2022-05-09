@@ -580,9 +580,8 @@ def fermi_net_orbitals(
   """
 
   ae, ee, r_ae, r_ee = construct_input_features(pos, atoms)
-  ae_features = jnp.concatenate((r_ae, ae), axis=2)
-  ae_features = jnp.reshape(ae_features, [jnp.shape(ae_features)[0], -1])
-  ee_features = jnp.concatenate((r_ee, ee), axis=2)
+  ae_features, ee_features = options.feature_layer.apply(
+      ae=ae, r_ae=r_ae, ee=ee, r_ee=r_ee, **params['input'])
 
   h_one = ae_features  # single-electron features
   h_two = ee_features  # two-electron features
