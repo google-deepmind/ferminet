@@ -1,13 +1,17 @@
 # FermiNet: Fermionic Neural Networks
 
-An implementation of the algorithm and experiments defined in "Ab-Initio
-Solution of the Many-Electron Schroedinger Equation with Deep Neural Networks",
-David Pfau, James S. Spencer, Alex G de G Matthews and W.M.C. Foulkes, Phys.
-Rev. Research 2, 033429 (2020). FermiNet is a neural network for learning the
-ground state wavefunctions of atoms and molecules using a variational Monte
-Carlo approach.
+FermiNet is a neural network for learning highly accurate ground state
+wavefunctions of atoms and molecules using a variational Monte Carlo approach.
 
-WARNING: This is a research-level release of a JAX implementation.
+This repository contains an implementation of the algorithm and experiments
+first described in "Ab-Initio Solution of the Many-Electron Schroedinger
+Equation with Deep Neural Networks", David Pfau, James S. Spencer, Alex G de G
+Matthews and W.M.C. Foulkes, Phys. Rev. Research 2, 033429 (2020), along with
+subsequent research and developments.
+
+WARNING: This is a research-level release of a JAX implementation and is under
+active development. The original TensorFlow implementation can be found in the
+`tf` branch.
 
 ## Installation
 
@@ -200,7 +204,7 @@ If you use this code in your work, please cite the associated papers. The
 initial paper details the architecture and results on a range of systems:
 
 ```
-@article{ferminet,
+@article{pfau2020ferminet,
   title={Ab-Initio Solution of the Many-Electron Schr{\"o}dinger Equation with Deep Neural Networks},
   author={D. Pfau and J.S. Spencer and A.G. de G. Matthews and W.M.C. Foulkes},
   journal={Phys. Rev. Research},
@@ -225,6 +229,17 @@ implementation:
   archivePrefix={arXiv},
   primaryClass={physics.comp-ph},
   url = {https://arxiv.org/abs/2011.07125}
+}
+```
+
+This repository can be cited using:
+
+```
+@software{ferminet_github,
+  author = {James S. Spencer, David Pfau and FermiNet Contributors},
+  title = {{FermiNet}},
+  url = {http://github.com/deepmind/ferminet},
+  year = {2020},
 }
 ```
 
