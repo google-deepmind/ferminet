@@ -344,7 +344,8 @@ def train(molecule: Sequence[system.Atom],
           multi_gpu: bool = False,
           double_precision: bool = False,
           graph_path: Optional[str] = None,
-          alpha_scale = 0.         
+          alpha_scale = 0.,
+          omega = 0.
          ):
   
   """Configures and runs training loop.
@@ -439,7 +440,7 @@ def train(molecule: Sequence[system.Atom],
     if pretrain_config.iterations > 0:
       scf_approx.run()
 
-    hamiltonian_ops = hamiltonian.operators(molecule, nelectrons,alpha_scale)
+    hamiltonian_ops = hamiltonian.operators(molecule, nelectrons,alpha_scale,omega)
     if mcmc_config.init_means:
       if len(mcmc_config.init_means) != 3 * nelectrons:
         raise RuntimeError('Initial electron positions of incorrect shape. '
