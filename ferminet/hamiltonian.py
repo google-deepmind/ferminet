@@ -36,7 +36,9 @@ def kinetic_from_log(f, x):
 
 def operators(atoms,
               nelectrons,
-              potential_epsilon=0.0):
+              potential_epsilon=0.0,
+              alpha_scale=0.
+             ):
   """Creates kinetic and potential operators of Hamiltonian in atomic units.
 
   Args:
@@ -94,7 +96,7 @@ def operators(atoms,
   def potential(x):
     """Calculates the total potential energy at each electron position."""
     xs = tf.split(x, nelectrons, axis=1)
-    return (nuclear_potential(xs) + electronic_potential(xs)
+    return (nuclear_potential(xs) + alpha_scale*electronic_potential(xs)
             + nuclear_nuclear(xs[0].dtype))
 
   return kinetic_from_log, potential
