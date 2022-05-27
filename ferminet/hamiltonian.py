@@ -37,7 +37,8 @@ def kinetic_from_log(f, x):
 def operators(atoms,
               nelectrons,
               potential_epsilon=0.0,
-              alpha_scale=0.
+              alpha_scale=0.,
+              omega=0.
              ):
   """Creates kinetic and potential operators of Hamiltonian in atomic units.
 
@@ -92,12 +93,18 @@ def operators(atoms,
     """Calculates the nuclear-nuclear interaction contribution."""
     with tf.name_scope('Vnn'):
       return tf.constant(vnn, dtype=dtype)
+    
+  def harmonic_potential(xs,omega):
+		with tf.name_scope('AP'):
+			v=[]
+			v.extend([0.5*w**2*tf.square(tf.norm(x,axis=-1,keepdims=True)) for x in xs])
+			return tf.add_n(v)
 
   def potential(x):
     """Calculates the total potential energy at each electron position."""
     xs = tf.split(x, nelectrons, axis=1)
     return (nuclear_potential(xs) + alpha_scale*electronic_potential(xs)
-            + nuclear_nuclear(xs[0].dtype))
+            + nuclear_nuclear(xs[0].dtype) + harmonic_potential(xs,omega))
 
   return kinetic_from_log, potential
 
