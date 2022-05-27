@@ -343,7 +343,10 @@ def train(molecule: Sequence[system.Atom],
           logging_config: Optional[LoggingConfig] = None,
           multi_gpu: bool = False,
           double_precision: bool = False,
-          graph_path: Optional[str] = None):
+          graph_path: Optional[str] = None,
+          alpha_scale = 0.,         
+         ):
+  
   """Configures and runs training loop.
 
   Args:
@@ -537,4 +540,5 @@ def train(molecule: Sequence[system.Atom],
       write_graph=os.path.abspath(graph_path) if graph_path else None,
       burn_in=mcmc_config.burn_in,
       mcmc_steps=mcmc_config.steps,
-  )
+      alpha_scale=alpha_scale,
+      )
