@@ -14,7 +14,7 @@
 
 """Helper functions to create the loss and custom gradient of the loss."""
 
-from typing import Callable, Tuple
+from typing import Tuple
 
 import chex
 from ferminet import constants
@@ -23,13 +23,7 @@ from ferminet import networks
 import jax
 import jax.numpy as jnp
 import kfac_jax
-
-
-# Evaluation of total energy.
-# (params, key, (electrons, atoms)) -> energy, auxiliary_loss_data
-TotalEnergy = Callable[
-    [networks.ParamTree, chex.PRNGKey, Tuple[jnp.ndarray, jnp.ndarray]],
-    Tuple[jnp.ndarray, 'AuxiliaryLossData']]
+from typing_extensions import Protocol
 
 
 @chex.dataclass
@@ -44,9 +38,36 @@ class AuxiliaryLossData:
   local_energy: jnp.DeviceArray
 
 
+class LossFn(Protocol):
+
+  def __call__(
+      self,
+      params: networks.ParamTree,
+      key: chex.PRNGKey,
+      data: jnp.ndarray,
+  ) -> Tuple[jnp.ndarray, AuxiliaryLossData]:
+    """Evaluates the total energy of the network for a batch of configurations.
+
+    Note: the signature of this function is fixed to match that expected by
+    kfac_jax.optimizer.Optimizer with value_func_has_rng=True and
+    value_func_has_aux=True.
+
+    Args:
+      params: parameters to pass to the network.
+      key: PRNG state.
+      data: Batched electron positions to pass to the network.
+
+    Returns:
+      (loss, aux_data), where loss is the mean energy, and aux_data is an
+      AuxiliaryLossData object containing the variance of the energy and the
+      local energy per MCMC configuration. The loss and variance are averaged
+      over the batch and over all devices inside a pmap.
+    """
+
+
 def make_loss(network: networks.LogFermiNetLike,
               local_energy: hamiltonian.LocalEnergy,
-              clip_local_energy: float = 0.0) -> TotalEnergy:
+              clip_local_energy: float = 0.0) -> LossFn:
   """Creates the loss function, including custom gradients.
 
   Args:
