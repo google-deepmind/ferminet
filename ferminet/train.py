@@ -219,7 +219,7 @@ def make_training_step(
     step, a callable which performs a set of MCMC steps and then an optimization
     update. See the Step protocol for details.
   """
-  @functools.partial(constants.pmap, donate_argnums=(1, 2, 3, 4))
+  @functools.partial(constants.pmap, donate_argnums=(0, 1, 2))
   def step(data: jnp.ndarray,
            params: networks.ParamTree, state: Optional[optax.OptState],
            key: chex.PRNGKey, mcmc_width: jnp.ndarray) -> StepResults:
@@ -551,8 +551,8 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
     for t in range(cfg.mcmc.burn_in):
       sharded_key, subkeys = kfac_jax.utils.p_split(sharded_key)
       data, params, *_ = burn_in_step(
-          data=data,
-          params=params,
+          data,
+          params,
           state=None,
           key=subkeys,
           mcmc_width=mcmc_width)
@@ -586,11 +586,11 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
     for t in range(t_init, cfg.optim.iterations):
       sharded_key, subkeys = kfac_jax.utils.p_split(sharded_key)
       data, params, opt_state, loss, unused_aux_data, pmove = step(
-          data=data,
-          params=params,
-          state=opt_state,
-          key=subkeys,
-          mcmc_width=mcmc_width)
+          data,
+          params,
+          opt_state,
+          subkeys,
+          mcmc_width)
 
       # due to pmean, loss, and pmove should be the same across
       # devices.
