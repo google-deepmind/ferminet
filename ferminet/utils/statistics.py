@@ -35,7 +35,7 @@ def exponentialy_weighted_stats(
 ) -> WeightedStats[T]:
   """Returns the exponentially-weighted mean and variance.
 
-  mu_t = alpha mu_{t-1} - (1-alpha) x_t
+  mu_t = alpha mu_{t-1} + (1-alpha) x_t
 
   and similarly for the variance.
 
