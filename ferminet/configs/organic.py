@@ -111,7 +111,7 @@ def organic_molecule(cfg):
   if 'cycbut' in cfg.system.molecule_name:
     cfg.system.electrons = (14, 14)
     units = 'bohr'
-  if cfg.system.molecule_name not in systems.keys():
+  if cfg.system.molecule_name not in systems:
     raise ValueError(f'Unrecognized molecule: {cfg.system.molecule_name}')
   molecule = []
   for element, coords in systems[cfg.system.molecule_name]:

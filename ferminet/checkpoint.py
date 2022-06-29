@@ -150,10 +150,10 @@ def restore(restore_filename: str, batch_size: Optional[int] = None):
     mcmc_width = jnp.array(ckpt_data['mcmc_width'].tolist())
     if data.shape[0] != jax.device_count():
       raise ValueError(
-          'Incorrect number of devices found. Expected {}, found {}.'.format(
-              data.shape[0], jax.device_count()))
+          f'Incorrect number of devices found. Expected {data.shape[0]}, found '
+          f'{jax.device_count()}.')
     if batch_size and data.shape[0] * data.shape[1] != batch_size:
       raise ValueError(
-          'Wrong batch size in loaded data. Expected {}, found {}.'.format(
-              batch_size, data.shape[0] * data.shape[1]))
+          f'Wrong batch size in loaded data. Expected {batch_size}, found '
+          f'{data.shape[0] * data.shape[1]}.')
   return t, data, params, opt_state, mcmc_width

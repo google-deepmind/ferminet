@@ -298,8 +298,8 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
                'across %i hosts.', num_devices, num_hosts)
   if cfg.batch_size % (num_devices * num_hosts) != 0:
     raise ValueError('Batch size must be divisible by number of devices, '
-                     'got batch size {} for {} devices.'.format(
-                         cfg.batch_size, num_devices * num_hosts))
+                     f'got batch size {cfg.batch_size} for '
+                     f'{num_devices * num_hosts} devices.')
   if cfg.system.ndim != 3:
     # The network (at least the input feature construction) and initial MCMC
     # molecule configuration (via system.Atom) assume 3D systems. This can be

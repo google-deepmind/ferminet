@@ -67,7 +67,7 @@ class Writer(contextlib.AbstractContextManager):
       row.insert(0, str(t))
     for key in data:
       if key not in self._schema:
-        raise ValueError('Not a recognized key for writer: %s' % key)
+        raise ValueError(f'Not a recognized key for writer: {key}')
 
     # write the data to csv
     self._file.write(','.join(row) + '\n')

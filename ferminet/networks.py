@@ -304,7 +304,7 @@ def init_to_hf_solution(
         j += 3
       else:
         raise NotImplementedError('HF Initialization not implemented for '
-                                  '%s orbitals' % orb[1])
+                                  f'{orb[1]} orbitals')
   # Scale all params in orbital shaping to be near zero.
   orbital_layer = jax.tree_map(lambda param: param * eps, orbital_layer)
   for i, spin in enumerate(active_spin_channels):
