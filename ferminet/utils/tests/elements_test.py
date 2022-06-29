@@ -26,7 +26,9 @@ class ElementsTest(parameterized.TestCase):
     for n, element in elements.ATOMIC_NUMS.items():
       self.assertEqual(n, element.atomic_number)
       self.assertEqual(elements.SYMBOLS[element.symbol], element)
-      if element.symbol in ['Li', 'Na', 'K', 'Rb', 'Cs', 'Fr']:
+      if element.symbol == 'X':
+        continue
+      elif element.symbol in ['Li', 'Na', 'K', 'Rb', 'Cs', 'Fr']:
         self.assertEqual(element.period, elements.ATOMIC_NUMS[n - 1].period + 1)
       elif element.symbol != 'H':
         self.assertEqual(element.period, elements.ATOMIC_NUMS[n - 1].period)
@@ -80,7 +82,7 @@ class ElementsTest(parameterized.TestCase):
   def test_periods(self):
     self.assertLen(elements.ATOMIC_NUMS,
                    sum(len(period) for period in elements.PERIODS.values()))
-    period_length = {1: 2, 2: 8, 3: 8, 4: 18, 5: 18, 6: 32, 7: 32}
+    period_length = {0: 1, 1: 2, 2: 8, 3: 8, 4: 18, 5: 18, 6: 32, 7: 32}
     for p, es in elements.PERIODS.items():
       self.assertLen(es, period_length[p])
 
@@ -93,7 +95,7 @@ class ElementsTest(parameterized.TestCase):
     # Iterate over all elements in order of atomic number. Group should
     # increment monotonically (except for accommodating absence of d block and
     # presence of f block) and reset to 1 on the first element in each period.
-    for i in range(1, len(elements.ATOMIC_NUMS)+1):
+    for i in range(1, len(elements.ATOMIC_NUMS)):
       element = elements.ATOMIC_NUMS[i]
       if element.atomic_number in period_starts:
         prev_group = 0
@@ -126,7 +128,7 @@ class ElementsTest(parameterized.TestCase):
     # Check each group contains the expected number of elements.
     nelements_in_group = [0]*18
     for element in elements.ATOMIC_NUMS.values():
-      if element.group != -1:
+      if element.group != -1 and element.period != 0:
         nelements_in_group[element.group-1] += 1
     self.assertListEqual(nelements_in_group, [7, 6] + [4]*10 + [6]*5 + [7])
 

@@ -24,6 +24,7 @@ import chex
 from ferminet import checkpoint
 from ferminet import constants
 from ferminet import curvature_tags_and_blocks
+from ferminet import envelopes
 from ferminet import hamiltonian
 from ferminet import loss as qmc_loss_functions
 from ferminet import mcmc
@@ -302,12 +303,39 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
     ])
 
   hf_solution = hartree_fock if cfg.pretrain.method == 'direct_init' else None
+
+  if cfg.network.make_feature_layer_fn:
+    feature_layer_module, feature_layer_fn = (
+        cfg.network.make_feature_layer_fn.rsplit('.', maxsplit=1))
+    feature_layer_module = importlib.import_module(feature_layer_module)
+    make_feature_layer = getattr(feature_layer_module, feature_layer_fn)
+    feature_layer = make_feature_layer(
+        charges,
+        cfg.system.electrons,
+        cfg.system.ndim,
+        **cfg.network.make_feature_layer_kwargs)  # type: networks.FeatureLayer
+  else:
+    feature_layer = networks.make_ferminet_features(
+      charges,
+      cfg.system.electrons,
+      cfg.system.ndim,
+    )
+
+  if cfg.network.make_envelope_fn:
+    envelope_module, envelope_fn = (
+        cfg.network.make_envelope_fn.rsplit('.', maxsplit=1))
+    envelope_module = importlib.import_module(envelope_module)
+    make_envelope = getattr(envelope_module, envelope_fn)
+    envelope = make_envelope(**cfg.network.make_envelope_kwargs)  # type: envelopes.Envelope
+  else:
+    envelope = envelopes.make_isotropic_envelope()
+
   network_init, signed_network, network_options = networks.make_fermi_net(
       atoms,
       nspins,
       charges,
-      envelope=cfg.network.envelope_type,
-      feature_layer=cfg.network.get('feature_layer', 'standard'),
+      envelope=envelope,
+      feature_layer=feature_layer,
       bias_orbitals=cfg.network.bias_orbitals,
       use_last_layer=cfg.network.use_last_layer,
       hf_solution=hf_solution,
@@ -406,14 +434,14 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
     local_energy_module, local_energy_fn = (
         cfg.system.make_local_energy_fn.rsplit('.', maxsplit=1))
     local_energy_module = importlib.import_module(local_energy_module)
-    make_local_energy = getattr(local_energy_module, local_energy_fn)  # type: hamiltonian.MakeLocalEnergy
+    make_local_energy = getattr(local_energy_module, local_energy_fn)
     local_energy = make_local_energy(
         f=signed_network,
         atoms=atoms,
         charges=charges,
         nspins=nspins,
         use_scan=False,
-        **cfg.system.make_local_energy_kwargs)
+        **cfg.system.make_local_energy_kwargs)  # type: hamiltonian.MakeLocalEnergy
   else:
     local_energy = hamiltonian.local_energy(
         f=signed_network,

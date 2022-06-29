@@ -171,13 +171,25 @@ def default() -> ml_collections.ConfigDict:
               'determinants': 16,
               'after_determinants': (1,),
           },
-          'envelope_type': 'full',  # Where does the envelope go?
           'bias_orbitals': False,  # include bias in last layer to orbitals
           # Whether to use the last layer of the two-electron stream of the
           # DetNet
           'use_last_layer': False,
           # If true, determinants are dense rather than block-sparse
           'full_det': True,
+          # String set to module.make_feature_layer, where make_feature_layer is
+          # callable (type: MakeFeatureLayer) which creates an object with
+          # member functions init() and apply() that initialize parameters
+          # for custom input features and modify raw input features,
+          # respectively. Module is the absolute module containing
+          # make_feature_layer.
+          # If not set, networks.make_ferminet_features is used.
+          'make_feature_layer_fn': '',
+          # Additional kwargs to pass into make_local_energy_fn.
+          'make_feature_layer_kwargs': {},
+          # Same structure as make_feature_layer
+          'make_envelope_fn': '',
+          'make_envelope_kwargs': {}
       },
       'debug': {
           # Check optimizer state, parameters and loss and raise an exception if
