@@ -27,7 +27,7 @@ from ferminet.networks import FeatureLayer, Param
 def make_pbc_feature_layer(charges: Optional[jnp.ndarray] = None,
                            nspins: Optional[Tuple[int, ...]] = None,
                            ndim: int = 3,
-                           lattice: jnp.ndarray = jnp.eye(3),
+                           lattice: Optional[jnp.ndarray] = None,
                            include_r_ae: bool = True) -> FeatureLayer:
   """Returns the init and apply functions for periodic features.
 
@@ -36,13 +36,15 @@ def make_pbc_feature_layer(charges: Optional[jnp.ndarray] = None,
       nspins: tuple of the number of spin-up and spin-down electrons.
       ndim: dimension of the system.
       lattice: Matrix whose columns are the primitive lattice vectors of the
-        system, shape (ndim, ndim). (Note that ndim=3 is currently
-        a hard-coded default).
+        system, shape (ndim, ndim).
       include_r_ae: Flag to enable electron-atom distance features. Set to False
         to avoid cusps with ghost atoms in, e.g., homogeneous electron gas.
   """
 
   del charges, nspins
+
+  if lattice is None:
+    lattice = jnp.eye(ndim)
 
   # Calculate reciprocal vectors, factor 2pi omitted
   reciprocal_vecs = jnp.linalg.inv(lattice)
