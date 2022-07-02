@@ -37,11 +37,11 @@ def _format_network(network_option: Union[int, Iterable[int]]) -> Text:
   try:
     # pytype doesn't handle try...except TypeError gracefully.
     if all(xi == network_option[0] for xi in network_option[1:]):  # pytype: disable=unsupported-operands
-      return '{}x{}'.format(len(network_option), network_option[0])  # pytype: disable=unsupported-operands,wrong-arg-types
+      return f"{len(network_option)}x{network_option[0]}"  # pytype: disable=unsupported-operands,wrong-arg-types
     else:
-      return '{}'.format(network_option)
+      return f"{network_option}"
   except TypeError:
-    return '{}'.format(network_option)
+    return f"{network_option}"
 
 
 def estimate_stats(df: pd.DataFrame,
@@ -86,7 +86,7 @@ def estimate_stats(df: pd.DataFrame,
   if len(groups) == 1:
     index_dict = {'index': groups[0]}
   else:
-    index_dict = {'level_{}'.format(i): group for i, group in enumerate(groups)}
+    index_dict = {f"level_{i}": group for i, group in enumerate(groups)}
   stats_dict = {
       'mean': 'energy',
       'standard error': 'stderr',
