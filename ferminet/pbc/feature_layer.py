@@ -16,19 +16,21 @@
 
 See Cassella, G., Sutterud, H., Azadi, S., Drummond, N.D., Pfau, D.,
 Spencer, J.S. and Foulkes, W.M.C., 2022. Discovering Quantum Phase Transitions
-with Fermionic Neural Networks. arXiv preprint arXiv:2202.05183."""
+with Fermionic Neural Networks. arXiv preprint arXiv:2202.05183.
+"""
 
 from typing import Optional, Tuple
 
 import jax.numpy as jnp
-from ferminet.networks import FeatureLayer, Param
+
+from ferminet import networks
 
 
 def make_pbc_feature_layer(charges: Optional[jnp.ndarray] = None,
                            nspins: Optional[Tuple[int, ...]] = None,
                            ndim: int = 3,
                            lattice: Optional[jnp.ndarray] = None,
-                           include_r_ae: bool = True) -> FeatureLayer:
+                           include_r_ae: bool = True) -> networks.FeatureLayer:
   """Returns the init and apply functions for periodic features.
 
   Args:
@@ -58,7 +60,7 @@ def make_pbc_feature_layer(charges: Optional[jnp.ndarray] = None,
     sin_term = jnp.einsum('ijm,mn,ijn->ij', b, metric, b)
     return (1 / (2 * jnp.pi)) * jnp.sqrt(cos_term + sin_term)
 
-  def init() -> Tuple[Tuple[int, int], Param]:
+  def init() -> Tuple[Tuple[int, int], networks.Param]:
     if include_r_ae:
       return (2 * ndim, 2 * ndim + 1), {}
     else:
@@ -89,4 +91,4 @@ def make_pbc_feature_layer(charges: Optional[jnp.ndarray] = None,
     ee_features = jnp.concatenate((r_ee[..., None], ee), axis=2)
     return ae_features, ee_features
 
-  return FeatureLayer(init=init, apply=apply)
+  return networks.FeatureLayer(init=init, apply=apply)

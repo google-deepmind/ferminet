@@ -65,7 +65,7 @@ class FeatureLayerTest(parameterized.TestCase):
     ae_features_1, ee_features_1 = feature_layer.apply(
         ae=ae, r_ae=r_ae, ee=ee, r_ee=r_ee, **params)
 
-    # Select random electron coordinate to displace by a random lattice vec
+    # Select random electron coordinate to displace by a random lattice vector
     key, subkey = jax.random.split(key)
     e_idx = jax.random.randint(subkey, (1,), 0, xs.shape[0])
     key, subkey = jax.random.split(key)

@@ -316,9 +316,9 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
         **cfg.network.make_feature_layer_kwargs)  # type: networks.FeatureLayer
   else:
     feature_layer = networks.make_ferminet_features(
-      charges,
-      cfg.system.electrons,
-      cfg.system.ndim,
+        charges,
+        cfg.system.electrons,
+        cfg.system.ndim,
     )
 
   if cfg.network.make_envelope_fn:
@@ -434,14 +434,14 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
     local_energy_module, local_energy_fn = (
         cfg.system.make_local_energy_fn.rsplit('.', maxsplit=1))
     local_energy_module = importlib.import_module(local_energy_module)
-    make_local_energy = getattr(local_energy_module, local_energy_fn)
+    make_local_energy = getattr(local_energy_module, local_energy_fn)  # type: hamiltonian.MakeLocalEnergy
     local_energy = make_local_energy(
         f=signed_network,
         atoms=atoms,
         charges=charges,
         nspins=nspins,
         use_scan=False,
-        **cfg.system.make_local_energy_kwargs)  # type: hamiltonian.MakeLocalEnergy
+        **cfg.system.make_local_energy_kwargs)
   else:
     local_energy = hamiltonian.local_energy(
         f=signed_network,

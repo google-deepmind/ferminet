@@ -44,14 +44,14 @@ def get_config():
 
   cfg.system.make_local_energy_fn = "ferminet.pbc.hamiltonian.local_energy"
   cfg.system.make_local_energy_kwargs = {"lattice": lattice, "heg": True}
-  cfg.network.make_feature_layer_fn = \
-    "ferminet.pbc.feature_layer.make_pbc_feature_layer"
+  cfg.network.make_feature_layer_fn = (
+      "ferminet.pbc.feature_layer.make_pbc_feature_layer")
   cfg.network.make_feature_layer_kwargs = {
       "lattice": lattice,
       "include_r_ae": False
   }
-  cfg.network.make_envelope_fn = \
-    "ferminet.pbc.envelopes.make_multiwave_envelope"
+  cfg.network.make_envelope_fn = (
+      "ferminet.pbc.envelopes.make_multiwave_envelope")
   cfg.network.make_envelope_kwargs = {"kpoints": kpoints}
   cfg.network.full_det = True
   return cfg

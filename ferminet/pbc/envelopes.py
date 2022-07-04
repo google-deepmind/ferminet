@@ -16,12 +16,14 @@
 
 See Cassella, G., Sutterud, H., Azadi, S., Drummond, N.D., Pfau, D.,
 Spencer, J.S. and Foulkes, W.M.C., 2022. Discovering Quantum Phase Transitions
-with Fermionic Neural Networks. arXiv preprint arXiv:2202.05183."""
+with Fermionic Neural Networks. arXiv preprint arXiv:2202.05183.
+"""
 
-from itertools import product
+import itertools
+from typing import Mapping, Optional, Sequence, Tuple
+
 from ferminet import envelopes
 from ferminet.utils import scf
-from typing import Mapping, Optional, Sequence, Tuple
 
 import jax.numpy as jnp
 
@@ -110,7 +112,7 @@ def make_kpoints(lattice: jnp.ndarray,
   # Generate ordinals of the lowest min_kpoints kpoints
   max_k = int(jnp.ceil(min_kpoints * dk)**(1 / 3.))
   ordinals = sorted(range(-max_k, max_k+1), key=abs)
-  ordinals = jnp.asarray(list(product(ordinals, repeat=3)))
+  ordinals = jnp.asarray(list(itertools.product(ordinals, repeat=3)))
 
   kpoints = ordinals @ rec_lattice.T
   kpoints = jnp.asarray(sorted(kpoints, key=jnp.linalg.norm))

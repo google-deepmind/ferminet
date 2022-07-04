@@ -16,16 +16,18 @@
 
 See Cassella, G., Sutterud, H., Azadi, S., Drummond, N.D., Pfau, D.,
 Spencer, J.S. and Foulkes, W.M.C., 2022. Discovering Quantum Phase Transitions
-with Fermionic Neural Networks. arXiv preprint arXiv:2202.05183."""
+with Fermionic Neural Networks. arXiv preprint arXiv:2202.05183.
+"""
 
+import itertools
 from typing import Callable, Sequence
 
-import chex
-from ferminet import networks
 from ferminet import hamiltonian
+from ferminet import networks
+
+import chex
 import jax
 import jax.numpy as jnp
-from itertools import product
 
 
 def make_ewald_potential(
@@ -61,38 +63,36 @@ def make_ewald_potential(
   # two sums. See CASINO QMC manual.
   gamma = (2.8 / volume**(1 / 3))**2
   ordinals = sorted(range(-truncation_limit, truncation_limit + 1), key=abs)
-  ordinals = jnp.array(list(product(ordinals, repeat=3)))
+  ordinals = jnp.array(list(itertools.product(ordinals, repeat=3)))
   lat_vectors = jnp.einsum('kj,ij->ik', lattice, ordinals)
   rec_vectors = jnp.einsum('kj,ij->ik', rec, ordinals[1:])
   rec_vec_square = jnp.einsum('ij,ij->i', rec_vectors, rec_vectors)
+  lat_vec_norm = jnp.linalg.norm(lat_vectors[1:], axis=-1)
 
-  def real_sum(separation: jnp.ndarray):
-    """Real-space Ewald potential between charges seperated by separation.
-    """
+  def real_space_ewald(separation: jnp.ndarray):
+    """Real-space Ewald potential between charges seperated by separation."""
     displacements = jnp.linalg.norm(
         separation - lat_vectors, axis=-1)  # |r - R|
     return jnp.sum(
         jax.scipy.special.erfc(gamma**0.5 * displacements) / displacements)
 
-  def recp_sum(separation: jnp.ndarray):
-    """Reciprocal-space Ewald potential between charges seperated by separation.
-    """
+  def recp_space_ewald(separation: jnp.ndarray):
+    """Returns reciprocal-space Ewald potential between charges."""
     return (4 * jnp.pi / volume) * jnp.sum(
-        jnp.exp(1.0j * jnp.dot(rec_vectors, separation)) * \
+        jnp.exp(1.0j * jnp.dot(rec_vectors, separation)) *
         jnp.exp(-rec_vec_square / (4 * gamma)) / rec_vec_square)
 
   def ewald_sum(separation: jnp.ndarray):
     """Evaluates combined real and reciprocal space Ewald potential."""
-    return real_sum(separation) + recp_sum(separation) - jnp.pi / (
-        volume * gamma)
+    return (real_space_ewald(separation) + recp_space_ewald(separation) -
+            jnp.pi / (volume * gamma))
 
-  lat_vec_norm = jnp.linalg.norm(lat_vectors[1:], axis=-1)
-  madelung_const = jnp.sum(
-      jax.scipy.special.erfc(gamma**0.5 * lat_vec_norm) / \
-      lat_vec_norm) - 2 * gamma**0.5 / jnp.pi**0.5
-  madelung_const += (4*jnp.pi / volume) * \
-      jnp.sum(jnp.exp(-rec_vec_square/(4*gamma))/rec_vec_square) - \
-      jnp.pi / (volume*gamma)
+  madelung_const = (jnp.sum(
+      jax.scipy.special.erfc(gamma**0.5 * lat_vec_norm) / lat_vec_norm) -
+      2 * gamma**0.5 / jnp.pi**0.5)
+  madelung_const += ((4*jnp.pi / volume) *
+      jnp.sum(jnp.exp(-rec_vec_square/(4*gamma))/rec_vec_square) -
+      jnp.pi / (volume*gamma))
 
   batch_ewald_sum = jax.vmap(ewald_sum, in_axes=(0,))
 
