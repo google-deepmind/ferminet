@@ -59,7 +59,7 @@ def _network_options():
   # Key for each option and corresponding values to test.
   all_options = {
       'vmap': [True, False],
-      'envelope': list(envelopes.EnvelopeLabel),
+      'envelope_label': list(envelopes.EnvelopeLabel),
       'bias_orbitals': [True, False],
       'full_det': [True, False],
       'use_last_layer': [True, False],
@@ -95,7 +95,6 @@ class NetworksTest(parameterized.TestCase):
       kwargs.update({'charges': charges, 'nspins': nspins})
     options = networks.FermiNetOptions(
         hidden_dims=((16, 16), (16, 16)),
-        envelope_label=envelope_label,
         envelope=envelopes.get_envelope(envelope_label, **kwargs))
 
     params = networks.init_fermi_net_params(
@@ -196,8 +195,19 @@ class NetworksTest(parameterized.TestCase):
     atoms = jnp.asarray([[0., 0., 0.2], [1.2, 1., -0.2], [2.5, -0.8, 0.6]])
     charges = jnp.asarray([2, 5, 7])
     key = jax.random.PRNGKey(42)
-
+    feature_layer = networks.make_ferminet_features(
+        charges,
+        nspins,
+        ndim=3,
+    )
+    kwargs = {}
+    if network_options['envelope_label'] == envelopes.EnvelopeLabel.EXACT_CUSP:
+      kwargs.update({'charges': charges, 'nspins': nspins})
+    network_options['envelope'] = envelopes.get_envelope(
+        network_options['envelope_label'], **kwargs)
+    del network_options['envelope_label']
     init, fermi_net, _ = networks.make_fermi_net(atoms, nspins, charges,
+                                                 feature_layer=feature_layer,
                                                  **network_options)
 
     key, subkey = jax.random.split(key)
@@ -211,9 +221,8 @@ class NetworksTest(parameterized.TestCase):
       expected_shape = ()
 
     key, subkey = jax.random.split(key)
-    sto_envelopes = (envelopes.EnvelopeLabel.STO,
-                     envelopes.EnvelopeLabel.STO_POLY)
-    if (network_options['envelope'] in sto_envelopes and
+    envelope = network_options['envelope']
+    if (envelope.apply_type == envelopes.EnvelopeType.PRE_ORBITAL and
         network_options['bias_orbitals']):
       with self.assertRaises(ValueError):
         init(subkey)
@@ -229,8 +238,13 @@ class NetworksTest(parameterized.TestCase):
     atoms = jnp.zeros(shape=(1, 3))
     charges = jnp.ones(shape=1)
     key = jax.random.PRNGKey(42)
+    feature_layer = networks.make_ferminet_features(
+        charges,
+        nspins,
+        ndim=3,
+    )
     init, fermi_net, _ = networks.make_fermi_net(
-        atoms, nspins, charges, full_det=full_det)
+        atoms, nspins, charges, feature_layer=feature_layer, full_det=full_det)
     key, subkey1, subkey2 = jax.random.split(key, num=3)
     params = init(subkey1)
     xs = jax.random.uniform(subkey2, shape=(sum(nspins) * 3,))

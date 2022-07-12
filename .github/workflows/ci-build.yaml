@@ -44,7 +44,7 @@ jobs:
         flake8 .
     - name: Lint with pylint
       run: |
-        pylint ferminet
+        pylint --fail-under 9.75 ferminet
     - name: Type check with pytype
       run: |
         pytype ferminet

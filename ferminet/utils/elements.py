@@ -116,6 +116,7 @@ class Element(object):
 #   [_element(s, n+1) for n, s in enumerate(symbols)]
 # where symbols is the list of chemical symbols of all elements.
 _ELEMENTS = (
+    Element(symbol='X', atomic_number=0, period=0),
     Element(symbol='H', atomic_number=1, period=1),
     Element(symbol='He', atomic_number=2, period=1),
     Element(symbol='Li', atomic_number=3, period=2),

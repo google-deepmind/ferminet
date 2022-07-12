@@ -116,6 +116,23 @@ class FeatureLayerType(enum.Enum):
   STANDARD = enum.auto()
 
 
+class MakeFeatureLayer(Protocol):
+
+  def __call__(self,
+               charges: jnp.ndarray,
+               nspins: Sequence[int],
+               ndim: int,
+               **kwargs: Any) -> FeatureLayer:
+    """Builds the FeatureLayer object.
+
+    Args:
+      charges: (natom) array of atom nuclear charges.
+      nspins: tuple of the number of spin-up and spin-down electrons.
+      ndim: dimension of the system.
+      **kwargs: additional kwargs to use for creating the specific FeatureLayer.
+    """
+
+
 ## Network settings ##
 
 
@@ -138,8 +155,6 @@ class FermiNetOptions:
       block-diagonalise determinants into spin channels.
     bias_orbitals: If true, include a bias in the final linear layer to shape
       the outputs into orbitals.
-    envelope_label: Envelope to use to impose orbitals go to zero at infinity.
-      See envelopes module.
     envelope: Envelope object to create and apply the multiplicative envelope.
     feature_layer: Feature object to create and apply the input features for the
       one- and two-electron layers.
@@ -150,11 +165,10 @@ class FermiNetOptions:
   determinants: int = 16
   full_det: bool = True
   bias_orbitals: bool = False
-  envelope_label: envelopes.EnvelopeLabel = envelopes.EnvelopeLabel.ISOTROPIC
   envelope: envelopes.Envelope = attr.ib(
       default=attr.Factory(
-          lambda self: envelopes.get_envelope(self.envelope_label),
-          takes_self=True))
+          envelopes.make_isotropic_envelope,
+          takes_self=False))
   feature_layer: FeatureLayer = attr.ib(
       default=attr.Factory(
           lambda self: make_ferminet_features(ndim=self.ndim), takes_self=True))
@@ -344,8 +358,7 @@ def init_fermi_net_params(
     PyTree of network parameters. Spin-dependent parameters are only created for
     spin channels containing at least one particle.
   """
-  if options.envelope_label in (envelopes.EnvelopeLabel.STO,
-                                envelopes.EnvelopeLabel.STO_POLY):
+  if options.envelope.apply_type == envelopes.EnvelopeType.PRE_ORBITAL:
     if options.bias_orbitals:
       raise ValueError('Cannot bias orbitals w/STO envelope.')
   if hf_solution is not None:
@@ -700,8 +713,8 @@ def make_fermi_net(
     nspins: Tuple[int, int],
     charges: jnp.ndarray,
     *,
-    envelope: Union[str, envelopes.EnvelopeLabel] = 'isotropic',
-    feature_layer: Union[str, FeatureLayerType] = FeatureLayerType.STANDARD,
+    envelope: Optional[envelopes.Envelope] = None,
+    feature_layer: Optional[FeatureLayer] = None,
     bias_orbitals: bool = False,
     use_last_layer: bool = False,
     hf_solution: Optional[scf.Scf] = None,
@@ -742,23 +755,11 @@ def make_fermi_net(
   """
   del after_determinants
 
-  if isinstance(envelope, str):
-    envelope = envelope.upper().replace('-', '_')
-    envelope_label = envelopes.EnvelopeLabel[envelope]
-  else:
-    # support naming scheme used in config files.
-    envelope_label = envelope
-  if envelope_label == envelopes.EnvelopeLabel.EXACT_CUSP:
-    envelope_kwargs = {'nspins': nspins, 'charges': charges}
-  else:
-    envelope_kwargs = {}
+  if not envelope:
+    envelope = envelopes.make_isotropic_envelope()
 
-  if isinstance(feature_layer, str):
-    feature_layer = FeatureLayerType[feature_layer.upper()]
-  if feature_layer == FeatureLayerType.STANDARD:
-    feature_layer_fns = make_ferminet_features(charges, nspins)
-  else:
-    raise ValueError(f'Unsupported feature layer type: {feature_layer}')
+  if not feature_layer:
+    feature_layer = make_ferminet_features(charges, nspins)
 
   options = FermiNetOptions(
       hidden_dims=hidden_dims,
@@ -766,9 +767,8 @@ def make_fermi_net(
       determinants=determinants,
       full_det=full_det,
       bias_orbitals=bias_orbitals,
-      envelope_label=envelope_label,
-      envelope=envelopes.get_envelope(envelope_label, **envelope_kwargs),
-      feature_layer=feature_layer_fns,
+      envelope=envelope,
+      feature_layer=feature_layer,
   )
 
   init = functools.partial(

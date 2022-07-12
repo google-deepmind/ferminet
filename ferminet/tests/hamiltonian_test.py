@@ -154,8 +154,17 @@ class LaplacianTest(parameterized.TestCase):
     cfg.network.full_det = full_det
     cfg.network.detnet.hidden_dims = ((8, 4),)*2
     cfg.network.detnet.determinants = 2
+    feature_layer = networks.make_ferminet_features(
+        charges,
+        cfg.system.electrons,
+        cfg.system.ndim,
+    )
     network_init, signed_network, _ = networks.make_fermi_net(
-        atoms, nspins, charges, full_det=full_det, **cfg.network.detnet)
+        atoms, nspins, charges,
+        full_det=full_det,
+        feature_layer=feature_layer,
+        **cfg.network.detnet
+    )
     network = lambda params, x: signed_network(params, x)[1]
     key = jax.random.PRNGKey(47)
     params = network_init(key)
