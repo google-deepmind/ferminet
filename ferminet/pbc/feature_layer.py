@@ -61,9 +61,9 @@ def make_pbc_feature_layer(charges: Optional[jnp.ndarray] = None,
 
   def init() -> Tuple[Tuple[int, int], networks.Param]:
     if include_r_ae:
-      return (2 * ndim, 2 * ndim + 1), {}
-    else:
       return (2 * ndim + 1, 2 * ndim + 1), {}
+    else:
+      return (2 * ndim, 2 * ndim + 1), {}
 
   def apply(ae, r_ae, ee, r_ee) -> Tuple[jnp.ndarray, jnp.ndarray]:
     # One e features in phase coordinates, (s_ae)_i = k_i . ae
@@ -83,9 +83,9 @@ def make_pbc_feature_layer(charges: Optional[jnp.ndarray] = None,
     r_ee = periodic_norm(s_ee, lattice_metric) * (1.0 - jnp.eye(n))
 
     if include_r_ae:
-      ae_features = ae
-    else:
       ae_features = jnp.concatenate((r_ae[..., None], ae), axis=2)
+    else:
+      ae_features = ae
     ae_features = jnp.reshape(ae_features, [jnp.shape(ae_features)[0], -1])
     ee_features = jnp.concatenate((r_ee[..., None], ee), axis=2)
     return ae_features, ee_features
