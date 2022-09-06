@@ -301,11 +301,6 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
     raise ValueError('Batch size must be divisible by number of devices, '
                      f'got batch size {cfg.batch_size} for '
                      f'{num_devices * num_hosts} devices.')
-  if cfg.system.ndim != 3:
-    # The network (at least the input feature construction) and initial MCMC
-    # molecule configuration (via system.Atom) assume 3D systems. This can be
-    # lifted with a little work.
-    raise ValueError('Only 3D systems are currently supported.')
   host_batch_size = cfg.batch_size // num_hosts  # batch size per host
   device_batch_size = host_batch_size // num_devices  # batch size per device
   data_shape = (num_devices, device_batch_size)
@@ -381,6 +376,7 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
       use_last_layer=cfg.network.use_last_layer,
       hf_solution=hf_solution,
       full_det=cfg.network.full_det,
+      ndim=cfg.system.ndim,
       **cfg.network.detnet)
   key, subkey = jax.random.split(key)
   params = network_init(subkey)
