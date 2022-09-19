@@ -592,7 +592,7 @@ def fermi_net_orbitals(
     r_ee), the atom-electron vectors, distances and electron-electron distances.
   """
 
-  ae, ee, r_ae, r_ee = construct_input_features(pos, atoms)
+  ae, ee, r_ae, r_ee = construct_input_features(pos, atoms, ndim=options.ndim)
   ae_features, ee_features = options.feature_layer.apply(
       ae=ae, r_ae=r_ae, ee=ee, r_ee=r_ee, **params['input'])
 
@@ -722,6 +722,7 @@ def make_fermi_net(
     hidden_dims: FermiLayers = ((256, 32), (256, 32), (256, 32)),
     determinants: int = 16,
     after_determinants: Union[int, Tuple[int, ...]] = 1,
+    ndim: int = 3,
 ) -> Tuple[InitFermiNet, FermiNetLike, FermiNetOptions]:
   """Creates functions for initializing parameters and evaluating ferminet.
 
@@ -747,6 +748,7 @@ def make_fermi_net(
       tuple.
     determinants: Number of determinants to use.
     after_determinants: currently ignored.
+    ndim: dimension of the system.
 
   Returns:
     init, network, options tuple, where init and network are callables which
@@ -759,9 +761,10 @@ def make_fermi_net(
     envelope = envelopes.make_isotropic_envelope()
 
   if not feature_layer:
-    feature_layer = make_ferminet_features(charges, nspins)
+    feature_layer = make_ferminet_features(charges, nspins, ndim=ndim)
 
   options = FermiNetOptions(
+      ndim=ndim,
       hidden_dims=hidden_dims,
       use_last_layer=use_last_layer,
       determinants=determinants,
