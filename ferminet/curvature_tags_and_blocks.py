@@ -153,7 +153,7 @@ class QmcBlockedDense(kfac_jax.TwoKroneckerFactored):
                                   f"yet implemented.")
       cache = state.cache[str(power)]
       pi_adjusted_inverse = jax.vmap(
-          functools.partial(kfac_jax.utils.pi_adjusted_inverse,
+          functools.partial(kfac_jax.utils.pi_adjusted_kronecker_inverse,
                             pmap_axis_name=pmap_axis_name),
           (0, 0, None), (0, 0)
       )
