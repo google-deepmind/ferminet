@@ -14,7 +14,7 @@
 
 """Curvature blocks for FermiNet."""
 import functools
-from typing import Any, Mapping, Optional, Sequence, Set, Tuple, Union
+from typing import Any, Mapping, Optional, Sequence, Set, Tuple
 import chex
 import jax
 import jax.numpy as jnp
@@ -43,8 +43,7 @@ def register_qmc(y, x, w, **kwargs):
 class RepeatedDenseBlock(kfac_jax.DenseTwoKroneckerFactored):
   """Dense block that is repeatedly applied to multiple inputs (e.g. vmap)."""
 
-  @property
-  def scale(self) -> Union[float, jnp.ndarray]:
+  def fixed_scale(self) -> chex.Numeric:
     (x_shape,) = self.inputs_shapes
     return float(kfac_jax.utils.product(x_shape) // (x_shape[0] * x_shape[-1]))
 
@@ -77,10 +76,8 @@ class QmcBlockedDense(kfac_jax.TwoKroneckerFactored):
   def output_size(self) -> int:
     raise NotImplementedError()
 
-  @property
-  def scale(self) -> Union[int, float, jnp.ndarray]:
-    # In _init method this corresponds to m
-    return self.parameters_shapes[0][1]
+  def fixed_scale(self) -> chex.Numeric:
+    return float(self.parameters_shapes[0][1])
 
   def update_curvature_matrix_estimate(
       self,
