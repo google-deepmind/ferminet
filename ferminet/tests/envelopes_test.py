@@ -38,23 +38,37 @@ class ApplyCovarianceTest(parameterized.TestCase):
   @parameterized.named_parameters(_shape_options())
   def test_apply_covariance(self, shapes):
     rng = np.random.RandomState(0).standard_normal
-    dtype = np.float32
+    if jnp.ones(1).dtype == jnp.float64:
+      dtype = np.float64
+      atol = 0
+    else:
+      dtype = np.float32
+      atol = 1.e-6
     x = rng(shapes[0]).astype(dtype)
     y = rng(shapes[1]).astype(dtype)
     np.testing.assert_allclose(
         envelopes._apply_covariance(x, y),
-        jnp.einsum('ijk,kmjn->ijmn', x, y))
+        jnp.einsum('ijk,kmjn->ijmn', x, y),
+        atol=atol,
+    )
 
   @parameterized.named_parameters(_shape_options(dim2=3))
   def test_reduced_apply_covariance(self, shapes):
     rng = np.random.RandomState(0).standard_normal
-    dtype = np.float32
+    if jnp.ones(1).dtype == jnp.float64:
+      dtype = np.float64
+      atol = 0
+    else:
+      dtype = np.float32
+      atol = 1.e-6
     x = rng(shapes[0]).astype(dtype)
     y = rng(shapes[1]).astype(dtype)
     np.testing.assert_allclose(
         jnp.squeeze(
             envelopes._apply_covariance(x, jnp.expand_dims(y, -1)), axis=-1),
-        jnp.einsum('ijk,klj->ijl', x, y))
+        jnp.einsum('ijk,klj->ijl', x, y),
+        atol=atol,
+    )
 
 
 if __name__ == '__main__':
