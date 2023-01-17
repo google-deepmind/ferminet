@@ -16,9 +16,7 @@
 
 from absl import logging
 import jax
-from jax.experimental import maps
 import jax.numpy as jnp
-import numpy as np
 
 
 def check_synced(obj, name):
@@ -44,19 +42,3 @@ def check_synced(obj, name):
       return False
   logging.info('%s objects are synced.', name)
   return True
-
-
-def broadcast_to_hosts(x: jnp.ndarray) -> jnp.ndarray:
-  """Broadcast the given array from host 0 across hosts."""
-
-  def main_mask(x):
-    # Mask all except the 0-th device
-    return jnp.where(jax.lax.axis_index('i') == 0, x, jnp.zeros_like(x))
-
-  with maps.Mesh(np.array(jax.devices()), ('all_devices',)):
-    return maps.xmap(
-        lambda: jax.lax.psum(main_mask(x), axis_name='i'),
-        in_axes=(),
-        out_axes={},
-        axis_sizes={'i': jax.device_count()},
-        axis_resources={'i': 'all_devices'})()

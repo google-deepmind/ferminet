@@ -30,11 +30,11 @@ from ferminet import loss as qmc_loss_functions
 from ferminet import mcmc
 from ferminet import networks
 from ferminet import pretrain
-from ferminet.utils import multi_host
 from ferminet.utils import statistics
 from ferminet.utils import system
 from ferminet.utils import writers
 import jax
+from jax.experimental import multihost_utils
 import jax.numpy as jnp
 import kfac_jax
 import ml_collections
@@ -318,8 +318,8 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
   if cfg.debug.deterministic:
     seed = 23
   else:
-    seed = 1e6 * time.time()
-    seed = int(multi_host.broadcast_to_hosts(seed))
+    seed = jnp.asarray([1e6 * time.time()])
+    seed = int(multihost_utils.broadcast_one_to_all(seed)[0])
   key = jax.random.PRNGKey(seed)
 
   # Create parameters, network, and vmaped/pmaped derivations
@@ -333,10 +333,9 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
         restricted=False,
         basis=cfg.pretrain.basis)
     # broadcast the result of PySCF from host 0 to all other hosts
-    hartree_fock.mean_field.mo_coeff = tuple([
-        multi_host.broadcast_to_hosts(x)
-        for x in hartree_fock.mean_field.mo_coeff
-    ])
+    hartree_fock.mean_field.mo_coeff = multihost_utils.broadcast_one_to_all(
+        hartree_fock.mean_field.mo_coeff
+    )
 
   hf_solution = hartree_fock if cfg.pretrain.method == 'direct_init' else None
 
