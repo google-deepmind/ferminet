@@ -82,7 +82,6 @@ class NetworksTest(parameterized.TestCase):
 
     key, *subkeys = random.split(key, num=3)
     atoms = random.normal(subkeys[0], shape=(4, 3))
-    charges = random.normal(subkeys[1], shape=(4,))
     nspins = (3, 4)
 
     key, subkey = random.split(key)
@@ -91,8 +90,6 @@ class NetworksTest(parameterized.TestCase):
     data3 = jnp.concatenate((data1[:9], data1[12:15], data1[9:12], data1[15:]))
     key, subkey = random.split(key)
     kwargs = {}
-    if envelope_label == envelopes.EnvelopeLabel.EXACT_CUSP:
-      kwargs.update({'charges': charges, 'nspins': nspins})
     options = networks.FermiNetOptions(
         hidden_dims=((16, 16), (16, 16)),
         envelope=envelopes.get_envelope(envelope_label, **kwargs))
@@ -201,8 +198,6 @@ class NetworksTest(parameterized.TestCase):
         ndim=3,
     )
     kwargs = {}
-    if network_options['envelope_label'] == envelopes.EnvelopeLabel.EXACT_CUSP:
-      kwargs.update({'charges': charges, 'nspins': nspins})
     network_options['envelope'] = envelopes.get_envelope(
         network_options['envelope_label'], **kwargs)
     del network_options['envelope_label']

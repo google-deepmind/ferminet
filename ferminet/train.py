@@ -437,10 +437,7 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
         nspins=cfg.system.electrons,
         options=network_options,
     )
-    batch_orbitals = jax.vmap(
-        lambda params, data: orbitals(params, data)[0],
-        in_axes=(None, 0),
-        out_axes=0)
+    batch_orbitals = jax.vmap(orbitals, in_axes=(None, 0), out_axes=0)
     sharded_key, subkeys = kfac_jax.utils.p_split(sharded_key)
     params, data = pretrain.pretrain_hartree_fock(
         params=params,
@@ -449,10 +446,10 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
         batch_orbitals=batch_orbitals,
         network_options=network_options,
         sharded_key=subkeys,
-        atoms=atoms,
         electrons=cfg.system.electrons,
         scf_approx=hartree_fock,
-        iterations=cfg.pretrain.iterations)
+        iterations=cfg.pretrain.iterations,
+    )
 
   # Main training
 

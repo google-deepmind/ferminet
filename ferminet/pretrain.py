@@ -19,7 +19,6 @@ from typing import Callable, Optional, Sequence, Tuple, Union
 from absl import logging
 import chex
 from ferminet import constants
-from ferminet import envelopes
 from ferminet import mcmc
 from ferminet import networks
 from ferminet.utils import scf
@@ -120,22 +119,18 @@ def eval_slater(scf_approx: scf.Scf, pos: Union[jnp.ndarray, np.ndarray],
   return sign, log_abs_slater_determinant
 
 
-def make_pretrain_step(batch_envelope_fn,
-                       batch_orbitals: FermiNetOrbitals,
-                       batch_network: networks.LogFermiNetLike,
-                       optimizer_update: optax.TransformUpdateFn,
-                       full_det: bool = False):
+def make_pretrain_step(
+    batch_orbitals: FermiNetOrbitals,
+    batch_network: networks.LogFermiNetLike,
+    optimizer_update: optax.TransformUpdateFn,
+    full_det: bool = False,
+):
   """Creates function for performing one step of Hartre-Fock pretraining.
 
   Args:
-    batch_envelope_fn: callable with signature f(params, data) which, given a
-      batch of electron positions and the tree of envelope network parameters,
-      returns the multiplicative envelope to apply to the orbitals. See envelope
-      functions in networks for details. Only required if the envelope is not
-      included in batch_orbitals.
     batch_orbitals: callable with signature f(params, data), which given network
-      parameters and a batch of electron positions, returns the orbitals in
-      the network evaluated at those positions.
+      parameters and a batch of electron positions, returns the orbitals in the
+      network evaluated at those positions.
     batch_network: callable with signature f(params, data), which given network
       parameters and a batch of electron positions, returns the log of the
       magnitude of the (wavefunction) network  evaluated at those positions.
@@ -150,11 +145,8 @@ def make_pretrain_step(batch_envelope_fn,
 
   def pretrain_step(data, target, params, state, key, logprob):
     """One iteration of pretraining to match HF."""
-    n = jnp.array([tgt.shape[-1] for tgt in target]).sum()
 
     def loss_fn(p, x, target):
-      env = jnp.exp(batch_envelope_fn(p['envelope'], x) / n)
-      env = jnp.reshape(env, [env.shape[-1], 1, 1, 1])
       if full_det:
         ndet = target[0].shape[0]
         na = target[0].shape[1]
@@ -163,13 +155,14 @@ def make_pretrain_step(batch_envelope_fn,
             (jnp.concatenate((target[0], jnp.zeros((ndet, na, nb))), axis=-1),
              jnp.concatenate((jnp.zeros((ndet, nb, na)), target[1]), axis=-1)),
             axis=-2)
-        result = jnp.mean(
-            (target[:, None, ...] - env * batch_orbitals(p, x)[0])**2)
+        result = jnp.mean((target[:, None, ...] - batch_orbitals(p, x)[0]) ** 2)
       else:
-        result = jnp.array([
-            jnp.mean((t[:, None, ...] - env * o)**2)
-            for t, o in zip(target, batch_orbitals(p, x))
-        ]).sum()
+        result = jnp.array(
+            [
+                jnp.mean((t[:, None, ...] - o) ** 2)
+                for t, o in zip(target, batch_orbitals(p, x))
+            ]
+        ).sum()
       return constants.pmean(result)
 
     val_and_grad = jax.value_and_grad(loss_fn, argnums=0)
@@ -192,7 +185,6 @@ def pretrain_hartree_fock(
     batch_orbitals: FermiNetOrbitals,
     network_options: networks.FermiNetOptions,
     sharded_key: chex.PRNGKey,
-    atoms: jnp.ndarray,
     electrons: Tuple[int, int],
     scf_approx: scf.Scf,
     iterations: int = 1000,
@@ -207,11 +199,10 @@ def pretrain_hartree_fock(
       parameters and a batch of electron positions, returns the log of the
       magnitude of the (wavefunction) network  evaluated at those positions.
     batch_orbitals: callable with signature f(params, data), which given network
-      parameters and a batch of electron positions, returns the orbitals in
-      the network evaluated at those positions.
+      parameters and a batch of electron positions, returns the orbitals in the
+      network evaluated at those positions.
     network_options: FermiNet network options.
     sharded_key: JAX RNG state (sharded) per device.
-    atoms: (natom, 3) array of atom positions.
     electrons: tuple of number of electrons of each spin.
     scf_approx: an scf.Scf object that contains the result of a PySCF
       calculation.
@@ -232,23 +223,12 @@ def pretrain_hartree_fock(
   optimizer = optax.adam(3.e-4)
   opt_state_pt = constants.pmap(optimizer.init)(params)
 
-  if (network_options.envelope.apply_type ==
-      envelopes.EnvelopeType.POST_DETERMINANT):
-
-    def envelope_fn(params, x):
-      ae, r_ae, _, r_ee = networks.construct_input_features(x, atoms)
-      return network_options.envelope.apply(
-          ae=ae, r_ae=r_ae, r_ee=r_ee, **params)
-  else:
-    envelope_fn = lambda p, x: 0.0
-  batch_envelope_fn = jax.vmap(envelope_fn, (None, 0))
-
   pretrain_step = make_pretrain_step(
-      batch_envelope_fn,
       batch_orbitals,
       batch_network,
       optimizer.update,
-      full_det=network_options.full_det)
+      full_det=network_options.full_det,
+  )
   pretrain_step = constants.pmap(pretrain_step)
   pnetwork = constants.pmap(batch_network)
   logprob = 2. * pnetwork(params, data)

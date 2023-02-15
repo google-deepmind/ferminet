@@ -443,9 +443,6 @@ def init_fermi_net_params(
   elif options.envelope.apply_type == envelopes.EnvelopeType.PRE_DETERMINANT:
     # Applied to orbitals.
     output_dims = nspin_orbitals
-  elif options.envelope.apply_type == envelopes.EnvelopeType.POST_DETERMINANT:
-    # Applied to all determinants.
-    output_dims = 1
   else:
     raise ValueError('Unknown envelope type')
   params['envelope'] = options.envelope.init(
@@ -568,18 +565,7 @@ def fermi_net_orbitals(
   """Forward evaluation of the Fermionic Neural Network up to the orbitals.
 
   Args:
-    params: A dictionary of parameters, containing fields:
-      `atoms`: atomic positions, used to construct input features.
-      `single`: a list of dictionaries with params 'w' and 'b', weights for the
-        one-electron stream of the network.
-      `double`: a list of dictionaries with params 'w' and 'b', weights for the
-        two-electron stream of the network.
-      `orbital`: a list of two weight matrices, for spin up and spin down (no
-        bias is necessary as it only adds a constant to each row, which does not
-        change the determinant).
-      `dets`: weight on the linear combination of determinants
-      `envelope`: a dictionary with fields `sigma` and `pi`, weights for the
-        multiplicative envelope.
+    params: Network parameters.
     pos: The electron positions, a 3N dimensional vector.
     atoms: Array with positions of atoms.
     nspins: Tuple with number of spin up and spin down electrons.
@@ -588,8 +574,7 @@ def fermi_net_orbitals(
   Returns:
     One matrix (two matrices if options.full_det is False) that exchange columns
     under the exchange of inputs of shape (ndet, nalpha+nbeta, nalpha+nbeta) (or
-    (ndet, nalpha, nalpha) and (ndet, nbeta, nbeta)) and a tuple of (ae, r_ae,
-    r_ee), the atom-electron vectors, distances and electron-electron distances.
+    (ndet, nalpha, nalpha) and (ndet, nbeta, nbeta)).
   """
 
   ae, ee, r_ae, r_ee = construct_input_features(pos, atoms, ndim=options.ndim)
@@ -657,7 +642,7 @@ def fermi_net_orbitals(
   orbitals = [jnp.transpose(orbital, (1, 0, 2)) for orbital in orbitals]
   if options.full_det:
     orbitals = [jnp.concatenate(orbitals, axis=1)]
-  return orbitals, (ae, r_ae, r_ee)
+  return orbitals
 
 ## FermiNet ##
 
@@ -672,18 +657,7 @@ def fermi_net(
   """Forward evaluation of the Fermionic Neural Network for a single datum.
 
   Args:
-    params: A dictionary of parameters, containing fields:
-      `atoms`: atomic positions, used to construct input features.
-      `single`: a list of dictionaries with params 'w' and 'b', weights for the
-        one-electron stream of the network.
-      `double`: a list of dictionaries with params 'w' and 'b', weights for the
-        two-electron stream of the network.
-      `orbital`: a list of two weight matrices, for spin up and spin down (no
-        bias is necessary as it only adds a constant to each row, which does not
-        change the determinant).
-      `dets`: weight on the linear combination of determinants
-      `envelope`: a dictionary with fields `sigma` and `pi`, weights for the
-        multiplicative envelope.
+    params: Network parameters.
     pos: The electron positions, a 3N dimensional vector.
     atoms: Array with positions of atoms.
     nspins: Tuple with number of spin up and spin down electrons.
@@ -694,18 +668,14 @@ def fermi_net(
     and log absolute of the network evaluated at x.
   """
 
-  orbitals, (ae, r_ae, r_ee) = fermi_net_orbitals(
+  orbitals = fermi_net_orbitals(
       params,
       pos,
       atoms=atoms,
       nspins=nspins,
       options=options,
   )
-  output = network_blocks.logdet_matmul(orbitals)
-  if options.envelope.apply_type == envelopes.EnvelopeType.POST_DETERMINANT:
-    output = output[0], output[1] + options.envelope.apply(
-        ae=ae, r_ae=r_ae, r_ee=r_ee, **params['envelope'])
-  return output
+  return network_blocks.logdet_matmul(orbitals)
 
 
 def make_fermi_net(

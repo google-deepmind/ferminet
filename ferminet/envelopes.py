@@ -15,11 +15,10 @@
 """Multiplicative envelope functions."""
 
 import enum
-from typing import Any, Mapping, Optional, Sequence, Tuple, Union
+from typing import Any, Mapping, Optional, Sequence, Union
 
 import attr
 from ferminet import curvature_tags_and_blocks
-from ferminet import network_blocks
 from ferminet import sto
 from ferminet.utils import scf
 import jax
@@ -33,7 +32,6 @@ class EnvelopeType(enum.Enum):
   """The point at which the envelope is applied."""
   PRE_ORBITAL = enum.auto()
   PRE_DETERMINANT = enum.auto()
-  POST_DETERMINANT = enum.auto()
 
 
 class EnvelopeLabel(enum.Enum):
@@ -44,8 +42,6 @@ class EnvelopeLabel(enum.Enum):
   NULL = enum.auto()
   STO = enum.auto()
   STO_POLY = enum.auto()
-  OUTPUT = enum.auto()
-  EXACT_CUSP = enum.auto()
 
 
 class EnvelopeInit(Protocol):
@@ -84,9 +80,6 @@ class EnvelopeApply(Protocol):
     electrons. If the envelope is applied after orbital shaping and before
     determinant evaluation, the envelope function is called once per spin
     channel and N is the number of electrons in the spin channel.
-
-    The envelope applied post-determinant evaluation is assumed to be in
-    log-space.
 
     Args:
       ae: atom-electron vectors, shape (N, natom, ndim).
@@ -288,75 +281,6 @@ def make_sto_poly_envelope() -> Envelope:
   return Envelope(EnvelopeType.PRE_ORBITAL, init, apply)
 
 
-def make_output_envelope() -> Envelope:
-  """Creates an anisotropic multiplicative envelope to apply to determinants."""
-
-  def init(natom: int, output_dims: int, hf: Optional[scf.Scf] = None,
-           ndim: int = 3) -> Mapping[str, jnp.ndarray]:
-    """Initialise learnable parameters for output envelope."""
-    del output_dims, hf  # unused
-    return {
-        'pi': jnp.zeros(shape=natom),
-        'sigma': jnp.tile(jnp.eye(ndim)[..., None], [1, 1, natom])
-    }
-
-  def apply(*, ae: jnp.ndarray, r_ae: jnp.ndarray, r_ee: jnp.ndarray,
-            pi: jnp.ndarray, sigma: jnp.ndarray) -> jnp.ndarray:
-    """Fully anisotropic envelope, but only one output in log space."""
-    del r_ae, r_ee  # unused
-    # Should register KFAC tags and blocks.
-    sigma = jnp.expand_dims(sigma, -1)
-    ae_sigma = jnp.squeeze(_apply_covariance(ae, sigma), axis=-1)
-    r_ae_sigma = jnp.linalg.norm(ae_sigma, axis=2)
-    return jnp.sum(jnp.log(jnp.sum(jnp.exp(-r_ae_sigma + pi), axis=1)))
-
-  return Envelope(EnvelopeType.POST_DETERMINANT, init, apply)
-
-
-def make_exact_cusp_envelope(nspins: Tuple[int, int],
-                             charges: jnp.ndarray) -> Envelope:
-  """Creates an envelope satisfying cusp conditions to apply to determinants."""
-
-  def init(natom: int, output_dims: int, hf: Optional[scf.Scf] = None,
-           ndim: int = 3) -> Mapping[str, jnp.ndarray]:
-    """Initialise learnable parameters for the exact cusp envelope."""
-    del output_dims, hf  # unused
-    return {
-        'pi': jnp.zeros(shape=natom),
-        'sigma': jnp.tile(jnp.eye(ndim)[..., None], [1, 1, natom])
-    }
-
-  def apply(*, ae: jnp.ndarray, r_ae: jnp.ndarray, r_ee: jnp.ndarray,
-            pi: jnp.ndarray, sigma: jnp.ndarray) -> jnp.ndarray:
-    """Combine exact cusp conditions and envelope on the output into one."""
-    # No cusp at zero
-    del r_ae  # unused
-    # Should register KFAC tags and blocks.
-    sigma = jnp.expand_dims(sigma, -1)
-    ae_sigma = jnp.squeeze(_apply_covariance(ae, sigma), axis=-1)
-    soft_r_ae = jnp.sqrt(jnp.sum(1. + ae_sigma**2, axis=2))
-    env = jnp.sum(jnp.log(jnp.sum(jnp.exp(-soft_r_ae + pi), axis=1)))
-
-    # atomic cusp
-    r_ae = jnp.linalg.norm(ae, axis=2)
-    a_cusp = jnp.sum(charges / (1. + r_ae))
-
-    # electronic cusp
-    spin_partitions = network_blocks.array_partitions(nspins)
-    r_ees = [
-        jnp.split(r, spin_partitions, axis=1)
-        for r in jnp.split(r_ee, spin_partitions, axis=0)
-    ]
-    # Sum over same-spin electrons twice but different-spin once, which
-    # cancels out the different factor of 1/2 and 1/4 in the cusps.
-    e_cusp = (
-        jnp.sum(1. / (1. + r_ees[0][0])) + jnp.sum(1. / (1. + r_ees[1][1])) +
-        jnp.sum(1. / (1. + r_ees[0][1])))
-    return env + a_cusp - 0.5 * e_cusp
-
-  return Envelope(EnvelopeType.POST_DETERMINANT, init, apply)
-
-
 def get_envelope(
     envelope_label: EnvelopeLabel,
     **kwargs: Any,
@@ -378,7 +302,5 @@ def get_envelope(
       EnvelopeLabel.DIAGONAL: make_diagonal_envelope,
       EnvelopeLabel.FULL: make_full_envelope,
       EnvelopeLabel.NULL: make_null_envelope,
-      EnvelopeLabel.OUTPUT: make_output_envelope,
-      EnvelopeLabel.EXACT_CUSP: make_exact_cusp_envelope,
   }
   return envelope_builders[envelope_label](**kwargs)
