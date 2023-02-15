@@ -60,7 +60,17 @@ def default() -> ml_collections.ConfigDict:
               'decay': 1.0,  # exponent of learning rate decay
               'delay': 10000.0,  # term that sets the scale of the rate decay
           },
-          'clip_el': 5.0,  # If not none, scale at which to clip local energy
+          # If greater than zero, scale (at which to clip local energy) in units
+          # of the mean deviation from the mean.
+          'clip_local_energy': 5.0,
+          # If true, center the clipping window around the median rather than
+          # the mean. More "correct" for removing outliers, but also potentially
+          # slow, especially with multihost training.
+          'clip_median': False,
+          # If true, center the local energy differences in the gradient at the
+          # average clipped energy rather than average energy, guaranteeing that
+          # the average energy difference will be zero in each batch.
+          'center_at_clip': True,
           # KFAC hyperparameters. See KFAC documentation for details.
           'kfac': {
               'invert_every': 1,

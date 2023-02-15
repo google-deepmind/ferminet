@@ -33,9 +33,11 @@ class AuxiliaryLossData:
   Attributes:
     variance: mean variance over batch, and over all devices if inside a pmap.
     local_energy: local energy for each MCMC configuration.
+    clipped_energy: local energy after clipping has been applied
   """
   variance: jnp.DeviceArray
   local_energy: jnp.DeviceArray
+  clipped_energy: jnp.DeviceArray
 
 
 class LossFn(Protocol):
@@ -65,9 +67,63 @@ class LossFn(Protocol):
     """
 
 
+def clip_local_values(
+    local_values: jnp.ndarray,
+    mean_local_values: jnp.ndarray,
+    clip_scale: float,
+    clip_from_median: bool,
+    center_at_clipped_value: bool,
+) -> Tuple[jnp.ndarray, jnp.ndarray]:
+  """Clips local operator estimates to remove outliers.
+
+  Args:
+    local_values: batch of local values,  Of/f, where f is the wavefunction and
+      O is the operator of interest.
+    mean_local_values: mean (over the global batch) of the local values.
+    clip_scale: clip local quantities that are outside nD of the estimate of the
+      expectation value of the operator, where n is this value and D the mean
+      absolute deviation of the local quantities from the estimate of w, to the
+      boundaries. The clipped local quantities should only be used to evaluate
+      gradients.
+    clip_from_median: If true, center the clipping window at the median rather
+      than the mean. Potentially expensive in multi-host training, but more
+      accurate/robust to outliers.
+    center_at_clipped_value: If true, center the local energy differences passed
+      back to the gradient around the clipped quantities, so the mean difference
+      across the batch is guaranteed to be zero.
+
+  Returns:
+    Tuple of the central value (estimate of the expectation value of the
+    operator) and deviations from the central value for each element in the
+    batch. If per_device_threshold is True, then the central value is per
+    device.
+  """
+
+  batch_mean = lambda values: constants.pmean(jnp.mean(values))
+
+  if clip_from_median:
+    # More natural place to center the clipping, but expensive due to both
+    # the median and all_gather (at least on multihost)
+    clip_center = jnp.median(constants.all_gather(local_values))
+  else:
+    clip_center = mean_local_values
+  # roughly, the total variation of the local energies
+  tv = batch_mean(jnp.abs(local_values - clip_center))
+  clipped_local_values = jnp.clip(local_values, clip_center - clip_scale * tv,
+                                  clip_center + clip_scale * tv)
+  if center_at_clipped_value:
+    diff_center = batch_mean(clipped_local_values)
+  else:
+    diff_center = mean_local_values
+  diff = clipped_local_values - diff_center
+  return diff_center, diff
+
+
 def make_loss(network: networks.LogFermiNetLike,
               local_energy: hamiltonian.LocalEnergy,
-              clip_local_energy: float = 0.0) -> LossFn:
+              clip_local_energy: float = 0.0,
+              clip_from_median: bool = True,
+              center_at_clipped_energy: bool = True) -> LossFn:
   """Creates the loss function, including custom gradients.
 
   Args:
@@ -80,6 +136,12 @@ def make_loss(network: networks.LogFermiNetLike,
       this value and D the mean absolute deviation of the local energies from
       the mean, to the boundaries. The clipped local energies are only used to
       evaluate gradients.
+    clip_from_median: If true, center the clipping window at the median rather
+      than the mean. Potentially expensive in multi-host training, but more
+      accurate.
+    center_at_clipped_energy: If true, center the local energy differences
+      passed back to the gradient around the clipped local energy, so the mean
+      difference across the batch is guaranteed to be zero.
 
   Returns:
     Callable with signature (params, data) and returns (loss, aux_data), where
@@ -116,7 +178,8 @@ def make_loss(network: networks.LogFermiNetLike,
     e_l = batch_local_energy(params, keys, data)
     loss = constants.pmean(jnp.mean(e_l))
     variance = constants.pmean(jnp.mean((e_l - loss)**2))
-    return loss, AuxiliaryLossData(variance=variance, local_energy=e_l)
+    return loss, AuxiliaryLossData(
+        variance=variance, local_energy=e_l, clipped_energy=e_l)
 
   @total_energy.defjvp
   def total_energy_jvp(primals, tangents):  # pylint: disable=unused-variable
@@ -125,12 +188,12 @@ def make_loss(network: networks.LogFermiNetLike,
     loss, aux_data = total_energy(params, key, data)
 
     if clip_local_energy > 0.0:
-      # Try centering the window around the median instead of the mean?
-      tv = jnp.mean(jnp.abs(aux_data.local_energy - loss))
-      tv = constants.pmean(tv)
-      diff = jnp.clip(aux_data.local_energy,
-                      loss - clip_local_energy * tv,
-                      loss + clip_local_energy * tv) - loss
+      aux_data.clipped_energy, diff = clip_local_values(
+          aux_data.local_energy,
+          loss,
+          clip_local_energy,
+          clip_from_median,
+          center_at_clipped_energy)
     else:
       diff = aux_data.local_energy - loss
 

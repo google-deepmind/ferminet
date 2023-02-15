@@ -488,7 +488,9 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
   evaluate_loss = qmc_loss_functions.make_loss(
       network,
       local_energy,
-      clip_local_energy=cfg.optim.clip_el)
+      clip_local_energy=cfg.optim.clip_local_energy,
+      clip_from_median=cfg.optim.clip_median,
+      center_at_clipped_energy=cfg.optim.center_at_clip)
   # Compute the learning rate
   def learning_rate_schedule(t_: jnp.ndarray) -> jnp.ndarray:
     return cfg.optim.lr.rate * jnp.power(
