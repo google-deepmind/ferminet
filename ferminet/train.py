@@ -463,7 +463,7 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
       device_batch_size,
       steps=cfg.mcmc.steps,
       atoms=atoms_to_mcmc,
-      one_electron_moves=cfg.mcmc.one_electron,
+      blocks=cfg.mcmc.blocks,
   )
   # Construct loss and optimizer
   if cfg.system.make_local_energy_fn:

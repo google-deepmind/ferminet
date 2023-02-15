@@ -61,6 +61,17 @@ def _log_prob_gaussian(x, mu, sigma):
   return numer - denom
 
 
+def mh_accept(x1, x2, lp_1, lp_2, ratio, key, num_accepts):
+  """Given state, proposal, and probabilities, execute MH accept/reject step."""
+  key, subkey = jax.random.split(key)
+  rnd = jnp.log(jax.random.uniform(subkey, shape=ratio.shape))
+  cond = ratio > rnd
+  x_new = jnp.where(cond[..., None], x2, x1)
+  lp_new = jnp.where(cond, lp_2, lp_1)
+  num_accepts += jnp.sum(cond)
+  return x_new, key, lp_new, num_accepts
+
+
 def mh_update(params,
               f,
               x1,
@@ -69,6 +80,8 @@ def mh_update(params,
               num_accepts,
               stddev=0.02,
               atoms=None,
+              ndim=3,
+              blocks=1,
               i=0):
   """Performs one Metropolis-Hastings step using an all-electron move.
 
@@ -86,6 +99,8 @@ def mh_update(params,
       N(0, (h_i stddev)^2), where h_i is the harmonic mean of distances between
       the i-th electron and the atoms, otherwise the move proposal drawn from
       N(0, stddev^2).
+    ndim: dimensionality of system.
+    blocks: Ignored.
     i: Ignored.
 
   Returns:
@@ -95,7 +110,7 @@ def mh_update(params,
       lp: log probability of f evaluated at x.
       num_accepts: update running total of number of accepted MH moves.
   """
-  del i  # electron index ignored for all-electron moves
+  del i, blocks  # electron index ignored for all-electron moves
   key, subkey = jax.random.split(key)
   if atoms is None:  # symmetric proposal, same stddev everywhere
     x2 = x1 + stddev * jax.random.normal(subkey, shape=x1.shape)  # proposal
@@ -103,7 +118,7 @@ def mh_update(params,
     ratio = lp_2 - lp_1
   else:  # asymmetric proposal, stddev propto harmonic mean of nuclear distances
     n = x1.shape[0]
-    x1 = jnp.reshape(x1, [n, -1, 1, 3])
+    x1 = jnp.reshape(x1, [n, -1, 1, ndim])
     hmean1 = _harmonic_mean(x1, atoms)  # harmonic mean of distances to nuclei
 
     x2 = x1 + stddev * hmean1 * jax.random.normal(subkey, shape=x1.shape)
@@ -116,43 +131,42 @@ def mh_update(params,
 
     x1 = jnp.reshape(x1, [n, -1])
     x2 = jnp.reshape(x2, [n, -1])
-  key, subkey = jax.random.split(key)
-  rnd = jnp.log(jax.random.uniform(subkey, shape=lp_1.shape))
-  cond = ratio > rnd
-  x_new = jnp.where(cond[..., None], x2, x1)
-  lp_new = jnp.where(cond, lp_2, lp_1)
-  num_accepts += jnp.sum(cond)
+  x_new, key, lp_new, num_accepts = mh_accept(
+      x1, x2, lp_1, lp_2, ratio, key, num_accepts)
 
   return x_new, key, lp_new, num_accepts
 
 
-def mh_one_electron_update(params,
-                           f,
-                           x1,
-                           key,
-                           lp_1,
-                           num_accepts,
-                           stddev=0.02,
-                           atoms=None,
-                           i=0):
-  """Performs one Metropolis-Hastings step for a single electron.
+def mh_block_update(params,
+                    f,
+                    data,
+                    key,
+                    lp_1,
+                    num_accepts,
+                    stddev=0.02,
+                    atoms=None,
+                    ndim=3,
+                    blocks=1,
+                    i=0):
+  """Performs one Metropolis-Hastings step for a block of electrons.
 
   Args:
     params: Wavefuncttion parameters.
-    f: Callable with signature f(params, x) which returns the log of the
+    f: Callable with LogFermiNetLike signature which returns the log of the
       wavefunction (i.e. the sqaure root of the log probability of x).
-    x1: Initial MCMC configurations. Shape (batch, nelectrons*ndim).
+    data: Initial MCMC configuration (batched).
     key: RNG state.
     lp_1: log probability of f evaluated at x1 given parameters params.
     num_accepts: Number of MH move proposals accepted.
     stddev: width of Gaussian move proposal.
-    atoms: Ignored. Asymmetric move proposals are not implemented for
-      single-electron moves.
-    i: index of electron to move.
+    atoms: Not implemented. Raises an error if not None.
+    ndim: dimensionality of system.
+    blocks: number of blocks to split electron updates into.
+    i: index of block of electrons to move.
 
   Returns:
     (x, key, lp, num_accepts), where:
-      x: Updated MCMC configurations.
+      x: MCMC configurations with updated positions.
       key: RNG state.
       lp: log probability of f evaluated at x.
       num_accepts: update running total of number of accepted MH moves.
@@ -161,28 +175,30 @@ def mh_one_electron_update(params,
     NotImplementedError: if atoms is supplied.
   """
   key, subkey = jax.random.split(key)
-  n = x1.shape[0]
-  x1 = jnp.reshape(x1, [n, -1, 1, 3])
-  nelec = x1.shape[1]
-  ii = i % nelec
-  if atoms is None:  # symmetric proposal, same stddev everywhere
-    x2 = x1.at[:, ii].add(stddev *
-                          jax.random.normal(subkey, shape=x1[:, ii].shape))
-    lp_2 = 2. * f(params, x2)  # log prob of proposal
+  batch_size = data.shape[0]
+  nelec = data.shape[1] // ndim
+  pad = (blocks - nelec % blocks) % blocks
+  x1 = jnp.reshape(jnp.pad(data, ((0, 0), (0, pad * ndim))),
+                   [batch_size, blocks, -1, ndim])
+  ii = i % blocks
+  if atoms is None:  # symmetric prop, same stddev everywhere
+    x2 = x1.at[:, ii].add(
+        stddev * jax.random.normal(subkey, shape=x1[:, ii].shape))
+    x2 = jnp.reshape(x2, [batch_size, -1])
+    if pad > 0:
+      x2 = x2[..., :-pad*ndim]
+    # log prob of proposal
+    lp_2 = 2. * f(params, x2)
     ratio = lp_2 - lp_1
   else:  # asymmetric proposal, stddev propto harmonic mean of nuclear distances
     raise NotImplementedError('Still need to work out reverse probabilities '
                               'for asymmetric moves.')
 
-  x1 = jnp.reshape(x1, [n, -1])
-  x2 = jnp.reshape(x2, [n, -1])
-  key, subkey = jax.random.split(key)
-  rnd = jnp.log(jax.random.uniform(subkey, shape=lp_1.shape))
-  cond = ratio > rnd
-  x_new = jnp.where(cond[..., None], x2, x1)
-  lp_new = jnp.where(cond, lp_2, lp_1)
-  num_accepts += jnp.sum(cond)
-
+  x1 = jnp.reshape(x1, [batch_size, -1])
+  if pad > 0:
+    x1 = x1[..., :-pad*ndim]
+  x_new, key, lp_new, num_accepts = mh_accept(
+      x1, x2, lp_1, lp_2, ratio, key, num_accepts)
   return x_new, key, lp_new, num_accepts
 
 
@@ -190,7 +206,8 @@ def make_mcmc_step(batch_network,
                    batch_per_device,
                    steps=10,
                    atoms=None,
-                   one_electron_moves=False):
+                   ndim=3,
+                   blocks=1):
   """Creates the MCMC step function.
 
   Args:
@@ -203,13 +220,14 @@ def make_mcmc_step(batch_network,
     atoms: atom positions. If given, an asymmetric move proposal is used based
       on the harmonic mean of electron-atom distances for each electron.
       Otherwise the (conventional) normal distribution is used.
-    one_electron_moves: If true, attempt to move one electron at a time.
-      Otherwise, attempt one all-electron move per MCMC step.
+    ndim: Dimensionality of the system (usually 3).
+    blocks: Number of blocks to split the updates into. If 1, use all-electron
+      moves.
 
   Returns:
     Callable which performs the set of MCMC steps.
   """
-  inner_fun = mh_one_electron_update if one_electron_moves else mh_update
+  inner_fun = mh_block_update if blocks > 1 else mh_update
 
   @jax.jit
   def mcmc_step(params, data, key, width):
@@ -228,10 +246,16 @@ def make_mcmc_step(batch_network,
 
     def step_fn(i, x):
       return inner_fun(
-          params, batch_network, *x, stddev=width, atoms=atoms, i=i)
+          params,
+          batch_network,
+          *x,
+          stddev=width,
+          atoms=atoms,
+          ndim=ndim,
+          blocks=blocks,
+          i=i)
 
-    nelec = data.shape[-1] // 3
-    nsteps = nelec * steps if one_electron_moves else steps
+    nsteps = steps * blocks
     logprob = 2. * batch_network(params, data)
     data, key, _, num_accepts = lax.fori_loop(0, nsteps, step_fn,
                                               (data, key, logprob, 0.))

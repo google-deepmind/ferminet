@@ -93,6 +93,7 @@ class QmcTest(parameterized.TestCase):
 MOL_STRINGS = [
     'H 0 0 -1; H 0 0 1',
     'O 0 0 0; H  0 1 0; H 0 0 1',
+    'N 0 0 0'  # Include a system with an odd number of electrons
 ]
 
 
@@ -106,9 +107,10 @@ class QmcPyscfMolTest(parameterized.TestCase):
     pyscf.lib.param.TMPDIR = None
 
   @parameterized.parameters(
-      (mol_string, optimizer)
-      for mol_string, optimizer in zip(MOL_STRINGS, ('adam', 'kfac')))
-  def test_training_step_pyscf(self, mol_string, optimizer):
+      (mol_string, optimizer, mcmc_blocks)
+      for mol_string, optimizer, mcmc_blocks in
+      zip(MOL_STRINGS, ('adam', 'kfac'), (1, 2)))
+  def test_training_step_pyscf(self, mol_string, optimizer, mcmc_blocks):
     mol = pyscf.gto.Mole()
     mol.build(
         atom=mol_string,
@@ -121,6 +123,7 @@ class QmcPyscfMolTest(parameterized.TestCase):
     cfg.batch_size = 32
     cfg.pretrain.iterations = 10
     cfg.mcmc.burn_in = 10
+    cfg.mcmc.blocks = mcmc_blocks
     cfg.optim.optimizer = optimizer
     cfg.optim.iterations = 3
     cfg.debug.check_nan = True

@@ -173,7 +173,7 @@ def default() -> ml_collections.ConfigDict:
           # If true, scale the proposal width for each electron by the harmonic
           # mean of the distance to the nuclei.
           'scale_by_nuclear_distance': False,
-          'one_electron': False,  # If true, use one-electron moves
+          'blocks': 1,  # Number of blocks to split the MCMC sampling into
       },
       'network': {
           'detnet': {
