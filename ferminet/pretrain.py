@@ -33,8 +33,9 @@ import pyscf
 # Given the parameters and electron positions, return arrays(s) of the orbitals.
 # See networks.fermi_net_orbitals. (Note only the orbitals, and not envelope
 # parameters, are required.)
-FermiNetOrbitals = Callable[[networks.ParamTree, jnp.ndarray],
-                            Sequence[jnp.ndarray]]
+FermiNetOrbitals = Callable[
+    [networks.ParamTree, jnp.ndarray], Sequence[jnp.ndarray]
+]
 
 
 def get_hf(molecule: Optional[Sequence[system.Atom]] = None,
@@ -145,7 +146,10 @@ def make_pretrain_step(
   def pretrain_step(data, target, params, state, key, logprob):
     """One iteration of pretraining to match HF."""
 
-    def loss_fn(p, x, target):
+    def loss_fn(
+        params: networks.ParamTree, data: networks.FermiNetData, target: ...
+    ):
+      orbitals = batch_orbitals(params, data.positions)
       if full_det:
         ndet = target[0].shape[0]
         na = target[0].shape[1]
@@ -154,18 +158,18 @@ def make_pretrain_step(
             (jnp.concatenate((target[0], jnp.zeros((ndet, na, nb))), axis=-1),
              jnp.concatenate((jnp.zeros((ndet, nb, na)), target[1]), axis=-1)),
             axis=-2)
-        result = jnp.mean((target[:, None, ...] - batch_orbitals(p, x)[0]) ** 2)
+        result = jnp.mean((target[:, None, ...] - orbitals[0]) ** 2)
       else:
         result = jnp.array(
             [
                 jnp.mean((t[:, None, ...] - o) ** 2)
-                for t, o in zip(target, batch_orbitals(p, x))
+                for t, o in zip(target, orbitals)
             ]
         ).sum()
       return constants.pmean(result)
 
     val_and_grad = jax.value_and_grad(loss_fn, argnums=0)
-    loss_val, search_direction = val_and_grad(params, data.positions, target)
+    loss_val, search_direction = val_and_grad(params, data, target)
     search_direction = constants.pmean(search_direction)
     updates, state = optimizer_update(search_direction, state, params)
     params = optax.apply_updates(params, updates)
@@ -238,13 +242,13 @@ def pretrain_hartree_fock(
   )
   pretrain_step = constants.pmap(pretrain_step)
   pnetwork = constants.pmap(batch_network)
-  logprob = 2.0 * pnetwork(params, positions)
 
   batch_spins = jnp.tile(spins[None], [positions.shape[1], 1])
   pmap_spins = kfac_jax.utils.replicate_all_local_devices(batch_spins)
   data = networks.FermiNetData(
       positions=positions, spins=pmap_spins, atoms=atoms, charges=charges
   )
+  logprob = 2.0 * pnetwork(params, positions, pmap_spins, atoms, charges)
 
   for t in range(iterations):
     target = eval_orbitals(scf_approx, data.positions, electrons)

@@ -157,7 +157,7 @@ def make_loss(network: networks.LogFermiNetLike,
       ),
       out_axes=0,
   )
-  batch_network = jax.vmap(network, in_axes=(None, 0), out_axes=0)
+  batch_network = jax.vmap(network, in_axes=(None, 0, 0, 0, 0), out_axes=0)
 
   @jax.custom_jvp
   def total_energy(
@@ -211,8 +211,14 @@ def make_loss(network: networks.LogFermiNetLike,
     # convention between total_energy and batch_network
     data = primals[2]
     data_tangents = tangents[2]
-    primals = (primals[0], data.positions)
-    tangents = (tangents[0], data_tangents.positions)
+    primals = (primals[0], data.positions, data.spins, data.atoms, data.charges)
+    tangents = (
+        tangents[0],
+        data_tangents.positions,
+        data_tangents.spins,
+        data_tangents.atoms,
+        data_tangents.charges,
+    )
     psi_primal, psi_tangent = jax.jvp(batch_network, primals, tangents)
     kfac_jax.register_normal_predictive_distribution(psi_primal[:, None])
     primals_out = loss, aux_data

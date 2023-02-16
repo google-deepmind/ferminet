@@ -24,23 +24,23 @@ import jax.numpy as jnp
 import numpy as np
 
 
-def h_atom_log_psi(param, xs):
-  del param
+def h_atom_log_psi(param, xs, spins, atoms=None, charges=None):
+  del param, spins, atoms, charges
   # log of exact hydrogen wavefunction.
   return -jnp.abs(jnp.linalg.norm(xs))
 
 
-def h_atom_log_psi_signed(param, xs):
-  log_psi = h_atom_log_psi(param, xs)
+def h_atom_log_psi_signed(param, xs, spins, atoms=None, charges=None):
+  log_psi = h_atom_log_psi(param, xs, spins, atoms, charges)
   return jnp.ones_like(log_psi), log_psi
 
 
 def kinetic_from_hessian(log_f):
 
-  def kinetic_operator(params, x):
-    f = lambda x: jnp.exp(log_f(params, x))
-    ys = f(x)
-    hess = jax.hessian(f)(x)
+  def kinetic_operator(params, pos, spins, atoms, charges):
+    f = lambda x: jnp.exp(log_f(params, x, spins, atoms, charges))
+    ys = f(pos)
+    hess = jax.hessian(f)(pos)
     return -0.5 * jnp.trace(hess) / ys
 
   return kinetic_operator
@@ -48,10 +48,10 @@ def kinetic_from_hessian(log_f):
 
 def kinetic_from_hessian_log(log_f):
 
-  def kinetic_operator(params, x):
-    f = lambda x: log_f(params, x)
-    grad_f = jax.grad(f)(x)
-    hess = jax.hessian(f)(x)
+  def kinetic_operator(params, pos, spins, atoms, charges):
+    f = lambda x: log_f(params, x, spins, atoms, charges)
+    grad_f = jax.grad(f)(pos)
+    hess = jax.hessian(f)(pos)
     return -0.5 * (jnp.trace(hess)  + jnp.sum(grad_f**2))
 
   return kinetic_operator
@@ -176,9 +176,10 @@ class LaplacianTest(parameterized.TestCase):
         ),
     )
     t_l = t_l_fn(dummy_params, data)
-    hess_t = jax.vmap(kinetic_from_hessian(h_atom_log_psi), in_axes=(None, 0))(
-        dummy_params, xs
-    )
+    hess_t = jax.vmap(
+        kinetic_from_hessian(h_atom_log_psi),
+        in_axes=(None, 0, None, None, None),
+    )(dummy_params, xs, spins, atoms, charges)
     np.testing.assert_allclose(t_l, hess_t, rtol=1E-5)
 
   @parameterized.parameters([True, False])
@@ -187,7 +188,7 @@ class LaplacianTest(parameterized.TestCase):
     np.random.seed(12)
     atoms = np.random.uniform(low=-5.0, high=5.0, size=(natoms, 3))
     nspins = (2, 3)
-    charges = list(range(3, 3+natoms*2, 2))
+    charges = 2 * np.ones(shape=(natoms,))
     batch = 4
     cfg = base_config.default()
     cfg.network.full_det = full_det
@@ -199,19 +200,20 @@ class LaplacianTest(parameterized.TestCase):
         cfg.system.ndim,
     )
     network_init, signed_network, _ = networks.make_fermi_net(
-        atoms, nspins, charges,
+        nspins,
+        charges,
         full_det=full_det,
         feature_layer=feature_layer,
         **cfg.network.detnet
     )
-    network = lambda params, x: signed_network(params, x)[1]
+    log_network = lambda *args, **kwargs: signed_network(*args, **kwargs)[1]
     key = jax.random.PRNGKey(47)
     params = network_init(key)
     xs = np.random.normal(scale=5, size=(batch, sum(nspins) * 3))
     spins = np.sign(np.random.normal(scale=1, size=(batch, sum(nspins))))
     t_l_fn = jax.jit(
         jax.vmap(
-            hamiltonian.local_kinetic_energy(network),
+            hamiltonian.local_kinetic_energy(log_network),
             in_axes=(
                 None,
                 networks.FermiNetData(
@@ -227,9 +229,12 @@ class LaplacianTest(parameterized.TestCase):
         ),
     )
     hess_t_fn = jax.jit(
-        jax.vmap(kinetic_from_hessian_log(network), in_axes=(None, 0))
+        jax.vmap(
+            kinetic_from_hessian_log(log_network),
+            in_axes=(None, 0, 0, None, None),
+        )
     )
-    hess_t = hess_t_fn(params, xs)
+    hess_t = hess_t_fn(params, xs, spins, atoms, charges)
     if hess_t.dtype == jnp.float64:
       atol, rtol = 1.e-10, 1.e-10
     else:

@@ -45,7 +45,6 @@ class PbcHamiltonianTest(parameterized.TestCase):
     kpoints = envelopes.make_kpoints(jnp.eye(3), nspins)
 
     network_init, signed_network, _ = networks.make_fermi_net(
-        atoms,
         nspins,
         charges,
         envelope=envelopes.make_multiwave_envelope(kpoints),

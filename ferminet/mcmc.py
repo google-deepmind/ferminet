@@ -119,7 +119,9 @@ def mh_update(
   x1 = data.positions
   if atoms is None:  # symmetric proposal, same stddev everywhere
     x2 = x1 + stddev * jax.random.normal(subkey, shape=x1.shape)  # proposal
-    lp_2 = 2. * f(params, x2)  # log prob of proposal
+    lp_2 = 2.0 * f(
+        params, x2, data.spins, data.atoms, data.charges
+    )  # log prob of proposal
     ratio = lp_2 - lp_1
   else:  # asymmetric proposal, stddev propto harmonic mean of nuclear distances
     n = x1.shape[0]
@@ -127,7 +129,9 @@ def mh_update(
     hmean1 = _harmonic_mean(x1, atoms)  # harmonic mean of distances to nuclei
 
     x2 = x1 + stddev * hmean1 * jax.random.normal(subkey, shape=x1.shape)
-    lp_2 = 2. * f(params, x2)  # log prob of proposal
+    lp_2 = 2.0 * f(
+        params, x2, data.spins, data.atoms, data.charges
+    )  # log prob of proposal
     hmean2 = _harmonic_mean(x2, atoms)  # needed for probability of reverse jump
 
     lq_1 = _log_prob_gaussian(x1, x2, stddev * hmean1)  # forward probability
@@ -197,7 +201,7 @@ def mh_block_update(
     if pad > 0:
       x2 = x2[..., :-pad*ndim]
     # log prob of proposal
-    lp_2 = 2. * f(params, x2)
+    lp_2 = 2.0 * f(params, x2, data.spins, data.atoms, data.charges)
     ratio = lp_2 - lp_1
   else:  # asymmetric proposal, stddev propto harmonic mean of nuclear distances
     raise NotImplementedError('Still need to work out reverse probabilities '
@@ -267,7 +271,9 @@ def make_mcmc_step(batch_network,
           i=i)
 
     nsteps = steps * blocks
-    logprob = 2.0 * batch_network(params, pos)
+    logprob = 2.0 * batch_network(
+        params, pos, data.spins, data.atoms, data.charges
+    )
     new_data, key, _, num_accepts = lax.fori_loop(
         0, nsteps, step_fn, (data, key, logprob, 0.0)
     )

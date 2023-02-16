@@ -88,7 +88,9 @@ def local_kinetic_energy(
     n = data.positions.shape[0]
     eye = jnp.eye(n)
     grad_f = jax.grad(f, argnums=1)
-    grad_f_closure = lambda x: grad_f(params, x)
+    def grad_f_closure(x):
+      return grad_f(params, x, data.spins, data.atoms, data.charges)
+
     primal, dgrad_f = jax.linearize(grad_f_closure, data.positions)
 
     if use_scan:

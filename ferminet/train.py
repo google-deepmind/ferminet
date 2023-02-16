@@ -416,7 +416,6 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
     envelope = envelopes.make_isotropic_envelope()
 
   network_init, signed_network, network_options = networks.make_fermi_net(
-      atoms,
       nspins,
       charges,
       envelope=envelope,
@@ -426,14 +425,15 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
       hf_solution=hf_solution,
       full_det=cfg.network.full_det,
       ndim=cfg.system.ndim,
-      **cfg.network.detnet)
+      **cfg.network.detnet,
+  )
   key, subkey = jax.random.split(key)
   params = network_init(subkey)
   params = kfac_jax.utils.replicate_all_local_devices(params)
   # Often just need log|psi(x)|.
   network = lambda *args, **kwargs: signed_network(*args, **kwargs)[1]  # type: networks.LogFermiNetLike
   batch_network = jax.vmap(
-      network, in_axes=(None, 0), out_axes=0)  # batched network
+      network, in_axes=(None, 0, 0, 0, 0), out_axes=0)  # batched network
 
   # Set up checkpointing and restore params/data if necessary
   # Mirror behaviour of checkpoints in TF FermiNet.

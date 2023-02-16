@@ -85,7 +85,12 @@ class InitFermiNet(Protocol):
 class FermiNetLike(Protocol):
 
   def __call__(
-      self, params: ParamTree, electrons: jnp.ndarray
+      self,
+      params: ParamTree,
+      electrons: jnp.ndarray,
+      spins: jnp.ndarray,
+      atoms: jnp.ndarray,
+      charges: jnp.ndarray,
   ) -> Tuple[jnp.ndarray, jnp.ndarray]:
     """Returns the sign and log magnitude of the wavefunction.
 
@@ -93,19 +98,33 @@ class FermiNetLike(Protocol):
       params: network parameters.
       electrons: electron positions, shape (nelectrons*ndim), where ndim is the
         dimensionality of the system.
+      spins: 1D array specifying the spin state of each electron.
+      atoms: positions of nuclei, shape: (natoms, ndim).
+      charges: nuclei charges, shape: (natoms).
     """
 
 
 class LogFermiNetLike(Protocol):
 
-  def __call__(self, params: ParamTree, electrons: jnp.ndarray) -> jnp.ndarray:
+  def __call__(
+      self,
+      params: ParamTree,
+      electrons: jnp.ndarray,
+      spins: jnp.ndarray,
+      atoms: jnp.ndarray,
+      charges: jnp.ndarray,
+  ) -> jnp.ndarray:
     """Returns the log magnitude of the wavefunction.
 
     Args:
       params: network parameters.
       electrons: electron positions, shape (nelectrons*ndim), where ndim is the
         dimensionality of the system.
+      spins: 1D array specifying the spin state of each electron.
+      atoms: positions of nuclei, shape: (natoms, ndim).
+      charges: nuclear charges, shape: (natoms).
     """
+
 
 ## Interfaces (network components) ##
 
@@ -152,11 +171,13 @@ class FeatureLayerType(enum.Enum):
 
 class MakeFeatureLayer(Protocol):
 
-  def __call__(self,
-               charges: jnp.ndarray,
-               nspins: Sequence[int],
-               ndim: int,
-               **kwargs: Any) -> FeatureLayer:
+  def __call__(
+      self,
+      charges: jnp.ndarray,
+      nspins: Sequence[int],
+      ndim: int,
+      **kwargs: Any,
+  ) -> FeatureLayer:
     """Builds the FeatureLayer object.
 
     Args:
@@ -368,8 +389,8 @@ def init_to_hf_solution(
 
 def init_fermi_net_params(
     key: chex.PRNGKey,
-    atoms: jnp.ndarray,
     nspins: Tuple[int, ...],
+    charges: jnp.ndarray,
     options: FermiNetOptions,
     hf_solution: Optional[scf.Scf] = None,
     eps: float = 0.01,
@@ -378,10 +399,10 @@ def init_fermi_net_params(
 
   Args:
     key: JAX RNG state.
-    atoms: (natom, ndim) array of atom positions.
     nspins: A tuple with either the number of spin-up and spin-down electrons,
       or the total number of electrons. If the latter, the spins are instead
       given as an input to the network.
+    charges: (atom) array of atomic nuclear charges.
     options: network options.
     hf_solution: If present, initialise the parameters to match the Hartree-Fock
       solution. Otherwise a random initialisation is use.
@@ -419,7 +440,7 @@ def init_fermi_net_params(
   # which contain no electrons (i.e. spin-polarised systems).
   nfeatures = lambda out1, out2: (nchannels + 1) * out1 + nchannels * out2
 
-  natom, ndim = atoms.shape
+  natom = charges.shape[0]
   # one-electron stream, per electron:
   #  - one-electron features per atom (default: electron-atom vectors
   #    (ndim/atom) and distances (1/atom)),
@@ -480,7 +501,8 @@ def init_fermi_net_params(
   else:
     raise ValueError('Unknown envelope type')
   params['envelope'] = options.envelope.init(
-      natom=natom, output_dims=output_dims, hf=hf_solution, ndim=ndim)
+      natom=natom, output_dims=output_dims, hf=hf_solution, ndim=options.ndim
+  )
 
   # orbital shaping
   key, subkey = jax.random.split(key, num=2)
@@ -500,6 +522,7 @@ def init_fermi_net_params(
         eps=eps)
 
   return params
+
 
 ## Network layers ##
 
@@ -678,13 +701,16 @@ def fermi_net_orbitals(
     orbitals = [jnp.concatenate(orbitals, axis=1)]
   return orbitals
 
+
 ## FermiNet ##
 
 
 def fermi_net(
     params,
     pos: jnp.ndarray,
+    spins: jnp.ndarray,
     atoms: jnp.ndarray,
+    charges: jnp.ndarray,
     nspins: Tuple[int, ...],
     options: FermiNetOptions = FermiNetOptions(),
 ):
@@ -693,7 +719,9 @@ def fermi_net(
   Args:
     params: Network parameters.
     pos: The electron positions, a 3N dimensional vector.
+    spins: The electron spins, an N dimensional vector.
     atoms: Array with positions of atoms.
+    charges: (natom) array of atom nuclear charges.
     nspins: Tuple with number of spin up and spin down electrons.
     options: network options.
 
@@ -701,6 +729,7 @@ def fermi_net(
     Output of antisymmetric neural network in log space, i.e. a tuple of sign of
     and log absolute of the network evaluated at x.
   """
+  del spins, charges
 
   orbitals = fermi_net_orbitals(
       params,
@@ -713,7 +742,6 @@ def fermi_net(
 
 
 def make_fermi_net(
-    atoms: jnp.ndarray,
     nspins: Tuple[int, int],
     charges: jnp.ndarray,
     *,
@@ -730,7 +758,6 @@ def make_fermi_net(
   """Creates functions for initializing parameters and evaluating ferminet.
 
   Args:
-    atoms: (natom, ndim) array of atom positions.
     nspins: Tuple of the number of spin-up and spin-down electrons.
     charges: (natom) array of atom nuclear charges.
     envelope: Envelope to use to impose orbitals go to zero at infinity.
@@ -776,14 +803,13 @@ def make_fermi_net(
 
   init = functools.partial(
       init_fermi_net_params,
-      atoms=atoms,
       nspins=nspins,
+      charges=charges,
       options=options,
       hf_solution=hf_solution,
   )
   network = functools.partial(
       fermi_net,
-      atoms=atoms,
       nspins=nspins,
       options=options,
   )
