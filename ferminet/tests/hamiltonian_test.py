@@ -63,10 +63,18 @@ class HamiltonianTest(parameterized.TestCase):
 
     dummy_params = {}
     xs = np.random.normal(size=(3,))
+    spins = np.ones(shape=(1,))
+    atoms = np.random.normal(size=(1, 3))
+    charges = 2 * np.ones(shape=(1,))
     expected_kinetic_energy = -(1 - 2 / np.abs(np.linalg.norm(xs))) / 2
 
     kinetic = hamiltonian.local_kinetic_energy(h_atom_log_psi)
-    kinetic_energy = kinetic(dummy_params, xs)
+    kinetic_energy = kinetic(
+        dummy_params,
+        networks.FermiNetData(
+            positions=xs, spins=spins, atoms=atoms, charges=charges
+        ),
+    )
     np.testing.assert_allclose(
         kinetic_energy, expected_kinetic_energy, rtol=1.e-5)
 
@@ -113,17 +121,34 @@ class HamiltonianTest(parameterized.TestCase):
 
   def test_local_energy(self):
 
+    spins = np.ones(shape=(1,))
     atoms = np.zeros(shape=(1, 3))
     charges = np.ones(shape=(1,))
     dummy_params = {}
     local_energy = hamiltonian.local_energy(
-        h_atom_log_psi_signed, atoms, charges, nspins=(1, 0), use_scan=False)
+        h_atom_log_psi_signed, atoms, charges, nspins=(1, 0), use_scan=False
+    )
 
     xs = np.random.normal(size=(100, 3))
     key = jax.random.PRNGKey(4)
     keys = jax.random.split(key, num=xs.shape[0])
-    batch_local_energy = jax.vmap(local_energy, in_axes=(None, 0, 0))
-    energies = batch_local_energy(dummy_params, keys, xs)
+    batch_local_energy = jax.vmap(
+        local_energy,
+        in_axes=(
+            None,
+            0,
+            networks.FermiNetData(
+                positions=0, spins=None, atoms=None, charges=None
+            ),
+        ),
+    )
+    energies = batch_local_energy(
+        dummy_params,
+        keys,
+        networks.FermiNetData(
+            positions=xs, spins=spins, atoms=atoms, charges=charges
+        ),
+    )
 
     np.testing.assert_allclose(
         energies, -0.5 * np.ones_like(energies), rtol=1E-5)
@@ -134,12 +159,26 @@ class LaplacianTest(parameterized.TestCase):
   def test_laplacian(self):
 
     xs = np.random.uniform(size=(100, 3))
+    spins = np.ones(shape=(1,))
+    atoms = np.random.normal(size=(1, 3))
+    charges = 3 * np.ones(shape=(1,))
+    data = networks.FermiNetData(
+        positions=xs, spins=spins, atoms=atoms, charges=charges
+    )
     dummy_params = {}
-    t_l = jax.vmap(
+    t_l_fn = jax.vmap(
         hamiltonian.local_kinetic_energy(h_atom_log_psi),
-        in_axes=(None, 0))(dummy_params, xs)
-    hess_t = jax.vmap(
-        kinetic_from_hessian(h_atom_log_psi), in_axes=(None, 0))(None, xs)
+        in_axes=(
+            None,
+            networks.FermiNetData(
+                positions=0, spins=None, atoms=None, charges=None
+            ),
+        ),
+    )
+    t_l = t_l_fn(dummy_params, data)
+    hess_t = jax.vmap(kinetic_from_hessian(h_atom_log_psi), in_axes=(None, 0))(
+        dummy_params, xs
+    )
     np.testing.assert_allclose(t_l, hess_t, rtol=1E-5)
 
   @parameterized.parameters([True, False])
@@ -169,11 +208,27 @@ class LaplacianTest(parameterized.TestCase):
     key = jax.random.PRNGKey(47)
     params = network_init(key)
     xs = np.random.normal(scale=5, size=(batch, sum(nspins) * 3))
+    spins = np.sign(np.random.normal(scale=1, size=(batch, sum(nspins))))
     t_l_fn = jax.jit(
-        jax.vmap(hamiltonian.local_kinetic_energy(network), in_axes=(None, 0)))
-    t_l = t_l_fn(params, xs)
+        jax.vmap(
+            hamiltonian.local_kinetic_energy(network),
+            in_axes=(
+                None,
+                networks.FermiNetData(
+                    positions=0, spins=0, atoms=None, charges=None
+                ),
+            ),
+        )
+    )
+    t_l = t_l_fn(
+        params,
+        networks.FermiNetData(
+            positions=xs, spins=spins, atoms=atoms, charges=charges
+        ),
+    )
     hess_t_fn = jax.jit(
-        jax.vmap(kinetic_from_hessian_log(network), in_axes=(None, 0)))
+        jax.vmap(kinetic_from_hessian_log(network), in_axes=(None, 0))
+    )
     hess_t = hess_t_fn(params, xs)
     if hess_t.dtype == jnp.float64:
       atol, rtol = 1.e-10, 1.e-10

@@ -43,13 +43,21 @@ import optax
 from typing_extensions import Protocol
 
 
+def _assign_spin_configuration(
+    nalpha: int, nbeta: int, batch_size: int = 1
+) -> jnp.ndarray:
+  """Returns the spin configuration for a fixed spin polarisation."""
+  spins = jnp.concatenate((jnp.ones(nalpha), -jnp.ones(nbeta)))
+  return jnp.tile(spins[None], reps=(batch_size, 1))
+
+
 def init_electrons(
     key,
     molecule: Sequence[system.Atom],
     electrons: Sequence[int],
     batch_size: int,
     init_width: float,
-) -> jnp.ndarray:
+) -> Tuple[jnp.ndarray, jnp.ndarray]:
   """Initializes electron positions around each atom.
 
   Args:
@@ -64,7 +72,9 @@ def init_electrons(
   Returns:
     array of (batch_size, (nalpha+nbeta)*ndim) of initial (random) electron
     positions in the initial MCMC configurations and ndim is the dimensionality
-    of the space (i.e. typically 3).
+    of the space (i.e. typically 3), and array of (batch_size, (nalpha+nbeta))
+    of spin configurations, where 1 and -1 indicate alpha and beta electrons
+    respectively.
   """
   if sum(atom.charge for atom in molecule) != sum(electrons):
     if len(molecule) == 1:
@@ -93,10 +103,16 @@ def init_electrons(
   # Create a batch of configurations with a Gaussian distribution about each
   # atom.
   key, subkey = jax.random.split(key)
-  return (
-      electron_positions +
-      init_width *
-      jax.random.normal(subkey, shape=(batch_size, electron_positions.size)))
+  electron_positions += (
+      jax.random.normal(subkey, shape=(batch_size, electron_positions.size))
+      * init_width
+  )
+
+  electron_spins = _assign_spin_configuration(
+      electrons[0], electrons[1], batch_size
+  )
+
+  return electron_positions, electron_spins
 
 
 # All optimizer states (KFAC and optax-based).
@@ -108,15 +124,18 @@ OptUpdateResults = Tuple[networks.ParamTree, Optional[OptimizerState],
 
 class OptUpdate(Protocol):
 
-  def __call__(self, params: networks.ParamTree,
-               data: jnp.ndarray,
-               opt_state: optax.OptState,
-               key: chex.PRNGKey) -> OptUpdateResults:
+  def __call__(
+      self,
+      params: networks.ParamTree,
+      data: networks.FermiNetData,
+      opt_state: optax.OptState,
+      key: chex.PRNGKey,
+  ) -> OptUpdateResults:
     """Evaluates the loss and gradients and updates the parameters accordingly.
 
     Args:
       params: network parameters.
-      data: electron positions.
+      data: electron positions, spins and atomic positions.
       opt_state: optimizer internal state.
       key: RNG state.
 
@@ -127,23 +146,30 @@ class OptUpdate(Protocol):
     """
 
 
-StepResults = Tuple[jnp.ndarray, networks.ParamTree, Optional[optax.OptState],
-                    jnp.ndarray, qmc_loss_functions.AuxiliaryLossData,
-                    jnp.ndarray]
+StepResults = Tuple[
+    networks.FermiNetData,
+    networks.ParamTree,
+    Optional[optax.OptState],
+    jnp.ndarray,
+    qmc_loss_functions.AuxiliaryLossData,
+    jnp.ndarray,
+]
 
 
 class Step(Protocol):
 
-  def __call__(self,
-               data: jnp.ndarray,
-               params: networks.ParamTree,
-               state: OptimizerState,
-               key: chex.PRNGKey,
-               mcmc_width: jnp.ndarray) -> StepResults:
+  def __call__(
+      self,
+      data: networks.FermiNetData,
+      params: networks.ParamTree,
+      state: OptimizerState,
+      key: chex.PRNGKey,
+      mcmc_width: jnp.ndarray,
+  ) -> StepResults:
     """Performs one set of MCMC moves and an optimization step.
 
     Args:
-      data: batch of MCMC configurations.
+      data: batch of MCMC configurations, spins and atomic positions.
       params: network parameters.
       state: optimizer internal state.
       key: JAX RNG state.
@@ -163,9 +189,12 @@ class Step(Protocol):
     """
 
 
-def null_update(params: networks.ParamTree, data: jnp.ndarray,
-                opt_state: Optional[optax.OptState],
-                key: chex.PRNGKey) -> OptUpdateResults:
+def null_update(
+    params: networks.ParamTree,
+    data: networks.FermiNetData,
+    opt_state: Optional[optax.OptState],
+    key: chex.PRNGKey,
+) -> OptUpdateResults:
   """Performs an identity operation with an OptUpdate interface."""
   del data, key
   return params, opt_state, jnp.zeros(1), None
@@ -178,9 +207,12 @@ def make_opt_update_step(evaluate_loss: qmc_loss_functions.LossFn,
   # Differentiate wrt parameters (argument 0)
   loss_and_grad = jax.value_and_grad(evaluate_loss, argnums=0, has_aux=True)
 
-  def opt_update(params: networks.ParamTree, data: jnp.ndarray,
-                 opt_state: Optional[optax.OptState],
-                 key: chex.PRNGKey) -> OptUpdateResults:
+  def opt_update(
+      params: networks.ParamTree,
+      data: networks.FermiNetData,
+      opt_state: Optional[optax.OptState],
+      key: chex.PRNGKey,
+  ) -> OptUpdateResults:
     """Evaluates the loss and gradients and updates the parameters using optax."""
     (loss, aux_data), grad = loss_and_grad(params, key, data)
     grad = constants.pmean(grad)
@@ -194,9 +226,12 @@ def make_opt_update_step(evaluate_loss: qmc_loss_functions.LossFn,
 def make_loss_step(evaluate_loss: qmc_loss_functions.LossFn) -> OptUpdate:
   """Returns an OptUpdate function for evaluating the loss."""
 
-  def loss_eval(params: networks.ParamTree, data: Tuple[jnp.ndarray, ...],
-                opt_state: Optional[optax.OptState],
-                key: chex.PRNGKey) -> OptUpdateResults:
+  def loss_eval(
+      params: networks.ParamTree,
+      data: networks.FermiNetData,
+      opt_state: Optional[optax.OptState],
+      key: chex.PRNGKey,
+  ) -> OptUpdateResults:
     """Evaluates just the loss and gradients with an OptUpdate interface."""
     loss, aux_data = evaluate_loss(params, key, data)
     return params, opt_state, loss, aux_data
@@ -221,9 +256,13 @@ def make_training_step(
     update. See the Step protocol for details.
   """
   @functools.partial(constants.pmap, donate_argnums=(0, 1, 2))
-  def step(data: jnp.ndarray,
-           params: networks.ParamTree, state: Optional[optax.OptState],
-           key: chex.PRNGKey, mcmc_width: jnp.ndarray) -> StepResults:
+  def step(
+      data: networks.FermiNetData,
+      params: networks.ParamTree,
+      state: Optional[optax.OptState],
+      key: chex.PRNGKey,
+      mcmc_width: jnp.ndarray,
+  ) -> StepResults:
     """A full update iteration (except for KFAC): MCMC steps + optimization."""
     # MCMC loop
     mcmc_key, loss_key = jax.random.split(key, num=2)
@@ -256,26 +295,31 @@ def make_kfac_training_step(mcmc_step, damping: float,
   shared_damping = kfac_jax.utils.replicate_all_local_devices(
       jnp.asarray(damping))
 
-  def step(data: jnp.ndarray,
-           params: networks.ParamTree, state: kfac_jax.optimizer.OptimizerState,
-           key: chex.PRNGKey, mcmc_width: jnp.ndarray) -> StepResults:
+  def step(
+      data: networks.FermiNetData,
+      params: networks.ParamTree,
+      state: kfac_jax.optimizer.OptimizerState,
+      key: chex.PRNGKey,
+      mcmc_width: jnp.ndarray,
+  ) -> StepResults:
     """A full update iteration for KFAC: MCMC steps + optimization."""
     # KFAC requires control of the loss and gradient eval, so everything called
     # here must be already pmapped.
 
     # MCMC loop
     mcmc_keys, loss_keys = kfac_jax.utils.p_split(key)
-    new_data, pmove = mcmc_step(params, data, mcmc_keys, mcmc_width)
+    data, pmove = mcmc_step(params, data, mcmc_keys, mcmc_width)
 
     # Optimization step
     new_params, state, stats = optimizer.step(
         params=params,
         state=state,
         rng=loss_keys,
-        data_iterator=iter([new_data]),
+        batch=data,
         momentum=shared_mom,
-        damping=shared_damping)
-    return new_data, new_params, state, stats['loss'], stats['aux'], pmove
+        damping=shared_damping,
+    )
+    return data, new_params, state, stats['loss'], stats['aux'], pmove
 
   return step
 
@@ -314,6 +358,12 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
   atoms = jnp.stack([jnp.array(atom.coords) for atom in cfg.system.molecule])
   charges = jnp.array([atom.charge for atom in cfg.system.molecule])
   nspins = cfg.system.electrons
+
+  # Generate atomic configurations for each walker
+  batch_atoms = jnp.tile(atoms[None, ...], [device_batch_size, 1, 1])
+  batch_atoms = kfac_jax.utils.replicate_all_local_devices(batch_atoms)
+  batch_charges = jnp.tile(charges[None, ...], [device_batch_size, 1])
+  batch_charges = kfac_jax.utils.replicate_all_local_devices(batch_charges)
 
   if cfg.debug.deterministic:
     seed = 23
@@ -408,14 +458,18 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
     key, subkey = jax.random.split(key)
     # make sure data on each host is initialized differently
     subkey = jax.random.fold_in(subkey, jax.process_index())
-    data = init_electrons(
+    pos, spins = init_electrons(
         subkey,
         cfg.system.molecule,
         cfg.system.electrons,
         batch_size=host_batch_size,
-        init_width=cfg.mcmc.init_width)
-    data = jnp.reshape(data, data_shape + data.shape[1:])
-    data = kfac_jax.utils.broadcast_all_local_devices(data)
+        init_width=cfg.mcmc.init_width,
+    )
+    pos = jnp.reshape(pos, data_shape + pos.shape[1:])
+    pos = kfac_jax.utils.broadcast_all_local_devices(pos)
+    spins = jnp.reshape(spins, data_shape + spins.shape[1:])
+    spins = kfac_jax.utils.broadcast_all_local_devices(spins)
+
     t_init = 0
     opt_state_ckpt = None
     mcmc_width_ckpt = None
@@ -437,11 +491,15 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
         nspins=cfg.system.electrons,
         options=network_options,
     )
+    pretrain_spins = spins[0, 0]
     batch_orbitals = jax.vmap(orbitals, in_axes=(None, 0), out_axes=0)
     sharded_key, subkeys = kfac_jax.utils.p_split(sharded_key)
-    params, data = pretrain.pretrain_hartree_fock(
+    params, pos = pretrain.pretrain_hartree_fock(
         params=params,
-        data=data,
+        positions=pos,
+        spins=pretrain_spins,
+        atoms=batch_atoms,
+        charges=batch_charges,
         batch_network=batch_network,
         batch_orbitals=batch_orbitals,
         network_options=network_options,
@@ -532,7 +590,13 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
         # debug=True
     )
     sharded_key, subkeys = kfac_jax.utils.p_split(sharded_key)
-    opt_state = optimizer.init(params, subkeys, data)
+    opt_state = optimizer.init(
+        params,
+        subkeys,
+        networks.FermiNetData(
+            positions=pos, spins=spins, atoms=batch_atoms, charges=batch_charges
+        ),
+    )
     opt_state = opt_state_ckpt or opt_state  # avoid overwriting ckpted state
   else:
     raise ValueError(f'Not a recognized optimizer: {cfg.optim.optimizer}')
@@ -564,6 +628,8 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
         jnp.asarray(cfg.mcmc.move_width))
   pmoves = np.zeros(cfg.mcmc.adapt_frequency)
 
+  data = networks.FermiNetData(
+      positions=pos, spins=spins, atoms=batch_atoms, charges=batch_charges)
   if t_init == 0:
     logging.info('Burning in MCMC chain for %d steps', cfg.mcmc.burn_in)
 

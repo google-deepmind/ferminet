@@ -36,6 +36,39 @@ ParamTree = Union[jnp.ndarray, Iterable['ParamTree'], Mapping[Any, 'ParamTree']]
 # Parameters for a single part of the network are just a dict.
 Param = Mapping[str, jnp.ndarray]
 
+
+@chex.dataclass
+class FermiNetData:
+  """Data passed to network.
+
+  Shapes given for an unbatched element (i.e. a single MCMC configuration).
+
+  NOTE:
+    the networks are written in batchless form. Typically one then maps
+    (pmap+vmap) over every attribute of FermiNetData (nb this is required if
+    using KFAC, as it assumes the FIM is estimated over a batch of data), but
+    this is not strictly required. If some attributes are not mapped, then JAX
+    simply broadcasts them to the mapped dimensions (i.e. those attributes are
+    treated as identical for every MCMC configuration.
+
+  Attributes:
+    positions: walker positions, shape (nelectrons*ndim).
+    spins: spins of each walker, shape (nelectrons).
+    atoms: atomic positions, shape (natoms*ndim).
+    charges: atomic charges, shape (natoms).
+  """
+
+  # We need to be able to construct instances of this with leaf nodes as jax
+  # arrays (for the actual data) and as integers (to use with in_axes for
+  # jax.vmap etc). We can type the struct to be either all arrays or all ints
+  # using Generic, it just slightly complicates the type annotations in a few
+  # functions (i.e. requires FermiNetData[jnp.ndarray] annotation).
+  positions: Any
+  spins: Any
+  atoms: Any
+  charges: Any
+
+
 ## Interfaces (public) ##
 
 
@@ -51,8 +84,9 @@ class InitFermiNet(Protocol):
 
 class FermiNetLike(Protocol):
 
-  def __call__(self, params: ParamTree,
-               electrons: jnp.ndarray) -> Tuple[jnp.ndarray, jnp.ndarray]:
+  def __call__(
+      self, params: ParamTree, electrons: jnp.ndarray
+  ) -> Tuple[jnp.ndarray, jnp.ndarray]:
     """Returns the sign and log magnitude of the wavefunction.
 
     Args:

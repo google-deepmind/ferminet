@@ -30,7 +30,6 @@ import numpy as np
 import optax
 import pyscf
 
-
 # Given the parameters and electron positions, return arrays(s) of the orbitals.
 # See networks.fermi_net_orbitals. (Note only the orbitals, and not envelope
 # parameters, are required.)
@@ -166,7 +165,7 @@ def make_pretrain_step(
       return constants.pmean(result)
 
     val_and_grad = jax.value_and_grad(loss_fn, argnums=0)
-    loss_val, search_direction = val_and_grad(params, data, target)
+    loss_val, search_direction = val_and_grad(params, data.positions, target)
     search_direction = constants.pmean(search_direction)
     updates, state = optimizer_update(search_direction, state, params)
     params = optax.apply_updates(params, updates)
@@ -180,7 +179,10 @@ def make_pretrain_step(
 def pretrain_hartree_fock(
     *,
     params: networks.ParamTree,
-    data: jnp.ndarray,
+    positions: jnp.ndarray,
+    spins: jnp.ndarray,
+    atoms: jnp.ndarray,
+    charges: jnp.ndarray,
     batch_network: networks.FermiNetLike,
     batch_orbitals: FermiNetOrbitals,
     network_options: networks.FermiNetOptions,
@@ -194,7 +196,12 @@ def pretrain_hartree_fock(
 
   Args:
     params: Network parameters.
-    data: MCMC configurations.
+    positions: Electron position configurations.
+    spins: Electron spin configuration (1 for alpha electrons, -1 for beta), as
+      a 1D array. Note we always use the same spin configuration for the entire
+      batch in pretraining.
+    atoms: atom positions (batched).
+    charges: atomic charges (batched).
     batch_network: callable with signature f(params, data), which given network
       parameters and a batch of electron positions, returns the log of the
       magnitude of the (wavefunction) network  evaluated at those positions.
@@ -211,8 +218,8 @@ def pretrain_hartree_fock(
       pretraining loss.
 
   Returns:
-    params, data: Updated network parameters and MCMC configurations such that
-    the orbitals in the network closely match Hartree-Foch and the MCMC
+    params, positions: Updated network parameters and MCMC configurations such
+    that the orbitals in the network closely match Hartree-Fock and the MCMC
     configurations are drawn from the log probability of the network.
   """
   # Pretraining is slow on larger systems (very low GPU utilization) because the
@@ -231,14 +238,20 @@ def pretrain_hartree_fock(
   )
   pretrain_step = constants.pmap(pretrain_step)
   pnetwork = constants.pmap(batch_network)
-  logprob = 2. * pnetwork(params, data)
+  logprob = 2.0 * pnetwork(params, positions)
+
+  batch_spins = jnp.tile(spins[None], [positions.shape[1], 1])
+  pmap_spins = kfac_jax.utils.replicate_all_local_devices(batch_spins)
+  data = networks.FermiNetData(
+      positions=positions, spins=pmap_spins, atoms=atoms, charges=charges
+  )
 
   for t in range(iterations):
-    target = eval_orbitals(scf_approx, data, electrons)
+    target = eval_orbitals(scf_approx, data.positions, electrons)
     sharded_key, subkeys = kfac_jax.utils.p_split(sharded_key)
     data, params, opt_state_pt, loss, logprob = pretrain_step(
         data, target, params, opt_state_pt, subkeys, logprob)
     logging.info('Pretrain iter %05d: %g', t, loss[0])
     if logger:
       logger(t, loss[0])
-  return params, data
+  return params, data.positions

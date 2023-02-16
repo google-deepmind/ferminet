@@ -46,7 +46,7 @@ class LossFn(Protocol):
       self,
       params: networks.ParamTree,
       key: chex.PRNGKey,
-      data: jnp.ndarray,
+      data: networks.FermiNetData,
   ) -> Tuple[jnp.ndarray, AuxiliaryLossData]:
     """Evaluates the total energy of the network for a batch of configurations.
 
@@ -57,7 +57,7 @@ class LossFn(Protocol):
     Args:
       params: parameters to pass to the network.
       key: PRNG state.
-      data: Batched electron positions to pass to the network.
+      data: Batched data elements to pass to the network.
 
     Returns:
       (loss, aux_data), where loss is the mean energy, and aux_data is an
@@ -148,14 +148,22 @@ def make_loss(network: networks.LogFermiNetLike,
     loss is the mean energy, and aux_data is an AuxiliaryLossDataobject. The
     loss is averaged over the batch and over all devices inside a pmap.
   """
-  batch_local_energy = jax.vmap(local_energy, in_axes=(None, 0, 0), out_axes=0)
+  batch_local_energy = jax.vmap(
+      local_energy,
+      in_axes=(
+          None,
+          0,
+          networks.FermiNetData(positions=0, spins=0, atoms=0, charges=0),
+      ),
+      out_axes=0,
+  )
   batch_network = jax.vmap(network, in_axes=(None, 0), out_axes=0)
 
   @jax.custom_jvp
   def total_energy(
       params: networks.ParamTree,
       key: chex.PRNGKey,
-      data: jnp.ndarray,
+      data: networks.FermiNetData,
   ) -> Tuple[jnp.ndarray, AuxiliaryLossData]:
     """Evaluates the total energy of the network for a batch of configurations.
 
@@ -174,7 +182,7 @@ def make_loss(network: networks.LogFermiNetLike,
       local energy per MCMC configuration. The loss and variance are averaged
       over the batch and over all devices inside a pmap.
     """
-    keys = jax.random.split(key, num=data.shape[0])
+    keys = jax.random.split(key, num=data.positions.shape[0])
     e_l = batch_local_energy(params, keys, data)
     loss = constants.pmean(jnp.mean(e_l))
     variance = constants.pmean(jnp.mean((e_l - loss)**2))
@@ -201,8 +209,10 @@ def make_loss(network: networks.LogFermiNetLike,
     # (params, rng, data)) and Laplacian calculation (only want to take
     # Laplacian wrt electron positions) we need to change up the calling
     # convention between total_energy and batch_network
-    primals = primals[0], primals[2]
-    tangents = tangents[0], tangents[2]
+    data = primals[2]
+    data_tangents = tangents[2]
+    primals = (primals[0], data.positions)
+    tangents = (tangents[0], data_tangents.positions)
     psi_primal, psi_tangent = jax.jvp(batch_network, primals, tangents)
     kfac_jax.register_normal_predictive_distribution(psi_primal[:, None])
     primals_out = loss, aux_data

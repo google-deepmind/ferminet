@@ -14,7 +14,7 @@
 
 """Evaluating the Hamiltonian on a wavefunction."""
 
-from typing import Any, Sequence
+from typing import Any, Callable, Sequence
 
 import chex
 from ferminet import networks
@@ -26,8 +26,12 @@ from typing_extensions import Protocol
 
 class LocalEnergy(Protocol):
 
-  def __call__(self, params: networks.ParamTree, key: chex.PRNGKey,
-               data: jnp.ndarray) -> jnp.ndarray:
+  def __call__(
+      self,
+      params: networks.ParamTree,
+      key: chex.PRNGKey,
+      data: networks.FermiNetData,
+  ) -> jnp.ndarray:
     """Returns the local energy of a Hamiltonian at a configuration.
 
     Args:
@@ -39,13 +43,15 @@ class LocalEnergy(Protocol):
 
 class MakeLocalEnergy(Protocol):
 
-  def __call__(self,
-               f: networks.FermiNetLike,
-               atoms: jnp.ndarray,
-               charges: jnp.ndarray,
-               nspins: Sequence[int],
-               use_scan: bool = False,
-               **kwargs: Any) -> LocalEnergy:
+  def __call__(
+      self,
+      f: networks.FermiNetLike,
+      atoms: jnp.ndarray,
+      charges: jnp.ndarray,
+      nspins: Sequence[int],
+      use_scan: bool = False,
+      **kwargs: Any
+  ) -> LocalEnergy:
     """Builds the LocalEnergy function.
 
     Args:
@@ -59,9 +65,14 @@ class MakeLocalEnergy(Protocol):
     """
 
 
+KineticEnergy = Callable[
+    [networks.ParamTree, networks.FermiNetData], jnp.ndarray
+]
+
+
 def local_kinetic_energy(
-    f: networks.LogFermiNetLike,
-    use_scan: bool = False) -> networks.LogFermiNetLike:
+    f: networks.LogFermiNetLike, use_scan: bool = False
+) -> KineticEnergy:
   r"""Creates a function to for the local kinetic energy, -1/2 \nabla^2 ln|f|.
 
   Args:
@@ -74,11 +85,11 @@ def local_kinetic_energy(
   """
 
   def _lapl_over_f(params, data):
-    n = data.shape[0]
+    n = data.positions.shape[0]
     eye = jnp.eye(n)
     grad_f = jax.grad(f, argnums=1)
     grad_f_closure = lambda x: grad_f(params, x)
-    primal, dgrad_f = jax.linearize(grad_f_closure, data)
+    primal, dgrad_f = jax.linearize(grad_f_closure, data.positions)
 
     if use_scan:
       _, diagonal = lax.scan(
@@ -146,11 +157,13 @@ def potential_energy(r_ae: jnp.ndarray, r_ee: jnp.ndarray, atoms: jnp.ndarray,
           potential_nuclear_nuclear(charges, atoms))
 
 
-def local_energy(f: networks.FermiNetLike,
-                 atoms: jnp.ndarray,
-                 charges: jnp.ndarray,
-                 nspins: Sequence[int],
-                 use_scan: bool = False) -> LocalEnergy:
+def local_energy(
+    f: networks.FermiNetLike,
+    atoms: jnp.ndarray,
+    charges: jnp.ndarray,
+    nspins: Sequence[int],
+    use_scan: bool = False,
+) -> LocalEnergy:
   """Creates the function to evaluate the local energy.
 
   Args:
@@ -170,8 +183,9 @@ def local_energy(f: networks.FermiNetLike,
   log_abs_f = lambda *args, **kwargs: f(*args, **kwargs)[1]
   ke = local_kinetic_energy(log_abs_f, use_scan=use_scan)
 
-  def _e_l(params: networks.ParamTree, key: chex.PRNGKey,
-           data: jnp.ndarray) -> jnp.ndarray:
+  def _e_l(
+      params: networks.ParamTree, key: chex.PRNGKey, data: networks.FermiNetData
+  ) -> jnp.ndarray:
     """Returns the total energy.
 
     Args:
@@ -180,7 +194,7 @@ def local_energy(f: networks.FermiNetLike,
       data: MCMC configuration.
     """
     del key  # unused
-    _, _, r_ae, r_ee = networks.construct_input_features(data, atoms)
+    _, _, r_ae, r_ee = networks.construct_input_features(data.positions, atoms)
     potential = potential_energy(r_ae, r_ee, atoms, charges)
     kinetic = ke(params, data)
     return potential + kinetic

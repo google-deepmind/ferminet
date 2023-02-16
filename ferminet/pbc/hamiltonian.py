@@ -150,14 +150,16 @@ def make_ewald_potential(
   return potential
 
 
-def local_energy(f: networks.FermiNetLike,
-                 atoms: jnp.ndarray,
-                 charges: jnp.ndarray,
-                 nspins: Sequence[int],
-                 use_scan: bool = False,
-                 lattice: Optional[jnp.ndarray] = None,
-                 heg: bool = True,
-                 convergence_radius: int = 5) -> hamiltonian.LocalEnergy:
+def local_energy(
+    f: networks.FermiNetLike,
+    atoms: jnp.ndarray,
+    charges: jnp.ndarray,
+    nspins: Sequence[int],
+    use_scan: bool = False,
+    lattice: Optional[jnp.ndarray] = None,
+    heg: bool = True,
+    convergence_radius: int = 5,
+) -> hamiltonian.LocalEnergy:
   """Creates the local energy function in periodic boundary conditions.
 
   Args:
@@ -172,7 +174,6 @@ def local_energy(f: networks.FermiNetLike,
     heg: bool. Flag to enable features specific to the electron gas.
     convergence_radius: int. Radius of cluster summed over by Ewald sums.
 
-
   Returns:
     Callable with signature e_l(params, key, data) which evaluates the local
     energy of the wavefunction given the parameters params, RNG state key,
@@ -184,11 +185,13 @@ def local_energy(f: networks.FermiNetLike,
 
   log_abs_f = lambda *args, **kwargs: f(*args, **kwargs)[1]
   ke = hamiltonian.local_kinetic_energy(log_abs_f, use_scan=use_scan)
-  potential_energy = make_ewald_potential(lattice, atoms, charges,
-                                          convergence_radius, heg)
+  potential_energy = make_ewald_potential(
+      lattice, atoms, charges, convergence_radius, heg
+  )
 
-  def _e_l(params: networks.ParamTree, key: chex.PRNGKey,
-           data: jnp.ndarray) -> jnp.ndarray:
+  def _e_l(
+      params: networks.ParamTree, key: chex.PRNGKey, data: networks.FermiNetData
+  ) -> jnp.ndarray:
     """Returns the total energy.
 
     Args:
@@ -197,7 +200,7 @@ def local_energy(f: networks.FermiNetLike,
       data: MCMC configuration.
     """
     del key  # unused
-    ae, ee, _, _ = networks.construct_input_features(data, atoms)
+    ae, ee, _, _ = networks.construct_input_features(data.positions, atoms)
     potential = potential_energy(ae, ee)
     kinetic = ke(params, data)
     return potential + kinetic

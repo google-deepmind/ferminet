@@ -18,7 +18,9 @@ NOTE: these functions operate on batches of MCMC configurations and should not
 be vmapped.
 """
 
+import chex
 from ferminet import constants
+from ferminet import networks
 import jax
 from jax import lax
 from jax import numpy as jnp
@@ -72,24 +74,26 @@ def mh_accept(x1, x2, lp_1, lp_2, ratio, key, num_accepts):
   return x_new, key, lp_new, num_accepts
 
 
-def mh_update(params,
-              f,
-              x1,
-              key,
-              lp_1,
-              num_accepts,
-              stddev=0.02,
-              atoms=None,
-              ndim=3,
-              blocks=1,
-              i=0):
+def mh_update(
+    params: networks.ParamTree,
+    f: networks.LogFermiNetLike,
+    data: networks.FermiNetData,
+    key: chex.PRNGKey,
+    lp_1,
+    num_accepts,
+    stddev=0.02,
+    atoms=None,
+    ndim=3,
+    blocks=1,
+    i=0,
+):
   """Performs one Metropolis-Hastings step using an all-electron move.
 
   Args:
     params: Wavefuncttion parameters.
     f: Callable with signature f(params, x) which returns the log of the
       wavefunction (i.e. the sqaure root of the log probability of x).
-    x1: Initial MCMC configurations. Shape (batch, nelectrons*ndim).
+    data: Initial MCMC configurations (batched).
     key: RNG state.
     lp_1: log probability of f evaluated at x1 given parameters params.
     num_accepts: Number of MH move proposals accepted.
@@ -112,6 +116,7 @@ def mh_update(params,
   """
   del i, blocks  # electron index ignored for all-electron moves
   key, subkey = jax.random.split(key)
+  x1 = data.positions
   if atoms is None:  # symmetric proposal, same stddev everywhere
     x2 = x1 + stddev * jax.random.normal(subkey, shape=x1.shape)  # proposal
     lp_2 = 2. * f(params, x2)  # log prob of proposal
@@ -133,21 +138,23 @@ def mh_update(params,
     x2 = jnp.reshape(x2, [n, -1])
   x_new, key, lp_new, num_accepts = mh_accept(
       x1, x2, lp_1, lp_2, ratio, key, num_accepts)
+  new_data = networks.FermiNetData(**(dict(data) | {'positions': x_new}))
+  return new_data, key, lp_new, num_accepts
 
-  return x_new, key, lp_new, num_accepts
 
-
-def mh_block_update(params,
-                    f,
-                    data,
-                    key,
-                    lp_1,
-                    num_accepts,
-                    stddev=0.02,
-                    atoms=None,
-                    ndim=3,
-                    blocks=1,
-                    i=0):
+def mh_block_update(
+    params: networks.ParamTree,
+    f: networks.LogFermiNetLike,
+    data: networks.FermiNetData,
+    key: chex.PRNGKey,
+    lp_1,
+    num_accepts,
+    stddev=0.02,
+    atoms=None,
+    ndim=3,
+    blocks=1,
+    i=0,
+):
   """Performs one Metropolis-Hastings step for a block of electrons.
 
   Args:
@@ -175,11 +182,13 @@ def mh_block_update(params,
     NotImplementedError: if atoms is supplied.
   """
   key, subkey = jax.random.split(key)
-  batch_size = data.shape[0]
-  nelec = data.shape[1] // ndim
+  batch_size = data.positions.shape[0]
+  nelec = data.positions.shape[1] // ndim
   pad = (blocks - nelec % blocks) % blocks
-  x1 = jnp.reshape(jnp.pad(data, ((0, 0), (0, pad * ndim))),
-                   [batch_size, blocks, -1, ndim])
+  x1 = jnp.reshape(
+      jnp.pad(data.positions, ((0, 0), (0, pad * ndim))),
+      [batch_size, blocks, -1, ndim],
+  )
   ii = i % blocks
   if atoms is None:  # symmetric prop, same stddev everywhere
     x2 = x1.at[:, ii].add(
@@ -199,7 +208,8 @@ def mh_block_update(params,
     x1 = x1[..., :-pad*ndim]
   x_new, key, lp_new, num_accepts = mh_accept(
       x1, x2, lp_1, lp_2, ratio, key, num_accepts)
-  return x_new, key, lp_new, num_accepts
+  new_data = networks.FermiNetData(**(dict(data) | {'positions': x_new}))
+  return new_data, key, lp_new, num_accepts
 
 
 def make_mcmc_step(batch_network,
@@ -243,6 +253,7 @@ def make_mcmc_step(batch_network,
       (data, pmove), where data is the updated MCMC configurations, key the
       updated RNG state and pmove the average probability a move was accepted.
     """
+    pos = data.positions
 
     def step_fn(i, x):
       return inner_fun(
@@ -256,11 +267,12 @@ def make_mcmc_step(batch_network,
           i=i)
 
     nsteps = steps * blocks
-    logprob = 2. * batch_network(params, data)
-    data, key, _, num_accepts = lax.fori_loop(0, nsteps, step_fn,
-                                              (data, key, logprob, 0.))
+    logprob = 2.0 * batch_network(params, pos)
+    new_data, key, _, num_accepts = lax.fori_loop(
+        0, nsteps, step_fn, (data, key, logprob, 0.0)
+    )
     pmove = jnp.sum(num_accepts) / (nsteps * batch_per_device)
     pmove = constants.pmean(pmove)
-    return data, pmove
+    return new_data, pmove
 
   return mcmc_step
