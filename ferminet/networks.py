@@ -691,7 +691,6 @@ def make_fermi_net(
     full_det: bool = True,
     hidden_dims: FermiLayers = ((256, 32), (256, 32), (256, 32)),
     determinants: int = 16,
-    after_determinants: Union[int, Tuple[int, ...]] = 1,
     ndim: int = 3,
 ) -> Tuple[InitFermiNet, FermiNetLike, FermiNetOptions]:
   """Creates functions for initializing parameters and evaluating ferminet.
@@ -717,7 +716,6 @@ def make_fermi_net(
       layer of the FermiNet. The number of layers is given by the length of the
       tuple.
     determinants: Number of determinants to use.
-    after_determinants: currently ignored.
     ndim: dimension of the system.
 
   Returns:
@@ -725,8 +723,6 @@ def make_fermi_net(
     initialise the network parameters and apply the network respectively, and
     options specifies the settings used in the network.
   """
-  del after_determinants
-
   if not envelope:
     envelope = envelopes.make_isotropic_envelope()
 

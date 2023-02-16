@@ -80,7 +80,7 @@ def default() -> ml_collections.ConfigDict:
               'momentum': 0.0,
               'momentum_type': 'regular',
               # Warning: adaptive damping is not currently available.
-              'min_damping': 1.e-4,
+              'min_damping': 1.0e-4,
               'norm_constraint': 0.001,
               'mean_center': True,
               'l2_reg': 0.0,
@@ -90,7 +90,7 @@ def default() -> ml_collections.ConfigDict:
           'adam': {
               'b1': 0.9,
               'b2': 0.999,
-              'eps': 1.e-8,
+              'eps': 1.0e-8,
               'eps_root': 0.0,
           },
       },
@@ -179,7 +179,6 @@ def default() -> ml_collections.ConfigDict:
           'detnet': {
               'hidden_dims': ((256, 32), (256, 32), (256, 32), (256, 32)),
               'determinants': 16,
-              'after_determinants': (1,),
           },
           'bias_orbitals': False,  # include bias in last layer to orbitals
           # Whether to use the last layer of the two-electron stream of the
@@ -199,7 +198,7 @@ def default() -> ml_collections.ConfigDict:
           'make_feature_layer_kwargs': {},
           # Same structure as make_feature_layer
           'make_envelope_fn': '',
-          'make_envelope_kwargs': {}
+          'make_envelope_kwargs': {},
       },
       'debug': {
           # Check optimizer state, parameters and loss and raise an exception if
