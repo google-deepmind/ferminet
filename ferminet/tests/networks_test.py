@@ -81,8 +81,9 @@ class NetworksTest(parameterized.TestCase):
     key = random.PRNGKey(42)
 
     key, *subkeys = random.split(key, num=3)
-    atoms = random.normal(subkeys[0], shape=(4, 3))
-    charges = random.normal(subkeys[1], shape=(4,))
+    natoms = 4
+    atoms = random.normal(subkeys[0], shape=(natoms, 3))
+    charges = random.normal(subkeys[1], shape=(natoms,))
     nspins = (3, 4)
 
     key, subkey = random.split(key)
@@ -95,11 +96,15 @@ class NetworksTest(parameterized.TestCase):
     spins2 = jnp.concatenate((spins1[1:2], spins1[:1], spins1[2:]))
     spins3 = jnp.concatenate((spins1[:3], spins1[4:5], spins1[3:4], spins1[5:]))
 
+    feature_layer = networks.make_ferminet_features(natoms, nspins, ndim=3)
+
     key, subkey = random.split(key)
     kwargs = {}
     options = networks.FermiNetOptions(
         hidden_dims=((16, 16), (16, 16)),
-        envelope=envelopes.get_envelope(envelope_label, **kwargs))
+        envelope=envelopes.get_envelope(envelope_label, **kwargs),
+        feature_layer=feature_layer,
+    )
 
     params = networks.init_fermi_net_params(
         subkey,
@@ -202,14 +207,11 @@ class NetworksTest(parameterized.TestCase):
     # Warning: this only tests we can build and run the network. It does not
     # test correctness of output nor test changing network width or depth.
     nspins = (6, 5)
+    natoms = 3
     atoms = jnp.asarray([[0., 0., 0.2], [1.2, 1., -0.2], [2.5, -0.8, 0.6]])
     charges = jnp.asarray([2, 5, 7])
     key = jax.random.PRNGKey(42)
-    feature_layer = networks.make_ferminet_features(
-        charges,
-        nspins,
-        ndim=3,
-    )
+    feature_layer = networks.make_ferminet_features(natoms, nspins, ndim=3)
     kwargs = {}
     network_options['envelope'] = envelopes.get_envelope(
         network_options['envelope_label'], **kwargs)
@@ -245,14 +247,11 @@ class NetworksTest(parameterized.TestCase):
   @parameterized.parameters(
       *(itertools.product([(1, 0), (2, 0), (0, 1)], [True, False])))
   def test_spin_polarised_fermi_net(self, nspins, full_det):
+    natoms = 1
     atoms = jnp.zeros(shape=(1, 3))
     charges = jnp.ones(shape=1)
     key = jax.random.PRNGKey(42)
-    feature_layer = networks.make_ferminet_features(
-        charges,
-        nspins,
-        ndim=3,
-    )
+    feature_layer = networks.make_ferminet_features(natoms, nspins, ndim=3)
     init, fermi_net, _ = networks.make_fermi_net(
         nspins, charges, feature_layer=feature_layer, full_det=full_det
     )

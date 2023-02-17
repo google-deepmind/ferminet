@@ -173,7 +173,7 @@ class MakeFeatureLayer(Protocol):
 
   def __call__(
       self,
-      charges: jnp.ndarray,
+      natoms: int,
       nspins: Sequence[int],
       ndim: int,
       **kwargs: Any,
@@ -181,7 +181,7 @@ class MakeFeatureLayer(Protocol):
     """Builds the FeatureLayer object.
 
     Args:
-      charges: (natom) array of atom nuclear charges.
+      natoms: number of atoms.
       nspins: tuple of the number of spin-up and spin-down electrons.
       ndim: dimension of the system.
       **kwargs: additional kwargs to use for creating the specific FeatureLayer.
@@ -224,9 +224,7 @@ class FermiNetOptions:
       default=attr.Factory(
           envelopes.make_isotropic_envelope,
           takes_self=False))
-  feature_layer: FeatureLayer = attr.ib(
-      default=attr.Factory(
-          lambda self: make_ferminet_features(ndim=self.ndim), takes_self=True))
+  feature_layer: FeatureLayer = None
 
 
 ## Network initialisation ##
@@ -253,7 +251,7 @@ def init_layers(
 
   Returns:
     Pair of sequences (length: number of layers) of parameters for one- and
-    two-electon streams.
+    two-electron streams.
 
   Raises:
     ValueError: if dims_one_in and dims_one_out are different lengths, or
@@ -447,7 +445,7 @@ def init_fermi_net_params(
   # two-electron stream, per pair of electrons:
   #  - two-electron features per electron pair (default: electron-electron
   #    vector (dim) and distance (1))
-  feature_one_dims = natom * num_one_features
+  feature_one_dims = num_one_features
   feature_two_dims = num_two_features
   dims_one_in = (
       [nfeatures(feature_one_dims, feature_two_dims)] +
@@ -560,15 +558,15 @@ def construct_input_features(
   return ae, ee, r_ae, r_ee[..., None]
 
 
-def make_ferminet_features(charges: Optional[jnp.ndarray] = None,
-                           nspins: Optional[Tuple[int, ...]] = None,
-                           ndim: int = 3) -> FeatureLayer:
+def make_ferminet_features(
+    natoms: int, nspins: Optional[Tuple[int, ...]] = None, ndim: int = 3
+) -> FeatureLayer:
   """Returns the init and apply functions for the standard features."""
 
-  del charges, nspins
+  del nspins
 
   def init() -> Tuple[Tuple[int, int], Param]:
-    return (ndim + 1, ndim + 1), {}
+    return (natoms * (ndim + 1), ndim + 1), {}
 
   def apply(ae, r_ae, ee, r_ee) -> Tuple[jnp.ndarray, jnp.ndarray]:
     ae_features = jnp.concatenate((r_ae, ae), axis=2)
@@ -788,7 +786,8 @@ def make_fermi_net(
     envelope = envelopes.make_isotropic_envelope()
 
   if not feature_layer:
-    feature_layer = make_ferminet_features(charges, nspins, ndim=ndim)
+    natoms = charges.shape[0]
+    feature_layer = make_ferminet_features(natoms, nspins, ndim=ndim)
 
   options = FermiNetOptions(
       ndim=ndim,

@@ -401,7 +401,7 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
         **cfg.network.make_feature_layer_kwargs)  # type: networks.FeatureLayer
   else:
     feature_layer = networks.make_ferminet_features(
-        charges,
+        charges.shape[0],
         cfg.system.electrons,
         cfg.system.ndim,
     )

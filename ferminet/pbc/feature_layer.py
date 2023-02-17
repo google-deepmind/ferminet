@@ -25,15 +25,17 @@ from ferminet import networks
 import jax.numpy as jnp
 
 
-def make_pbc_feature_layer(charges: Optional[jnp.ndarray] = None,
-                           nspins: Optional[Tuple[int, ...]] = None,
-                           ndim: int = 3,
-                           lattice: Optional[jnp.ndarray] = None,
-                           include_r_ae: bool = True) -> networks.FeatureLayer:
+def make_pbc_feature_layer(
+    natoms: Optional[int] = None,
+    nspins: Optional[Tuple[int, ...]] = None,
+    ndim: int = 3,
+    lattice: Optional[jnp.ndarray] = None,
+    include_r_ae: bool = True,
+) -> networks.FeatureLayer:
   """Returns the init and apply functions for periodic features.
 
   Args:
-      charges: (natom) array of atom nuclear charges.
+      natoms: number of atoms.
       nspins: tuple of the number of spin-up and spin-down electrons.
       ndim: dimension of the system.
       lattice: Matrix whose columns are the primitive lattice vectors of the
@@ -42,7 +44,7 @@ def make_pbc_feature_layer(charges: Optional[jnp.ndarray] = None,
         to avoid cusps with ghost atoms in, e.g., homogeneous electron gas.
   """
 
-  del charges, nspins
+  del nspins
 
   if lattice is None:
     lattice = jnp.eye(ndim)
@@ -61,9 +63,9 @@ def make_pbc_feature_layer(charges: Optional[jnp.ndarray] = None,
 
   def init() -> Tuple[Tuple[int, int], networks.Param]:
     if include_r_ae:
-      return (2 * ndim + 1, 2 * ndim + 1), {}
+      return (natoms * (2 * ndim + 1), 2 * ndim + 1), {}
     else:
-      return (2 * ndim, 2 * ndim + 1), {}
+      return (natoms * (2 * ndim), 2 * ndim + 1), {}
 
   def apply(ae, r_ae, ee, r_ee) -> Tuple[jnp.ndarray, jnp.ndarray]:
     # One e features in phase coordinates, (s_ae)_i = k_i . ae

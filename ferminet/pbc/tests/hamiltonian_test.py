@@ -33,6 +33,7 @@ class PbcHamiltonianTest(parameterized.TestCase):
 
     nspins = (6, 5)
     atoms = jnp.asarray([[0., 0., 0.2], [1.2, 1., -0.2], [2.5, -0.8, 0.6]])
+    natom = atoms.shape[0]
     charges = jnp.asarray([2, 5, 7])
     spins = np.ones(shape=(1,))
     key = jax.random.PRNGKey(42)
@@ -40,7 +41,8 @@ class PbcHamiltonianTest(parameterized.TestCase):
     xs = jax.random.uniform(subkey, shape=(sum(nspins), 3))
 
     feature_layer = pbc_feature_layer.make_pbc_feature_layer(
-        charges, nspins, ndim=3, lattice=jnp.eye(3), include_r_ae=False)
+        natom, nspins, ndim=3, lattice=jnp.eye(3), include_r_ae=False
+    )
 
     kpoints = envelopes.make_kpoints(jnp.eye(3), nspins)
 

@@ -195,7 +195,7 @@ class LaplacianTest(parameterized.TestCase):
     cfg.network.detnet.hidden_dims = ((8, 4),)*2
     cfg.network.detnet.determinants = 2
     feature_layer = networks.make_ferminet_features(
-        charges,
+        natoms,
         cfg.system.electrons,
         cfg.system.ndim,
     )

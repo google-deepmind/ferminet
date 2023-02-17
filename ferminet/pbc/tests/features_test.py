@@ -31,13 +31,13 @@ class FeatureLayerTest(parameterized.TestCase):
     nspins = (6, 5)
     atoms = jnp.asarray([[0., 0., 0.2], [1.2, 1., -0.2], [2.5, -0.8, 0.6]])
     natom = atoms.shape[0]
-    charges = jnp.asarray([2, 5, 7])
     key = jax.random.PRNGKey(42)
     key, subkey = jax.random.split(key)
     xs = jax.random.uniform(subkey, shape=(sum(nspins), 3))
 
     feature_layer = pbc_feature_layer.make_pbc_feature_layer(
-        charges, nspins, 3, lattice=jnp.eye(3), include_r_ae=heg)
+        natom, nspins, 3, lattice=jnp.eye(3), include_r_ae=heg
+    )
 
     dims, params = feature_layer.init()
     ae, ee, r_ae, r_ee = networks.construct_input_features(xs, atoms)
@@ -45,19 +45,20 @@ class FeatureLayerTest(parameterized.TestCase):
     ae_features, ee_features = feature_layer.apply(
         ae=ae, r_ae=r_ae, ee=ee, r_ee=r_ee, **params)
 
-    assert dims[0] * natom == ae_features.shape[-1]
+    assert dims[0] == ae_features.shape[-1]
     assert dims[1] == ee_features.shape[-1]
 
   def test_periodicity(self):
     nspins = (6, 5)
     atoms = jnp.asarray([[0., 0., 0.2], [1.2, 1., -0.2], [2.5, -0.8, 0.6]])
-    charges = jnp.asarray([2, 5, 7])
+    natom = atoms.shape[0]
     key = jax.random.PRNGKey(42)
     key, subkey = jax.random.split(key)
     xs = jax.random.uniform(subkey, shape=(sum(nspins), 3))
 
     feature_layer = pbc_feature_layer.make_pbc_feature_layer(
-        charges, nspins, 3, lattice=jnp.eye(3), include_r_ae=False)
+        natom, nspins, 3, lattice=jnp.eye(3), include_r_ae=False
+    )
 
     _, params = feature_layer.init()
     ae, ee, r_ae, r_ee = networks.construct_input_features(xs, atoms)
