@@ -53,7 +53,6 @@ class PbcHamiltonianTest(parameterized.TestCase):
         feature_layer=feature_layer,
         bias_orbitals=cfg.network.bias_orbitals,
         use_last_layer=cfg.network.use_last_layer,
-        hf_solution=None,
         full_det=cfg.network.full_det,
         **cfg.network.detnet
     )

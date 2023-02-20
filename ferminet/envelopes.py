@@ -15,12 +15,10 @@
 """Multiplicative envelope functions."""
 
 import enum
-from typing import Any, Mapping, Optional, Sequence, Union
+from typing import Any, Mapping, Sequence, Union
 
 import attr
 from ferminet import curvature_tags_and_blocks
-from ferminet import sto
-from ferminet.utils import scf
 import jax
 import jax.numpy as jnp
 from typing_extensions import Protocol
@@ -47,11 +45,8 @@ class EnvelopeLabel(enum.Enum):
 class EnvelopeInit(Protocol):
 
   def __call__(
-      self,
-      natom: int,
-      output_dims: Union[int, Sequence[int]],
-      hf: Optional[scf.Scf],
-      ndim: int) -> Union[Mapping[str, Any], Sequence[Mapping[str, Any]]]:
+      self, natom: int, output_dims: Union[int, Sequence[int]], ndim: int
+  ) -> Union[Mapping[str, Any], Sequence[Mapping[str, Any]]]:
     """Returns the envelope parameters.
 
     Envelopes applied separately to each spin channel must create a sequence of
@@ -62,9 +57,6 @@ class EnvelopeInit(Protocol):
       natom: Number of atoms in the system.
       output_dims: The dimension of the layer to which the envelope is applied,
         per-spin channel for pre_determinant envelopes and a scalar otherwise.
-      hf: If present, initialise the parameters to match the Hartree-Fock
-        solution. Otherwise a random initialisation is use. Not supported by all
-        envelope types.
       ndim: Dimension of system. Change with care.
     """
 
@@ -110,9 +102,10 @@ def _apply_covariance(x: jnp.ndarray, y: jnp.ndarray) -> jnp.ndarray:
 def make_isotropic_envelope() -> Envelope:
   """Creates an isotropic exponentially decaying multiplicative envelope."""
 
-  def init(natom: int, output_dims: Sequence[int], hf: Optional[scf.Scf] = None,
-           ndim: int = 3) -> Sequence[Mapping[str, jnp.ndarray]]:
-    del hf, ndim  # unused
+  def init(
+      natom: int, output_dims: Sequence[int], ndim: int = 3
+  ) -> Sequence[Mapping[str, jnp.ndarray]]:
+    del ndim  # unused
     params = []
     for output_dim in output_dims:
       params.append({
@@ -133,9 +126,9 @@ def make_isotropic_envelope() -> Envelope:
 def make_diagonal_envelope() -> Envelope:
   """Creates a diagonal exponentially-decaying multiplicative envelope."""
 
-  def init(natom: int, output_dims: Sequence[int], hf: Optional[scf.Scf] = None,
-           ndim: int = 3) -> Sequence[Mapping[str, jnp.ndarray]]:
-    del hf  # unused
+  def init(
+      natom: int, output_dims: Sequence[int], ndim: int = 3
+  ) -> Sequence[Mapping[str, jnp.ndarray]]:
     params = []
     for output_dim in output_dims:
       params.append({
@@ -157,9 +150,9 @@ def make_diagonal_envelope() -> Envelope:
 def make_full_envelope() -> Envelope:
   """Computes a fully anisotropic exponentially-decaying envelope."""
 
-  def init(natom: int, output_dims: Sequence[int], hf: Optional[scf.Scf] = None,
-           ndim: int = 3) -> Sequence[Mapping[str, jnp.ndarray]]:
-    del hf  # unused
+  def init(
+      natom: int, output_dims: Sequence[int], ndim: int = 3
+  ) -> Sequence[Mapping[str, jnp.ndarray]]:
     eye = jnp.eye(ndim)
     params = []
     for output_dim in output_dims:
@@ -185,9 +178,10 @@ def make_full_envelope() -> Envelope:
 def make_null_envelope() -> Envelope:
   """Creates an no-op (identity) envelope."""
 
-  def init(natom: int, output_dims: Sequence[int], hf: Optional[scf.Scf] = None,
-           ndim: int = 3) -> Sequence[Mapping[str, jnp.ndarray]]:
-    del natom, ndim, hf  # unused
+  def init(
+      natom: int, output_dims: Sequence[int], ndim: int = 3
+  ) -> Sequence[Mapping[str, jnp.ndarray]]:
+    del natom, ndim  # unused
     return [{} for _ in output_dims]
 
   def apply(*, ae: jnp.ndarray, r_ae: jnp.ndarray,
@@ -201,27 +195,14 @@ def make_null_envelope() -> Envelope:
 def make_sto_envelope() -> Envelope:
   """Creates a Slater-type orbital envelope: exp(-sigma*r_ae) * r_ae^n * pi."""
 
-  def init(natom: int, output_dims: int, hf: Optional[scf.Scf] = None,
-           ndim: int = 3) -> Mapping[str, jnp.ndarray]:
-
+  def init(
+      natom: int, output_dims: int, ndim: int = 3
+  ) -> Mapping[str, jnp.ndarray]:
     pi = jnp.zeros(shape=(natom, output_dims))
     sigma = jnp.tile(jnp.eye(ndim)[..., None, None], [1, 1, natom, output_dims])
     # log order of the polynomial (initialize so the order is near zero)
     n = -50 * jnp.ones(shape=(natom, output_dims))
 
-    if hf is not None:
-      j = 0
-      for i, atom in enumerate(hf.molecule):
-        coeffs = sto.STO_6G_COEFFS[atom.symbol]
-        for orb in coeffs.keys():
-          order = int(orb[0]) - (1 if orb[1] == 's' else 2)
-          log_order = jnp.log(order + jnp.exp(-50.0))
-          zeta, c = coeffs[orb]
-          for _ in range(1 if orb[1] == 's' else 3):
-            pi = pi.at[i, j].set(c)
-            n = n.at[i, j].set(log_order)
-            sigma = sigma.at[..., i, j].mul(zeta)
-            j += 1
     return {'pi': pi, 'sigma': sigma, 'n': n}
 
   def apply(*, ae: jnp.ndarray, r_ae: jnp.ndarray, r_ee: jnp.ndarray,
@@ -242,24 +223,12 @@ def make_sto_envelope() -> Envelope:
 def make_sto_poly_envelope() -> Envelope:
   """Creates a Slater-type orbital envelope."""
 
-  def init(natom: int, output_dims: int, hf: Optional[scf.Scf] = None,
-           ndim: int = 3) -> Mapping[str, jnp.ndarray]:
-
+  def init(
+      natom: int, output_dims: int, ndim: int = 3
+  ) -> Mapping[str, jnp.ndarray]:
     pi = jnp.zeros(shape=(natom, output_dims, _MAX_POLY_ORDER))
     sigma = jnp.tile(jnp.eye(ndim)[..., None, None], [1, 1, natom, output_dims])
 
-    if hf is not None:
-      # Initialize envelope to match basis set elements.
-      j = 0
-      for i, atom in enumerate(hf.molecule):
-        coeffs = sto.STO_6G_COEFFS[atom.symbol]
-        for orb in coeffs.keys():
-          order = int(orb[0]) - (1 if orb[1] == 's' else 2)
-          zeta, c = coeffs[orb]
-          for _ in range(1 if orb[1] == 's' else 3):
-            pi = pi.at[i, j, order].set(c)
-            sigma = sigma.at[..., i, j].mul(zeta)
-            j += 1
     return {'pi': pi, 'sigma': sigma}
 
   def apply(*, ae: jnp.ndarray, r_ae: jnp.ndarray, r_ee: jnp.ndarray,

@@ -374,8 +374,7 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
 
   # Create parameters, network, and vmaped/pmaped derivations
 
-  if cfg.pretrain.method == 'direct_init' or (
-      cfg.pretrain.method == 'hf' and cfg.pretrain.iterations > 0):
+  if cfg.pretrain.method == 'hf' and cfg.pretrain.iterations > 0:
     hartree_fock = pretrain.get_hf(
         pyscf_mol=cfg.system.get('pyscf_mol'),
         molecule=cfg.system.molecule,
@@ -386,8 +385,6 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
     hartree_fock.mean_field.mo_coeff = multihost_utils.broadcast_one_to_all(
         hartree_fock.mean_field.mo_coeff
     )
-
-  hf_solution = hartree_fock if cfg.pretrain.method == 'direct_init' else None
 
   if cfg.network.make_feature_layer_fn:
     feature_layer_module, feature_layer_fn = (
@@ -422,7 +419,6 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
       feature_layer=feature_layer,
       bias_orbitals=cfg.network.bias_orbitals,
       use_last_layer=cfg.network.use_last_layer,
-      hf_solution=hf_solution,
       full_det=cfg.network.full_det,
       ndim=cfg.system.ndim,
       **cfg.network.detnet,

@@ -207,7 +207,7 @@ def default() -> ml_collections.ConfigDict:
           'deterministic': False,  # Use a deterministic seed.
       },
       'pretrain': {
-          'method': 'hf',  # Method is one of 'hf', or 'direct_init'.
+          'method': 'hf',  # Currently only 'hf' is supported.
           'iterations': 1000,  # Only used if method is 'hf'.
           'basis': 'sto-6g',
       },

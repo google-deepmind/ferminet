@@ -23,7 +23,6 @@ import itertools
 from typing import Mapping, Optional, Sequence, Tuple
 
 from ferminet import envelopes
-from ferminet.utils import scf
 
 import jax.numpy as jnp
 
@@ -51,12 +50,11 @@ def make_multiwave_envelope(kpoints: jnp.ndarray) -> envelopes.Envelope:
     envelopes.EnvelopeType.PRE_DETERMINANT
   """
 
-  def init(natom: int,
-           output_dims: Sequence[int],
-           hf: Optional[scf.Scf] = None,
-           ndim: int = 3) -> Sequence[Mapping[str, jnp.ndarray]]:
+  def init(
+      natom: int, output_dims: Sequence[int], ndim: int = 3
+  ) -> Sequence[Mapping[str, jnp.ndarray]]:
     """See ferminet.envelopes.EnvelopeInit."""
-    del hf, natom, ndim  # unused
+    del natom, ndim  # unused
     params = []
     nk = kpoints.shape[0]
     for output_dim in output_dims:

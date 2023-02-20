@@ -20,8 +20,6 @@ import attr
 import chex
 from ferminet import envelopes
 from ferminet import network_blocks
-from ferminet import sto
-from ferminet.utils import scf
 import jax
 import jax.numpy as jnp
 from typing_extensions import Protocol
@@ -356,69 +354,6 @@ def init_orbital_shaping(
   return orbitals
 
 
-def init_to_hf_solution(
-    hf_solution: scf.Scf,
-    single_layers: Sequence[Param],
-    orbital_layer: Sequence[Param],
-    determinants: int,
-    active_spin_channels: Sequence[int],
-    eps: float = 0.01) -> Tuple[Sequence[Param], Sequence[Param]]:
-  """Sets initial parameters to match Hartree-Fock.
-
-  NOTE: this does not handle the envelope parameters, which are done in the
-  appropriate envelope initialisation functions. Not all envelopes support HF
-  initialisation.
-
-  Args:
-    hf_solution: Hartree-Fock state to match.
-    single_layers: parameters (weights and biases) for the one-electron stream,
-      with length: number of layers in the one-electron stream.
-    orbital_layer: parameters for the orbital-shaping layer, length: number of
-      spin-channels in the system.
-    determinants: Number of determinants used in the final wavefunction.
-    active_spin_channels: Number of particles in each spin channel containing at
-      least one particle.
-    eps: scaling factor for all weights and biases such that they are
-      initialised close to zero unless otherwise required to match Hartree-Fock.
-
-  Returns:
-    Tuple of parameters for the one-electron stream and the orbital shaping
-    layer respectively.
-  """
-  # Scale all params in one-electron stream to be near zero.
-  single_layers = jax.tree_map(lambda param: param * eps, single_layers)
-  # Initialize first layer of Fermi Net to match s- or p-type orbitals.
-  # The sto and sto-poly envelopes can exactly capture the s-type orbital,
-  # so the effect of the neural network part is constant, while the p-type
-  # orbital also has a term multiplied by x, y or z.
-  j = 0
-  for ia, atom in enumerate(hf_solution.molecule):
-    coeffs = sto.STO_6G_COEFFS[atom.symbol]
-    for orb in coeffs.keys():
-      if orb[1] == 's':
-        single_layers[0]['b'] = single_layers[0]['b'].at[j].set(1.0)
-        j += 1
-      elif orb[1] == 'p':
-        w = single_layers[0]['w']
-        w = w.at[ia * 4 + 1:(ia + 1) * 4, j:j + 3].set(jnp.eye(3))
-        single_layers[0]['w'] = w
-        j += 3
-      else:
-        raise NotImplementedError('HF Initialization not implemented for '
-                                  f'{orb[1]} orbitals')
-  # Scale all params in orbital shaping to be near zero.
-  orbital_layer = jax.tree_map(lambda param: param * eps, orbital_layer)
-  for i, spin in enumerate(active_spin_channels):
-    # Initialize last layer to match Hartree-Fock weights on basis set.
-    norb = hf_solution.mean_field.mo_coeff[i].shape[0]
-    mat = hf_solution.mean_field.mo_coeff[i][:, :spin]
-    w = orbital_layer[i]['w']
-    for j in range(determinants):
-      w = w.at[:norb, j * spin:(j + 1) * spin].set(mat)
-    orbital_layer[i]['w'] = w
-  return single_layers, orbital_layer
-
-
 ## Network layers ##
 
 
@@ -518,31 +453,15 @@ def make_orbitals(
     options: Network configuration.
   """
 
-  def init(
-      key: chex.PRNGKey,
-      hf_solution: Optional[scf.Scf] = None,
-      eps: float = 0.01,
-  ) -> ParamTree:
+  def init(key: chex.PRNGKey) -> ParamTree:
     """Returns initial random parameters for creating orbitals.
 
     Args:
       key: RNG state.
-      hf_solution: if supplied, replace random initialisation of parameters with
-        a direct match to the Hartree-Fock solution. Experimental.
-      eps: if hf_solution is not None, scaling factor for all weights and biases
-        such that they are initialised close to zero unless otherwise required
-        to match Hartree-Fock.
     """
     if options.envelope.apply_type == envelopes.EnvelopeType.PRE_ORBITAL:
       if options.bias_orbitals:
         raise ValueError('Cannot bias orbitals w/STO envelope.')
-    if hf_solution is not None:
-      if options.use_last_layer:
-        raise ValueError('Cannot use last layer w/HF init')
-      if options.envelope.apply_type not in ('sto', 'sto-poly'):
-        raise ValueError(
-            'When using HF init, envelope_type must be `sto` or `sto-poly`.'
-        )
 
     active_spin_channels = [spin for spin in nspins if spin > 0]
     nchannels = len(active_spin_channels)
@@ -627,7 +546,7 @@ def make_orbitals(
     else:
       raise ValueError('Unknown envelope type')
     params['envelope'] = options.envelope.init(
-        natom=natom, output_dims=output_dims, hf=hf_solution, ndim=options.ndim
+        natom=natom, output_dims=output_dims, ndim=options.ndim
     )
 
     # orbital shaping
@@ -638,16 +557,6 @@ def make_orbitals(
         nspin_orbitals=nspin_orbitals,
         bias_orbitals=options.bias_orbitals,
     )
-
-    if hf_solution is not None:
-      params['single'], params['orbital'] = init_to_hf_solution(
-          hf_solution=hf_solution,
-          single_layers=params['single'],
-          orbital_layer=params['orbital'],
-          determinants=options.determinants,
-          active_spin_channels=active_spin_channels,
-          eps=eps,
-      )
 
     return params
 
@@ -766,7 +675,6 @@ def make_fermi_net(
     feature_layer: Optional[FeatureLayer] = None,
     bias_orbitals: bool = False,
     use_last_layer: bool = False,
-    hf_solution: Optional[scf.Scf] = None,
     full_det: bool = True,
     hidden_dims: FermiLayers = ((256, 32), (256, 32), (256, 32)),
     determinants: int = 16,
@@ -785,8 +693,6 @@ def make_fermi_net(
       are combined into permutation-equivariant features and passed into the
       final orbital-shaping layer. Otherwise, just the output of the
       one-electron stream is passed into the orbital-shaping layer.
-    hf_solution: If present, initialise the parameters to match the Hartree-Fock
-      solution. Otherwise a random initialisation is use.
     full_det: If true, evaluate determinants over all electrons. Otherwise,
       block-diagonalise determinants into spin channels.
     hidden_dims: Tuple of pairs, where each pair contains the number of hidden
@@ -826,7 +732,7 @@ def make_fermi_net(
 
   def init(key: chex.PRNGKey) -> ParamTree:
     key, subkey = jax.random.split(key, num=2)
-    return orbitals_init(subkey, hf_solution=hf_solution)
+    return orbitals_init(subkey)
 
   def apply(
       params,
