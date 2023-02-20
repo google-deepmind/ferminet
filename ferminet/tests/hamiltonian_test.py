@@ -199,16 +199,16 @@ class LaplacianTest(parameterized.TestCase):
         cfg.system.electrons,
         cfg.system.ndim,
     )
-    network_init, signed_network, _ = networks.make_fermi_net(
+    network = networks.make_fermi_net(
         nspins,
         charges,
         full_det=full_det,
         feature_layer=feature_layer,
         **cfg.network.detnet
     )
-    log_network = lambda *args, **kwargs: signed_network(*args, **kwargs)[1]
+    log_network = lambda *args, **kwargs: network.apply(*args, **kwargs)[1]
     key = jax.random.PRNGKey(47)
-    params = network_init(key)
+    params = network.init(key)
     xs = np.random.normal(scale=5, size=(batch, sum(nspins) * 3))
     spins = np.sign(np.random.normal(scale=1, size=(batch, sum(nspins))))
     t_l_fn = jax.jit(

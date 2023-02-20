@@ -415,7 +415,7 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
   else:
     envelope = envelopes.make_isotropic_envelope()
 
-  network_init, signed_network, network_options = networks.make_fermi_net(
+  network = networks.make_fermi_net(
       nspins,
       charges,
       envelope=envelope,
@@ -428,12 +428,14 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
       **cfg.network.detnet,
   )
   key, subkey = jax.random.split(key)
-  params = network_init(subkey)
+  params = network.init(subkey)
   params = kfac_jax.utils.replicate_all_local_devices(params)
+  signed_network = network.apply
   # Often just need log|psi(x)|.
-  network = lambda *args, **kwargs: signed_network(*args, **kwargs)[1]  # type: networks.LogFermiNetLike
+  log_network = lambda *args, **kwargs: signed_network(*args, **kwargs)[1]
   batch_network = jax.vmap(
-      network, in_axes=(None, 0, 0, 0, 0), out_axes=0)  # batched network
+      log_network, in_axes=(None, 0, 0, 0, 0), out_axes=0
+  )  # batched network
 
   # Set up checkpointing and restore params/data if necessary
   # Mirror behaviour of checkpoints in TF FermiNet.
@@ -483,16 +485,15 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
 
   # Pretraining to match Hartree-Fock
 
-  if (t_init == 0 and cfg.pretrain.method == 'hf' and
-      cfg.pretrain.iterations > 0):
-    orbitals = functools.partial(
-        networks.fermi_net_orbitals,
-        atoms=atoms,
-        nspins=cfg.system.electrons,
-        options=network_options,
-    )
+  if (
+      t_init == 0
+      and cfg.pretrain.method == 'hf'
+      and cfg.pretrain.iterations > 0
+  ):
     pretrain_spins = spins[0, 0]
-    batch_orbitals = jax.vmap(orbitals, in_axes=(None, 0), out_axes=0)
+    batch_orbitals = jax.vmap(
+        network.orbitals, in_axes=(None, 0, 0, 0, 0), out_axes=0
+    )
     sharded_key, subkeys = kfac_jax.utils.p_split(sharded_key)
     params, pos = pretrain.pretrain_hartree_fock(
         params=params,
@@ -502,7 +503,7 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
         charges=batch_charges,
         batch_network=batch_network,
         batch_orbitals=batch_orbitals,
-        network_options=network_options,
+        network_options=network.options,
         sharded_key=subkeys,
         electrons=cfg.system.electrons,
         scf_approx=hartree_fock,
@@ -541,11 +542,12 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
         nspins=nspins,
         use_scan=False)
   evaluate_loss = qmc_loss_functions.make_loss(
-      network,
+      log_network,
       local_energy,
       clip_local_energy=cfg.optim.clip_local_energy,
       clip_from_median=cfg.optim.clip_median,
-      center_at_clipped_energy=cfg.optim.center_at_clip)
+      center_at_clipped_energy=cfg.optim.center_at_clip,
+  )
   # Compute the learning rate
   def learning_rate_schedule(t_: jnp.ndarray) -> jnp.ndarray:
     return cfg.optim.lr.rate * jnp.power(

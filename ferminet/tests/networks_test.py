@@ -87,9 +87,9 @@ class NetworksTest(parameterized.TestCase):
     nspins = (3, 4)
 
     key, subkey = random.split(key)
-    data1 = random.normal(subkey, shape=(sum(nspins)*3,))
-    data2 = jnp.concatenate((data1[3:6], data1[:3], data1[6:]))
-    data3 = jnp.concatenate((data1[:9], data1[12:15], data1[9:12], data1[15:]))
+    pos1 = random.normal(subkey, shape=(sum(nspins) * 3,))
+    pos2 = jnp.concatenate((pos1[3:6], pos1[:3], pos1[6:]))
+    pos3 = jnp.concatenate((pos1[:9], pos1[12:15], pos1[9:12], pos1[15:]))
 
     key, subkey = random.split(key)
     spins1 = jax.random.uniform(subkey, shape=(sum(nspins),))
@@ -98,20 +98,17 @@ class NetworksTest(parameterized.TestCase):
 
     feature_layer = networks.make_ferminet_features(natoms, nspins, ndim=3)
 
-    key, subkey = random.split(key)
     kwargs = {}
-    options = networks.FermiNetOptions(
+    network = networks.make_fermi_net(
+        nspins=nspins,
+        charges=charges,
         hidden_dims=((16, 16), (16, 16)),
         envelope=envelopes.get_envelope(envelope_label, **kwargs),
         feature_layer=feature_layer,
     )
 
-    params = networks.init_fermi_net_params(
-        subkey,
-        nspins=nspins,
-        charges=charges,
-        options=options,
-    )
+    key, subkey = random.split(key)
+    params = network.init(subkey)
 
     # Randomize parameters of envelope
     if isinstance(params['envelope'], list):
@@ -129,19 +126,13 @@ class NetworksTest(parameterized.TestCase):
       params['envelope']['pi'] = random.normal(
           subkeys[1], params['envelope']['pi'].shape)
 
-    out1 = networks.fermi_net(
-        params, data1, spins1, atoms, charges, nspins, options
-    )
+    out1 = network.apply(params, pos1, spins1, atoms, charges)
 
-    out2 = networks.fermi_net(
-        params, data2, spins2, atoms, charges, nspins, options
-    )
+    out2 = network.apply(params, pos2, spins2, atoms, charges)
     np.testing.assert_allclose(out1[1], out2[1], atol=1E-5, rtol=1E-5)
     np.testing.assert_allclose(out1[0], -1*out2[0], atol=1E-5, rtol=1E-5)
 
-    out3 = networks.fermi_net(
-        params, data3, spins3, atoms, charges, nspins, options
-    )
+    out3 = network.apply(params, pos3, spins3, atoms, charges)
     np.testing.assert_allclose(out1[1], out3[1], atol=1E-5, rtol=1E-5)
     np.testing.assert_allclose(out1[0], -1*out3[0], atol=1E-5, rtol=1E-5)
 
@@ -216,7 +207,7 @@ class NetworksTest(parameterized.TestCase):
     network_options['envelope'] = envelopes.get_envelope(
         network_options['envelope_label'], **kwargs)
     del network_options['envelope_label']
-    init, fermi_net, _ = networks.make_fermi_net(
+    network = networks.make_fermi_net(
         nspins, charges, feature_layer=feature_layer, **network_options
     )
 
@@ -225,11 +216,12 @@ class NetworksTest(parameterized.TestCase):
       batch = 10
       xs = jax.random.uniform(subkeys[0], shape=(batch, sum(nspins), 3))
       spins = jax.random.uniform(subkeys[1], shape=(batch, sum(nspins)))
-      fermi_net = jax.vmap(fermi_net, in_axes=(None, 0, 0, None, None))
+      fermi_net = jax.vmap(network.apply, in_axes=(None, 0, 0, None, None))
       expected_shape = (batch,)
     else:
       xs = jax.random.uniform(subkeys[0], shape=(sum(nspins), 3))
       spins = jax.random.uniform(subkeys[1], shape=(sum(nspins),))
+      fermi_net = network.apply
       expected_shape = ()
 
     key, subkey = jax.random.split(key)
@@ -237,9 +229,9 @@ class NetworksTest(parameterized.TestCase):
     if (envelope.apply_type == envelopes.EnvelopeType.PRE_ORBITAL and
         network_options['bias_orbitals']):
       with self.assertRaises(ValueError):
-        init(subkey)
+        network.init(subkey)
     else:
-      params = init(subkey)
+      params = network.init(subkey)
       sign_psi, log_psi = fermi_net(params, xs, spins, atoms, charges)
       self.assertSequenceEqual(sign_psi.shape, expected_shape)
       self.assertSequenceEqual(log_psi.shape, expected_shape)
@@ -252,15 +244,15 @@ class NetworksTest(parameterized.TestCase):
     charges = jnp.ones(shape=1)
     key = jax.random.PRNGKey(42)
     feature_layer = networks.make_ferminet_features(natoms, nspins, ndim=3)
-    init, fermi_net, _ = networks.make_fermi_net(
+    network = networks.make_fermi_net(
         nspins, charges, feature_layer=feature_layer, full_det=full_det
     )
     key, *subkeys = jax.random.split(key, num=4)
-    params = init(subkeys[0])
+    params = network.init(subkeys[0])
     xs = jax.random.uniform(subkeys[1], shape=(sum(nspins) * 3,))
     spins = jax.random.uniform(subkeys[2], shape=(sum(nspins),))
     # Test fermi_net runs without raising exceptions for spin-polarised systems.
-    sign_out, log_out = fermi_net(params, xs, spins, atoms, charges)
+    sign_out, log_out = network.apply(params, xs, spins, atoms, charges)
     self.assertEqual(sign_out.size, 1)
     self.assertEqual(log_out.size, 1)
 

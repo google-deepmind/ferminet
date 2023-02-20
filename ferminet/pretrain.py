@@ -30,13 +30,6 @@ import numpy as np
 import optax
 import pyscf
 
-# Given the parameters and electron positions, return arrays(s) of the orbitals.
-# See networks.fermi_net_orbitals. (Note only the orbitals, and not envelope
-# parameters, are required.)
-FermiNetOrbitals = Callable[
-    [networks.ParamTree, jnp.ndarray], Sequence[jnp.ndarray]
-]
-
 
 def get_hf(molecule: Optional[Sequence[system.Atom]] = None,
            nspins: Optional[Tuple[int, int]] = None,
@@ -120,7 +113,7 @@ def eval_slater(scf_approx: scf.Scf, pos: Union[jnp.ndarray, np.ndarray],
 
 
 def make_pretrain_step(
-    batch_orbitals: FermiNetOrbitals,
+    batch_orbitals: networks.OrbitalFnLike,
     batch_network: networks.LogFermiNetLike,
     optimizer_update: optax.TransformUpdateFn,
     full_det: bool = False,
@@ -149,7 +142,9 @@ def make_pretrain_step(
     def loss_fn(
         params: networks.ParamTree, data: networks.FermiNetData, target: ...
     ):
-      orbitals = batch_orbitals(params, data.positions)
+      orbitals = batch_orbitals(
+          params, data.positions, data.spins, data.atoms, data.charges
+      )
       if full_det:
         ndet = target[0].shape[0]
         na = target[0].shape[1]
@@ -188,7 +183,7 @@ def pretrain_hartree_fock(
     atoms: jnp.ndarray,
     charges: jnp.ndarray,
     batch_network: networks.FermiNetLike,
-    batch_orbitals: FermiNetOrbitals,
+    batch_orbitals: networks.OrbitalFnLike,
     network_options: networks.FermiNetOptions,
     sharded_key: chex.PRNGKey,
     electrons: Tuple[int, int],

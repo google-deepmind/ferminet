@@ -46,7 +46,7 @@ class PbcHamiltonianTest(parameterized.TestCase):
 
     kpoints = envelopes.make_kpoints(jnp.eye(3), nspins)
 
-    network_init, signed_network, _ = networks.make_fermi_net(
+    network = networks.make_fermi_net(
         nspins,
         charges,
         envelope=envelopes.make_multiwave_envelope(kpoints),
@@ -55,19 +55,21 @@ class PbcHamiltonianTest(parameterized.TestCase):
         use_last_layer=cfg.network.use_last_layer,
         hf_solution=None,
         full_det=cfg.network.full_det,
-        **cfg.network.detnet)
+        **cfg.network.detnet
+    )
 
     key, subkey = jax.random.split(key)
-    params = network_init(subkey)
+    params = network.init(subkey)
 
     local_energy = hamiltonian.local_energy(
-        f=signed_network,
+        f=network.apply,
         atoms=atoms,
         charges=charges,
         nspins=nspins,
         use_scan=False,
         lattice=jnp.eye(3),
-        heg=False)
+        heg=False,
+    )
 
     data = networks.FermiNetData(
         positions=xs.flatten(), spins=spins, atoms=atoms, charges=charges
