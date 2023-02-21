@@ -116,7 +116,7 @@ class HamiltonianTest(parameterized.TestCase):
     v_ee = -np.sum(charges / r_ae)
     v_ae = np.prod(charges) / np.linalg.norm(np.diff(atoms, axis=0))
     expected_v = v_ee + v_ae
-    v = hamiltonian.potential_energy(r_ae[..., None], r_ee, atoms, charges)
+    v = hamiltonian.potential_energy(r_ae[..., None], r_ee, atoms, charges)  # pytype: disable=wrong-arg-types  # jax-ndarray
     np.testing.assert_allclose(v, expected_v, rtol=1E-5)
 
   def test_local_energy(self):

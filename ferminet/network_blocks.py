@@ -143,4 +143,4 @@ def logdet_matmul(xs: Sequence[jnp.ndarray],
     result = jnp.matmul(det, w)[0]
   sign_out = jnp.sign(result)
   log_out = jnp.log(jnp.abs(result)) + maxlogdet
-  return sign_out, log_out
+  return sign_out, log_out  # pytype: disable=bad-return-type  # jax-ndarray

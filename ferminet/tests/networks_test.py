@@ -124,9 +124,9 @@ class NetworksTest(parameterized.TestCase):
       params['envelope']['sigma'] = random.normal(
           subkeys[0], params['envelope']['sigma'].shape)
       params['envelope']['pi'] = random.normal(
-          subkeys[1], params['envelope']['pi'].shape)
+          subkeys[1], params['envelope']['pi'].shape)  # pytype: disable=unsupported-operands  # jax-ndarray
 
-    out1 = network.apply(params, pos1, spins1, atoms, charges)
+    out1 = network.apply(params, pos1, spins1, atoms, charges)  # pytype: disable=unsupported-operands  # jax-ndarray
 
     out2 = network.apply(params, pos2, spins2, atoms, charges)
     np.testing.assert_allclose(out1[1], out2[1], atol=1E-5, rtol=1E-5)
@@ -151,7 +151,7 @@ class NetworksTest(parameterized.TestCase):
     # k = j and the i = j term should be explicitly masked out.
     mask = np.fromfunction(
         lambda i, j, k: np.logical_and(np.logical_or(i == k, j == k), i != j),
-        d_r_ee.shape[:-1])
+        d_r_ee.shape[:-1])  # pytype: disable=wrong-arg-types  # jax-ndarray
     d_r_ee_non_zeros = d_r_ee[mask]
     d_r_ee_zeros = d_r_ee[~mask]
     with self.subTest('check forward pass'):
