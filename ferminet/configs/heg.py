@@ -40,7 +40,7 @@ def get_config():
   cfg.pretrain.method = None
 
   lattice = _sc_lattice_vecs(1.0, sum(cfg.system.electrons))
-  kpoints = envelopes.make_kpoints(lattice, cfg.system.electrons)  # pytype: disable=wrong-arg-types  # jax-ndarray
+  kpoints = envelopes.make_kpoints(lattice, cfg.system.electrons)
 
   cfg.system.make_local_energy_fn = "ferminet.pbc.hamiltonian.local_energy"
   cfg.system.make_local_energy_kwargs = {"lattice": lattice, "heg": True}

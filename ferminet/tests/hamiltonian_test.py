@@ -83,21 +83,21 @@ class HamiltonianTest(parameterized.TestCase):
     # with one electron and a nuclear charge of zero, the potential energy is
     # zero.
     xs = np.random.normal(size=(1, 3))
-    r_ae = np.linalg.norm(xs, axis=-1)
-    r_ee = np.zeros(shape=(1, 1, 1))
-    atoms = np.zeros(shape=(1, 3))
-    charges = np.zeros(shape=(1,))
+    r_ae = jnp.linalg.norm(xs, axis=-1)
+    r_ee = jnp.zeros(shape=(1, 1, 1))
+    atoms = jnp.zeros(shape=(1, 3))
+    charges = jnp.zeros(shape=(1,))
     v = hamiltonian.potential_energy(r_ae, r_ee, atoms, charges)
     np.testing.assert_allclose(v, 0.0, rtol=1E-5)
 
   def test_potential_energy_ee(self):
 
     xs = np.random.normal(size=(5, 3))
-    r_ae = np.linalg.norm(xs, axis=-1)
-    r_ee = np.linalg.norm(xs[None, ...] - xs[:, None, :], axis=-1)
-    atoms = np.zeros(shape=(1, 3))
-    charges = np.zeros(shape=(1,))
-    mask = ~np.eye(r_ee.shape[0], dtype=bool)
+    r_ae = jnp.linalg.norm(xs, axis=-1)
+    r_ee = jnp.linalg.norm(xs[None, ...] - xs[:, None, :], axis=-1)
+    atoms = jnp.zeros(shape=(1, 3))
+    charges = jnp.zeros(shape=(1,))
+    mask = ~jnp.eye(r_ee.shape[0], dtype=bool)
     expected_v_ee = 0.5 * np.sum(1.0 / r_ee[mask])
     v = hamiltonian.potential_energy(r_ae, r_ee[..., None], atoms, charges)
     np.testing.assert_allclose(v, expected_v_ee, rtol=1E-5)
@@ -105,18 +105,14 @@ class HamiltonianTest(parameterized.TestCase):
   def test_potential_energy_he2_ion(self):
 
     xs = np.random.normal(size=(1, 3))
-    atoms = np.array([[
-        0,
-        0,
-        -1,
-    ], [0, 0, 1]])
-    r_ae = np.linalg.norm(xs - atoms, axis=-1)
-    r_ee = np.zeros(shape=(1, 1, 1))
-    charges = np.array([2, 2])
-    v_ee = -np.sum(charges / r_ae)
-    v_ae = np.prod(charges) / np.linalg.norm(np.diff(atoms, axis=0))
+    atoms = jnp.array([[0, 0, -1], [0, 0, 1]])
+    r_ae = jnp.linalg.norm(xs - atoms, axis=-1)
+    r_ee = jnp.zeros(shape=(1, 1, 1))
+    charges = jnp.array([2, 2])
+    v_ee = -jnp.sum(charges / r_ae)
+    v_ae = jnp.prod(charges) / jnp.linalg.norm(jnp.diff(atoms, axis=0))
     expected_v = v_ee + v_ae
-    v = hamiltonian.potential_energy(r_ae[..., None], r_ee, atoms, charges)  # pytype: disable=wrong-arg-types  # jax-ndarray
+    v = hamiltonian.potential_energy(r_ae[..., None], r_ee, atoms, charges)
     np.testing.assert_allclose(v, expected_v, rtol=1E-5)
 
   def test_local_energy(self):

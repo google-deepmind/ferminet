@@ -14,7 +14,7 @@
 
 """Implementation of Fermionic Neural Network in JAX."""
 import enum
-from typing import Any, Iterable, Mapping, Optional, Sequence, Tuple, Union
+from typing import Any, Iterable, MutableMapping, Optional, Sequence, Tuple, Union
 
 import attr
 import chex
@@ -28,10 +28,12 @@ from typing_extensions import Protocol
 FermiLayers = Tuple[Tuple[int, int], ...]
 # Recursive types are not yet supported in pytype - b/109648354.
 # pytype: disable=not-supported-yet
-ParamTree = Union[jnp.ndarray, Iterable['ParamTree'], Mapping[Any, 'ParamTree']]
+ParamTree = Union[
+    jnp.ndarray, Iterable['ParamTree'], MutableMapping[Any, 'ParamTree']
+]
 # pytype: enable=not-supported-yet
 # Parameters for a single part of the network are just a dict.
-Param = Mapping[str, jnp.ndarray]
+Param = MutableMapping[str, jnp.ndarray]
 
 
 @chex.dataclass

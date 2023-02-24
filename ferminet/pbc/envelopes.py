@@ -20,11 +20,12 @@ with Fermionic Neural Networks. arXiv preprint arXiv:2202.05183.
 """
 
 import itertools
-from typing import Mapping, Optional, Sequence, Tuple
+from typing import Mapping, Optional, Sequence, Tuple, Union
 
 from ferminet import envelopes
 
 import jax.numpy as jnp
+import numpy as np
 
 
 def make_multiwave_envelope(kpoints: jnp.ndarray) -> envelopes.Envelope:
@@ -75,9 +76,11 @@ def make_multiwave_envelope(kpoints: jnp.ndarray) -> envelopes.Envelope:
   return envelopes.Envelope(envelopes.EnvelopeType.PRE_DETERMINANT, init, apply)
 
 
-def make_kpoints(lattice: jnp.ndarray,
-                 spins: Tuple[int, int],
-                 min_kpoints: Optional[int] = None) -> jnp.ndarray:
+def make_kpoints(
+    lattice: Union[np.ndarray, jnp.ndarray],
+    spins: Tuple[int, int],
+    min_kpoints: Optional[int] = None,
+) -> jnp.ndarray:
   """Generates an array of reciprocal lattice vectors.
 
   Args:

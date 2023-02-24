@@ -120,13 +120,15 @@ class NetworksTest(parameterized.TestCase):
           params['envelope'][i]['pi'] = random.normal(
               subkeys[1], params['envelope'][i]['pi'].shape)
     else:
+      assert isinstance(params['envelope'], dict)
       key, *subkeys = random.split(key, num=3)
       params['envelope']['sigma'] = random.normal(
           subkeys[0], params['envelope']['sigma'].shape)
       params['envelope']['pi'] = random.normal(
-          subkeys[1], params['envelope']['pi'].shape)  # pytype: disable=unsupported-operands  # jax-ndarray
+          subkeys[1], params['envelope']['pi'].shape
+      )
 
-    out1 = network.apply(params, pos1, spins1, atoms, charges)  # pytype: disable=unsupported-operands  # jax-ndarray
+    out1 = network.apply(params, pos1, spins1, atoms, charges)
 
     out2 = network.apply(params, pos2, spins2, atoms, charges)
     np.testing.assert_allclose(out1[1], out2[1], atol=1E-5, rtol=1E-5)
@@ -141,7 +143,7 @@ class NetworksTest(parameterized.TestCase):
     ndim = 3
     nelec = 6
     xs = np.random.normal(scale=3, size=(nelec, ndim)).astype(dtype)
-    atoms = np.array([[0.2, 0.5, 0.3], [1.2, 0.3, 0.7]])
+    atoms = jnp.array([[0.2, 0.5, 0.3], [1.2, 0.3, 0.7]])
     input_features = networks.construct_input_features(xs, atoms)
     d_input_features = jax.jacfwd(networks.construct_input_features)(
         xs, atoms, ndim=3)
@@ -151,7 +153,8 @@ class NetworksTest(parameterized.TestCase):
     # k = j and the i = j term should be explicitly masked out.
     mask = np.fromfunction(
         lambda i, j, k: np.logical_and(np.logical_or(i == k, j == k), i != j),
-        d_r_ee.shape[:-1])  # pytype: disable=wrong-arg-types  # jax-ndarray
+        d_r_ee.shape[:-1],
+    )
     d_r_ee_non_zeros = d_r_ee[mask]
     d_r_ee_zeros = d_r_ee[~mask]
     with self.subTest('check forward pass'):

@@ -16,7 +16,7 @@
 
 import functools
 import itertools
-from typing import Mapping, Optional, Sequence
+from typing import MutableMapping, Optional, Sequence, Tuple
 
 import chex
 import jax
@@ -37,10 +37,9 @@ def array_partitions(sizes: Sequence[int]) -> Sequence[int]:
   return list(itertools.accumulate(sizes))[:-1]
 
 
-def init_linear_layer(key: chex.PRNGKey,
-                      in_dim: int,
-                      out_dim: int,
-                      include_bias: bool = True) -> Mapping[str, jnp.ndarray]:
+def init_linear_layer(
+    key: chex.PRNGKey, in_dim: int, out_dim: int, include_bias: bool = True
+) -> MutableMapping[str, jnp.ndarray]:
   """Initialises parameters for a linear layer, x w + b.
 
   Args:
@@ -103,8 +102,9 @@ def slogdet(x):
   return sign, logdet
 
 
-def logdet_matmul(xs: Sequence[jnp.ndarray],
-                  w: Optional[jnp.ndarray] = None) -> jnp.ndarray:
+def logdet_matmul(
+    xs: Sequence[jnp.ndarray], w: Optional[jnp.ndarray] = None
+) -> Tuple[jnp.ndarray, jnp.ndarray]:
   """Combines determinants and takes dot product with weights in log-domain.
 
   We use the log-sum-exp trick to reduce numerical instabilities.
@@ -143,4 +143,4 @@ def logdet_matmul(xs: Sequence[jnp.ndarray],
     result = jnp.matmul(det, w)[0]
   sign_out = jnp.sign(result)
   log_out = jnp.log(jnp.abs(result)) + maxlogdet
-  return sign_out, log_out  # pytype: disable=bad-return-type  # jax-ndarray
+  return sign_out, log_out
