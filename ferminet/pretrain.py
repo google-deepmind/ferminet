@@ -184,7 +184,7 @@ def pretrain_hartree_fock(
     charges: jnp.ndarray,
     batch_network: networks.FermiNetLike,
     batch_orbitals: networks.OrbitalFnLike,
-    network_options: networks.FermiNetOptions,
+    network_options: networks.BaseNetworkOptions,
     sharded_key: chex.PRNGKey,
     electrons: Tuple[int, int],
     scf_approx: scf.Scf,

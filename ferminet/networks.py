@@ -19,6 +19,7 @@ from typing import Any, Iterable, MutableMapping, Optional, Sequence, Tuple, Uni
 import attr
 import chex
 from ferminet import envelopes
+from ferminet import jastrows
 from ferminet import network_blocks
 import jax
 import jax.numpy as jnp
@@ -253,19 +254,11 @@ class MakeFeatureLayer(Protocol):
 
 
 @attr.s(auto_attribs=True, kw_only=True)
-class FermiNetOptions:
-  """Options controlling the FermiNet architecture.
+class BaseNetworkOptions:
+  """Options controlling the overall network architecture.
 
   Attributes:
     ndim: dimension of system. Change only with caution.
-    hidden_dims: Tuple of pairs, where each pair contains the number of hidden
-      units in the one-electron and two-electron stream in the corresponding
-      layer of the FermiNet. The number of layers is given by the length of the
-      tuple.
-    use_last_layer: If true, the outputs of the one- and two-electron streams
-      are combined into permutation-equivariant features and passed into the
-      final orbital-shaping layer. Otherwise, just the output of the
-      one-electron stream is passed into the orbital-shaping layer.
     determinants: Number of determinants to use.
     full_det: If true, evaluate determinants over all electrons. Otherwise,
       block-diagonalise determinants into spin channels.
@@ -274,10 +267,10 @@ class FermiNetOptions:
     envelope: Envelope object to create and apply the multiplicative envelope.
     feature_layer: Feature object to create and apply the input features for the
       one- and two-electron layers.
+    jastrow: Type of Jastrow factor if used, or 'none' if no Jastrow factor.
   """
+
   ndim: int = 3
-  hidden_dims: FermiLayers = ((256, 32), (256, 32), (256, 32), (256, 32))
-  use_last_layer: bool = False
   determinants: int = 16
   full_det: bool = True
   bias_orbitals: bool = False
@@ -286,6 +279,26 @@ class FermiNetOptions:
           envelopes.make_isotropic_envelope,
           takes_self=False))
   feature_layer: FeatureLayer = None
+  jastrow: jastrows.JastrowType = jastrows.JastrowType.NONE
+
+
+@attr.s(auto_attribs=True, kw_only=True)
+class FermiNetOptions(BaseNetworkOptions):
+  """Options controlling the FermiNet architecture.
+
+  Attributes:
+    hidden_dims: Tuple of pairs, where each pair contains the number of hidden
+      units in the one-electron and two-electron stream in the corresponding
+      layer of the FermiNet. The number of layers is given by the length of the
+      tuple.
+    use_last_layer: If true, the outputs of the one- and two-electron streams
+      are combined into permutation-equivariant features and passed into the
+      final orbital-shaping layer. Otherwise, just the output of the
+      one-electron stream is passed into the orbital-shaping layer.
+  """
+
+  hidden_dims: FermiLayers = ((256, 32), (256, 32), (256, 32), (256, 32))
+  use_last_layer: bool = False
 
 
 # Network class.
@@ -293,7 +306,7 @@ class FermiNetOptions:
 
 @attr.s(auto_attribs=True)
 class Network:
-  options: FermiNetOptions
+  options: BaseNetworkOptions
   init: InitFermiNet
   apply: FermiNetLike
   orbitals: OrbitalFnLike
@@ -567,6 +580,9 @@ def make_orbitals(
 
   equivariant_layers_init, equivariant_layers_apply = equivariant_layers
 
+  # Optional Jastrow factor.
+  jastrow_init, jastrow_apply = jastrows.get_jastrow(options.jastrow)
+
   def init(key: chex.PRNGKey) -> ParamTree:
     """Returns initial random parameters for creating orbitals.
 
@@ -607,6 +623,10 @@ def make_orbitals(
     params['envelope'] = options.envelope.init(
         natom=natom, output_dims=output_dims, ndim=options.ndim
     )
+
+    # Jastrow params.
+    if jastrow_init is not None:
+      params['jastrow'] = jastrow_init()
 
     # orbital shaping
     orbitals = []
@@ -697,6 +717,15 @@ def make_orbitals(
     orbitals = [jnp.transpose(orbital, (1, 0, 2)) for orbital in orbitals]
     if options.full_det:
       orbitals = [jnp.concatenate(orbitals, axis=1)]
+
+    # Optionally apply Jastrow factor for electron cusp conditions.
+    # Added pre-determinant for compatibility with pretraining.
+    if jastrow_apply is not None:
+      jastrow = jnp.exp(
+          jastrow_apply(r_ee, params['jastrow'], nspins) / sum(nspins)
+      )
+      orbitals = [orbital * jastrow for orbital in orbitals]
+
     return orbitals
 
   return init, apply
@@ -711,6 +740,7 @@ def make_fermi_net(
     *,
     envelope: Optional[envelopes.Envelope] = None,
     feature_layer: Optional[FeatureLayer] = None,
+    jastrow: Union[str, jastrows.JastrowType] = jastrows.JastrowType.NONE,
     bias_orbitals: bool = False,
     use_last_layer: bool = False,
     full_det: bool = True,
@@ -725,6 +755,7 @@ def make_fermi_net(
     charges: (natom) array of atom nuclear charges.
     envelope: Envelope to use to impose orbitals go to zero at infinity.
     feature_layer: Input feature construction.
+    jastrow: Type of Jastrow factor if used, or no jastrow if 'default'.
     bias_orbitals: If true, include a bias in the final linear layer to shape
       the outputs into orbitals.
     use_last_layer: If true, the outputs of the one- and two-electron streams
@@ -753,6 +784,12 @@ def make_fermi_net(
     natoms = charges.shape[0]
     feature_layer = make_ferminet_features(natoms, nspins, ndim=ndim)
 
+  if isinstance(jastrow, str):
+    if jastrow.upper() == 'DEFAULT':
+      jastrow = jastrows.JastrowType.NONE
+    else:
+      jastrow = jastrows.JastrowType[jastrow.upper()]
+
   options = FermiNetOptions(
       ndim=ndim,
       hidden_dims=hidden_dims,
@@ -762,6 +799,7 @@ def make_fermi_net(
       bias_orbitals=bias_orbitals,
       envelope=envelope,
       feature_layer=feature_layer,
+      jastrow=jastrow,
   )
 
   if options.envelope.apply_type == envelopes.EnvelopeType.PRE_ORBITAL:

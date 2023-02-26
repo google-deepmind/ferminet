@@ -417,6 +417,7 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
       charges,
       envelope=envelope,
       feature_layer=feature_layer,
+      jastrow=cfg.network.get('jastrow', 'default'),
       bias_orbitals=cfg.network.bias_orbitals,
       use_last_layer=cfg.network.use_last_layer,
       full_det=cfg.network.full_det,
