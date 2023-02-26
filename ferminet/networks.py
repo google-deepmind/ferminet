@@ -149,6 +149,44 @@ class OrbitalFnLike(Protocol):
     """
 
 
+class InitLayersFn(Protocol):
+
+  def __call__(self, key: chex.PRNGKey) -> Tuple[int, ParamTree]:
+    """Returns output dim and initialized parameters for the interaction layers.
+
+    Args:
+      key: RNG state
+    """
+
+
+class ApplyLayersFn(Protocol):
+
+  def __call__(
+      self,
+      params: ParamTree,
+      ae: jnp.ndarray,
+      r_ae: jnp.ndarray,
+      ee: jnp.ndarray,
+      r_ee: jnp.ndarray,
+      charges: jnp.ndarray,
+  ) -> jnp.ndarray:
+    """Forward evaluation of the equivariant interaction layers.
+
+    Args:
+      params: parameters for the interaction and permuation-equivariant layers.
+      ae: electron-nuclear vectors.
+      r_ae: electron-nuclear distances.
+      ee: electron-electron vectors.
+      r_ee: electron-electron distances.
+      charges: nuclear charges.
+
+    Returns:
+      Array of shape (nelectron, output_dim), where the output dimension,
+      output_dim, is given by init, and is suitable for projection into orbital
+      space.
+    """
+
+
 ## Interfaces (network components) ##
 
 
@@ -261,101 +299,6 @@ class Network:
   orbitals: OrbitalFnLike
 
 
-## Network initialisation ##
-
-
-def init_layers(
-    key: chex.PRNGKey, dims_one_in: Sequence[int], dims_one_out: Sequence[int],
-    dims_two_in: Sequence[int],
-    dims_two_out: Sequence[int]) -> Tuple[Sequence[Param], Sequence[Param]]:
-  """Initialises parameters for the FermiNet layers.
-
-  The final two-electron layer is not strictly necessary (i.e.
-  FermiNetOptions.use_last_layer is False), in which case the two-electron
-  stream contains one fewer layers than the one-electron stream.
-
-  Args:
-    key: JAX RNG state.
-    dims_one_in: dimension of inputs to each one-electron layer.
-    dims_one_out: dimension of outputs (number of hidden units) in each
-      one-electron layer.
-    dims_two_in: dimension of inputs to each two-electron layer.
-    dims_two_out: dimension of outputs (number of hidden units) in each
-      two-electron layer.
-
-  Returns:
-    Pair of sequences (length: number of layers) of parameters for one- and
-    two-electron streams.
-
-  Raises:
-    ValueError: if dims_one_in and dims_one_out are different lengths, or
-    similarly for dims_two_in and dims_two_out, or if the number of one-electron
-    layers is not equal to or one more than the number of two electron layers.
-  """
-  if len(dims_one_in) != len(dims_one_out):
-    raise ValueError(
-        'Length of one-electron stream inputs and outputs not identical.')
-  if len(dims_two_in) != len(dims_two_out):
-    raise ValueError(
-        'Length of two-electron stream inputs and outputs not identical.')
-  if len(dims_two_in) not in (len(dims_one_out), len(dims_one_out) - 1):
-    raise ValueError('Number of layers in two electron stream must match or be '
-                     'one fewer than the number of layers in the one-electron '
-                     'stream')
-  single = []
-  double = []
-  ndouble_layers = len(dims_two_in)
-  for i in range(len(dims_one_in)):
-    key, subkey = jax.random.split(key)
-    single.append(
-        network_blocks.init_linear_layer(
-            subkey,
-            in_dim=dims_one_in[i],
-            out_dim=dims_one_out[i],
-            include_bias=True))
-
-    if i < ndouble_layers:
-      key, subkey = jax.random.split(key)
-      double.append(
-          network_blocks.init_linear_layer(
-              subkey,
-              in_dim=dims_two_in[i],
-              out_dim=dims_two_out[i],
-              include_bias=True))
-
-  return single, double
-
-
-def init_orbital_shaping(
-    key: chex.PRNGKey,
-    input_dim: int,
-    nspin_orbitals: Sequence[int],
-    bias_orbitals: bool,
-) -> Sequence[Param]:
-  """Initialises orbital shaping layer.
-
-  Args:
-    key: JAX RNG state.
-    input_dim: dimension of input activations to the orbital shaping layer.
-    nspin_orbitals: total number of orbitals in each spin-channel.
-    bias_orbitals: whether to include a bias in the layer.
-
-  Returns:
-    Parameters of length len(nspin_orbitals) for the orbital shaping for each
-    spin channel.
-  """
-  orbitals = []
-  for nspin_orbital in nspin_orbitals:
-    key, subkey = jax.random.split(key)
-    orbitals.append(
-        network_blocks.init_linear_layer(
-            subkey,
-            in_dim=input_dim,
-            out_dim=nspin_orbital,
-            include_bias=bias_orbitals))
-  return orbitals
-
-
 ## Network layers ##
 
 
@@ -411,6 +354,9 @@ def make_ferminet_features(
   return FeatureLayer(init=init, apply=apply)
 
 
+## Network layers: permutation-equivariance ##
+
+
 def construct_symmetric_features(h_one: jnp.ndarray, h_two: jnp.ndarray,
                                  nspins: Tuple[int, int]) -> jnp.ndarray:
   """Combines intermediate features from rank-one and -two streams.
@@ -444,31 +390,23 @@ def construct_symmetric_features(h_one: jnp.ndarray, h_two: jnp.ndarray,
   return jnp.concatenate([h_one] + g_one + g_two, axis=1)
 
 
-def make_orbitals(
-    nspins: Tuple[int, ...], charges: jnp.ndarray, options: FermiNetOptions
-) -> ...:
-  """Returns init, apply pair for orbitals.
+def make_fermi_net_layers(
+    nspins: Tuple[int, ...], natoms: int,
+    options: FermiNetOptions) -> Tuple[InitLayersFn, ApplyLayersFn]:
+  """Creates the permutation-equivariant and interaction layers for FermiNet.
 
   Args:
     nspins: Tuple with number of spin up and spin down electrons.
-    charges: (atom) array of atomic nuclear charges.
-    options: Network configuration.
+    natoms: number of atoms.
+    options: network options.
+
+  Returns:
+    Tuple of init, apply functions.
   """
+  del natoms  # Unused.
 
-  def init(key: chex.PRNGKey) -> ParamTree:
-    """Returns initial random parameters for creating orbitals.
-
-    Args:
-      key: RNG state.
-    """
-    if options.envelope.apply_type == envelopes.EnvelopeType.PRE_ORBITAL:
-      if options.bias_orbitals:
-        raise ValueError('Cannot bias orbitals w/STO envelope.')
-
-    active_spin_channels = [spin for spin in nspins if spin > 0]
-    nchannels = len(active_spin_channels)
-    if nchannels == 0:
-      raise ValueError('No electrons present!')
+  def init(key: chex.PRNGKey) -> Tuple[int, ParamTree]:
+    """Returns tuple of output dimension from the final layer and parameters."""
 
     params = {}
     (num_one_features, num_two_features), params['input'] = (
@@ -481,40 +419,168 @@ def make_orbitals(
     # for each spin channel from each layer; iii) the mean for each spin channel
     # from each two-electron layer. We don't create features for spin channels
     # which contain no electrons (i.e. spin-polarised systems).
+    nchannels = len([nspin for nspin in nspins if nspin > 0])
+
     nfeatures = lambda out1, out2: (nchannels + 1) * out1 + nchannels * out2
 
-    natom = charges.shape[0]
     # one-electron stream, per electron:
     #  - one-electron features per atom (default: electron-atom vectors
     #    (ndim/atom) and distances (1/atom)),
     # two-electron stream, per pair of electrons:
     #  - two-electron features per electron pair (default: electron-electron
     #    vector (dim) and distance (1))
-    feature_one_dims = num_one_features
-    feature_two_dims = num_two_features
-    dims_one_in = [nfeatures(feature_one_dims, feature_two_dims)] + [
-        nfeatures(hdim[0], hdim[1]) for hdim in options.hidden_dims[:-1]
-    ]
-    dims_one_out = [hdim[0] for hdim in options.hidden_dims]
-    if options.use_last_layer:
-      dims_two_in = [feature_two_dims] + [
-          hdim[1] for hdim in options.hidden_dims[:-1]
-      ]
-      dims_two_out = [hdim[1] for hdim in options.hidden_dims]
-    else:
-      dims_two_in = [feature_two_dims] + [
-          hdim[1] for hdim in options.hidden_dims[:-2]
-      ]
-      dims_two_out = [hdim[1] for hdim in options.hidden_dims[:-1]]
+    dims_one_in = num_one_features
+    dims_two_in = num_two_features
 
-    if not options.use_last_layer:
-      # Just pass the activations from the final layer of the one-electron
-      # stream directly to orbital shaping.
-      dims_orbital_in = options.hidden_dims[-1][0]
-    else:
-      dims_orbital_in = nfeatures(
-          options.hidden_dims[-1][0], options.hidden_dims[-1][1]
+    layers = []
+    for i in range(len(options.hidden_dims)):
+      layer_params = {}
+      key, single_key, double_key = jax.random.split(key, num=3)
+
+      dims_one_in = nfeatures(dims_one_in, dims_two_in)
+      dims_one_out, dims_two_out = options.hidden_dims[i]
+
+      # Layer initialisation
+      dims_one_out, dims_two_out = options.hidden_dims[i]
+      layer_params['single'] = network_blocks.init_linear_layer(
+          single_key,
+          in_dim=dims_one_in,
+          out_dim=dims_one_out,
+          include_bias=True,
       )
+
+      if i < len(options.hidden_dims) - 1 or options.use_last_layer:
+        layer_params['double'] = network_blocks.init_linear_layer(
+            double_key,
+            in_dim=dims_two_in,
+            out_dim=dims_two_out,
+            include_bias=True,
+        )
+
+      layers.append(layer_params)
+      dims_one_in = dims_one_out
+      dims_two_in = dims_two_out
+
+    if options.use_last_layer:
+      output_dims = nfeatures(dims_one_in, dims_two_in)
+    else:
+      output_dims = dims_one_in
+
+    params['streams'] = layers
+
+    return output_dims, params
+
+  def apply_layer(
+      params: MutableMapping[str, ParamTree],
+      r_ee: jnp.ndarray,
+      h_one: jnp.ndarray,
+      h_two: jnp.ndarray,
+  ) -> Tuple[jnp.ndarray, jnp.ndarray]:
+    del r_ee  # Unused.
+
+    residual = lambda x, y: (x + y) / jnp.sqrt(2.0) if x.shape == y.shape else y
+
+    # Permutation-equivariant block.
+    h_one_in = construct_symmetric_features(h_one, h_two[0], nspins)
+
+    # Execute next layer.
+    h_one_next = jnp.tanh(
+        network_blocks.linear_layer(h_one_in, **params['single'])
+    )
+    h_one = residual(h_one, h_one_next)
+    # Only perform the auxiliary streams if parameters are present (ie not the
+    # final layer of the network if use_last_layer is False).
+    if 'double' in params:
+      params_double = [params['double']]
+      h_two_next = [
+          jnp.tanh(network_blocks.linear_layer(prev, **param))
+          for prev, param in zip(h_two, params_double)
+      ]
+      h_two = tuple(residual(prev, new) for prev, new in zip(h_two, h_two_next))
+
+    return h_one, h_two
+
+  def apply(
+      params,
+      *,
+      ae: jnp.ndarray,
+      r_ae: jnp.ndarray,
+      ee: jnp.ndarray,
+      r_ee: jnp.ndarray,
+      charges: jnp.ndarray,
+  ) -> jnp.ndarray:
+    """Applies the FermiNet interaction layers to a walker configuration.
+
+    Args:
+      params: parameters for the interaction and permuation-equivariant layers.
+      ae: electron-nuclear vectors.
+      r_ae: electron-nuclear distances.
+      ee: electron-electron vectors.
+      r_ee: electron-electron distances.
+      charges: nuclear charges.
+
+    Returns:
+      Array of shape (nelectron, output_dim), where the output dimension,
+      output_dim, is given by init, and is suitable for projection into orbital
+      space.
+    """
+    del charges  # Unused.
+
+    ae_features, ee_features = options.feature_layer.apply(
+        ae=ae, r_ae=r_ae, ee=ee, r_ee=r_ee, **params['input']
+    )
+
+    h_one = ae_features  # single-electron features
+    h_two = [ee_features]  # two-electron features
+
+    for i in range(len(options.hidden_dims)):
+      h_one, h_two = apply_layer(params['streams'][i], r_ee, h_one, h_two)
+
+    if options.use_last_layer:
+      h_to_orbitals = construct_symmetric_features(h_one, h_two[0], nspins)
+    else:
+      h_to_orbitals = h_one
+
+    return h_to_orbitals
+
+  return init, apply
+
+
+## Network layers: orbitals ##
+
+
+def make_orbitals(
+    nspins: Tuple[int, ...],
+    charges: jnp.ndarray,
+    options: FermiNetOptions,
+    equivariant_layers: Tuple[InitLayersFn, ApplyLayersFn],
+) -> ...:
+  """Returns init, apply pair for orbitals.
+
+  Args:
+    nspins: Tuple with number of spin up and spin down electrons.
+    charges: (atom) array of atomic nuclear charges.
+    options: Network configuration.
+    equivariant_layers: Tuple of init, apply functions for the equivariant
+      interaction part of the network.
+  """
+
+  equivariant_layers_init, equivariant_layers_apply = equivariant_layers
+
+  def init(key: chex.PRNGKey) -> ParamTree:
+    """Returns initial random parameters for creating orbitals.
+
+    Args:
+      key: RNG state.
+    """
+    key, subkey = jax.random.split(key)
+    params = {}
+    dims_orbital_in, params['layers'] = equivariant_layers_init(subkey)
+
+    active_spin_channels = [spin for spin in nspins if spin > 0]
+    nchannels = len(active_spin_channels)
+    if nchannels == 0:
+      raise ValueError('No electrons present!')
 
     # How many spin-orbitals do we need to create per spin channel?
     nspin_orbitals = []
@@ -528,17 +594,8 @@ def make_orbitals(
         norbitals = nspin * options.determinants
       nspin_orbitals.append(norbitals)
 
-    # Layer initialisation
-    key, subkey = jax.random.split(key, num=2)
-    params['single'], params['double'] = init_layers(
-        key=subkey,
-        dims_one_in=dims_one_in,
-        dims_one_out=dims_one_out,
-        dims_two_in=dims_two_in,
-        dims_two_out=dims_two_out,
-    )
-
     # create envelope params
+    natom = charges.shape[0]
     if options.envelope.apply_type == envelopes.EnvelopeType.PRE_ORBITAL:
       # Applied to output from final layer of 1e stream.
       output_dims = dims_orbital_in
@@ -552,13 +609,18 @@ def make_orbitals(
     )
 
     # orbital shaping
-    key, subkey = jax.random.split(key, num=2)
-    params['orbital'] = init_orbital_shaping(
-        key=subkey,
-        input_dim=dims_orbital_in,
-        nspin_orbitals=nspin_orbitals,
-        bias_orbitals=options.bias_orbitals,
-    )
+    orbitals = []
+    for nspin_orbital in nspin_orbitals:
+      key, subkey = jax.random.split(key)
+      orbitals.append(
+          network_blocks.init_linear_layer(
+              subkey,
+              in_dim=dims_orbital_in,
+              out_dim=nspin_orbital,
+              include_bias=options.bias_orbitals,
+          )
+      )
+    params['orbital'] = orbitals
 
     return params
 
@@ -583,39 +645,13 @@ def make_orbitals(
       columns under the exchange of inputs of shape (ndet, nalpha+nbeta,
       nalpha+nbeta) (or (ndet, nalpha, nalpha) and (ndet, nbeta, nbeta)).
     """
-    del spins, charges
+    del spins
 
     ae, ee, r_ae, r_ee = construct_input_features(pos, atoms, ndim=options.ndim)
-    ae_features, ee_features = options.feature_layer.apply(
-        ae=ae, r_ae=r_ae, ee=ee, r_ee=r_ee, **params['input']
+    h_to_orbitals = equivariant_layers_apply(
+        params['layers'], ae=ae, r_ae=r_ae, ee=ee, r_ee=r_ee, charges=charges
     )
 
-    h_one = ae_features  # single-electron features
-    h_two = ee_features  # two-electron features
-    residual = lambda x, y: (x + y) / jnp.sqrt(2.0) if x.shape == y.shape else y
-    for i in range(len(params['double'])):
-      h_one_in = construct_symmetric_features(h_one, h_two, nspins)
-
-      # Execute next layer
-      h_one_next = jnp.tanh(
-          network_blocks.linear_layer(h_one_in, **params['single'][i])
-      )
-      h_two_next = jnp.tanh(
-          network_blocks.vmap_linear_layer(
-              h_two, params['double'][i]['w'], params['double'][i]['b']
-          )
-      )
-      h_one = residual(h_one, h_one_next)
-      h_two = residual(h_two, h_two_next)
-    if len(params['double']) != len(params['single']):
-      h_one_in = construct_symmetric_features(h_one, h_two, nspins)
-      h_one_next = jnp.tanh(
-          network_blocks.linear_layer(h_one_in, **params['single'][-1])
-      )
-      h_one = residual(h_one, h_one_next)
-      h_to_orbitals = h_one
-    else:
-      h_to_orbitals = construct_symmetric_features(h_one, h_two, nspins)
     if options.envelope.apply_type == envelopes.EnvelopeType.PRE_ORBITAL:
       envelope_factor = options.envelope.apply(
           ae=ae, r_ae=r_ae, r_ee=r_ee, **params['envelope']
@@ -728,8 +764,17 @@ def make_fermi_net(
       feature_layer=feature_layer,
   )
 
+  if options.envelope.apply_type == envelopes.EnvelopeType.PRE_ORBITAL:
+    if options.bias_orbitals:
+      raise ValueError('Cannot bias orbitals w/STO envelope.')
+
+  equivariant_layers = make_fermi_net_layers(nspins, charges.shape[0], options)
+
   orbitals_init, orbitals_apply = make_orbitals(
-      nspins=nspins, charges=charges, options=options
+      nspins=nspins,
+      charges=charges,
+      options=options,
+      equivariant_layers=equivariant_layers,
   )
 
   def init(key: chex.PRNGKey) -> ParamTree:

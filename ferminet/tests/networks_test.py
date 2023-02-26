@@ -210,30 +210,35 @@ class NetworksTest(parameterized.TestCase):
     network_options['envelope'] = envelopes.get_envelope(
         network_options['envelope_label'], **kwargs)
     del network_options['envelope_label']
-    network = networks.make_fermi_net(
-        nspins, charges, feature_layer=feature_layer, **network_options
-    )
 
-    key, *subkeys = jax.random.split(key, num=3)
-    if vmap:
-      batch = 10
-      xs = jax.random.uniform(subkeys[0], shape=(batch, sum(nspins), 3))
-      spins = jax.random.uniform(subkeys[1], shape=(batch, sum(nspins)))
-      fermi_net = jax.vmap(network.apply, in_axes=(None, 0, 0, None, None))
-      expected_shape = (batch,)
-    else:
-      xs = jax.random.uniform(subkeys[0], shape=(sum(nspins), 3))
-      spins = jax.random.uniform(subkeys[1], shape=(sum(nspins),))
-      fermi_net = network.apply
-      expected_shape = ()
-
-    key, subkey = jax.random.split(key)
     envelope = network_options['envelope']
-    if (envelope.apply_type == envelopes.EnvelopeType.PRE_ORBITAL and
-        network_options['bias_orbitals']):
+    if (
+        envelope.apply_type == envelopes.EnvelopeType.PRE_ORBITAL
+        and network_options['bias_orbitals']
+    ):
       with self.assertRaises(ValueError):
-        network.init(subkey)
+        networks.make_fermi_net(
+            nspins, charges, feature_layer=feature_layer, **network_options
+        )
     else:
+      network = networks.make_fermi_net(
+          nspins, charges, feature_layer=feature_layer, **network_options
+      )
+
+      key, *subkeys = jax.random.split(key, num=3)
+      if vmap:
+        batch = 10
+        xs = jax.random.uniform(subkeys[0], shape=(batch, sum(nspins), 3))
+        spins = jax.random.uniform(subkeys[1], shape=(batch, sum(nspins)))
+        fermi_net = jax.vmap(network.apply, in_axes=(None, 0, 0, None, None))
+        expected_shape = (batch,)
+      else:
+        xs = jax.random.uniform(subkeys[0], shape=(sum(nspins), 3))
+        spins = jax.random.uniform(subkeys[1], shape=(sum(nspins),))
+        fermi_net = network.apply
+        expected_shape = ()
+
+      key, subkey = jax.random.split(key)
       params = network.init(subkey)
       sign_psi, log_psi = fermi_net(params, xs, spins, atoms, charges)
       self.assertSequenceEqual(sign_psi.shape, expected_shape)
