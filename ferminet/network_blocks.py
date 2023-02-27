@@ -37,6 +37,30 @@ def array_partitions(sizes: Sequence[int]) -> Sequence[int]:
   return list(itertools.accumulate(sizes))[:-1]
 
 
+def split_into_blocks(block_arr: jnp.ndarray,
+                      block_dims: Tuple[int, ...]) -> Sequence[jnp.ndarray]:
+  """Split a square array into blocks along the leading two axes.
+
+  Consider the (N,N) array
+  A B
+  C D
+  where A=(N1,N1), B=(N1,N2), C=(N2,N1), D=(N2,N2), and N=N1+N2. Split the array
+  into the given blocks.
+
+  Args:
+    block_arr: block array to split.
+    block_dims: the size of each block along each axis (i.e. N1, N2, ...).
+
+  Returns:
+    blocks of the array split along the two leading axes into chunks with
+    dimensions given by block_dims.
+  """
+  partitions = array_partitions(block_dims)
+  block1 = jnp.split(block_arr, partitions, axis=0)
+  block12 = [jnp.split(arr, partitions, axis=1) for arr in block1]
+  return tuple(itertools.chain.from_iterable(block12))
+
+
 def init_linear_layer(
     key: chex.PRNGKey, in_dim: int, out_dim: int, include_bias: bool = True
 ) -> MutableMapping[str, jnp.ndarray]:
