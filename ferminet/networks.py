@@ -511,7 +511,7 @@ def make_fermi_net_layers(
       ]
       h_two = tuple(residual(prev, new) for prev, new in zip(h_two, h_two_next))
 
-    return h_one, h_two
+    return h_one, h_two  # pytype: disable=bad-return-type  # jax-ndarray
 
   def apply(
       params,
@@ -547,7 +547,7 @@ def make_fermi_net_layers(
     h_two = [ee_features]  # two-electron features
 
     for i in range(len(options.hidden_dims)):
-      h_one, h_two = apply_layer(params['streams'][i], r_ee, h_one, h_two)
+      h_one, h_two = apply_layer(params['streams'][i], r_ee, h_one, h_two)  # pytype: disable=wrong-arg-types  # jax-ndarray
 
     if options.use_last_layer:
       h_to_orbitals = construct_symmetric_features(h_one, h_two[0], nspins)
