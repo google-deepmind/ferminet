@@ -186,6 +186,11 @@ def default() -> ml_collections.ConfigDict:
           'use_last_layer': False,
           # If true, determinants are dense rather than block-sparse
           'full_det': True,
+          # If specified, include a pre-determinant Jastrow factor.
+          # One of 'default' (use network_type default), 'none', or 'simple_ee'.
+          'jastrow': 'default',
+          # If true, rescale the inputs so they grow as log(|r|)
+          'rescale_inputs': False,
           # String set to module.make_feature_layer, where make_feature_layer is
           # callable (type: MakeFeatureLayer) which creates an object with
           # member functions init() and apply() that initialize parameters

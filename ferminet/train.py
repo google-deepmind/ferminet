@@ -401,6 +401,7 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
         charges.shape[0],
         cfg.system.electrons,
         cfg.system.ndim,
+        cfg.network.get('rescale_inputs', False),
     )
 
   if cfg.network.make_envelope_fn:
@@ -421,6 +422,7 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
       bias_orbitals=cfg.network.bias_orbitals,
       use_last_layer=cfg.network.use_last_layer,
       full_det=cfg.network.full_det,
+      rescale_inputs=cfg.network.get('rescale_inputs', False),
       ndim=cfg.system.ndim,
       **cfg.network.detnet,
   )
