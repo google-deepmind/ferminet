@@ -30,6 +30,7 @@ from ferminet import loss as qmc_loss_functions
 from ferminet import mcmc
 from ferminet import networks
 from ferminet import pretrain
+from ferminet import psiformer
 from ferminet.utils import statistics
 from ferminet.utils import system
 from ferminet.utils import writers
@@ -413,19 +414,33 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
   else:
     envelope = envelopes.make_isotropic_envelope()
 
-  network = networks.make_fermi_net(
-      nspins,
-      charges,
-      envelope=envelope,
-      feature_layer=feature_layer,
-      jastrow=cfg.network.get('jastrow', 'default'),
-      bias_orbitals=cfg.network.bias_orbitals,
-      use_last_layer=cfg.network.use_last_layer,
-      full_det=cfg.network.full_det,
-      rescale_inputs=cfg.network.get('rescale_inputs', False),
-      ndim=cfg.system.ndim,
-      **cfg.network.detnet,
-  )
+  if cfg.network.network_type == 'ferminet':
+    network = networks.make_fermi_net(
+        nspins,
+        charges,
+        ndim=cfg.system.ndim,
+        determinants=cfg.network.determinants,
+        envelope=envelope,
+        feature_layer=feature_layer,
+        jastrow=cfg.network.get('jastrow', 'default'),
+        bias_orbitals=cfg.network.bias_orbitals,
+        full_det=cfg.network.full_det,
+        rescale_inputs=cfg.network.get('rescale_inputs', False),
+        **cfg.network.ferminet,
+    )
+  elif cfg.network.network_type == 'psiformer':
+    network = psiformer.make_fermi_net(
+        nspins,
+        charges,
+        ndim=cfg.system.ndim,
+        determinants=cfg.network.determinants,
+        envelope=envelope,
+        feature_layer=feature_layer,
+        jastrow=cfg.network.get('jastrow', 'default'),
+        bias_orbitals=cfg.network.bias_orbitals,
+        rescale_inputs=cfg.network.get('rescale_inputs', False),
+        **cfg.network.psiformer,
+    )
   key, subkey = jax.random.split(key)
   params = network.init(subkey)
   params = kfac_jax.utils.replicate_all_local_devices(params)

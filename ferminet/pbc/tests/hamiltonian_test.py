@@ -52,9 +52,8 @@ class PbcHamiltonianTest(parameterized.TestCase):
         envelope=envelopes.make_multiwave_envelope(kpoints),
         feature_layer=feature_layer,
         bias_orbitals=cfg.network.bias_orbitals,
-        use_last_layer=cfg.network.use_last_layer,
         full_det=cfg.network.full_det,
-        **cfg.network.detnet
+        **cfg.network.ferminet,
     )
 
     key, subkey = jax.random.split(key)

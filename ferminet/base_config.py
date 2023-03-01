@@ -176,14 +176,26 @@ def default() -> ml_collections.ConfigDict:
           'blocks': 1,  # Number of blocks to split the MCMC sampling into
       },
       'network': {
-          'detnet': {
+          'network_type': 'ferminet',  # One of 'ferminet' or 'psiformer'.
+          # Config specific to original FermiNet architecture.
+          # Only used if network_type is 'ferminet'.
+          'ferminet': {
               'hidden_dims': ((256, 32), (256, 32), (256, 32), (256, 32)),
-              'determinants': 16,
+              # Whether to use the last layer of the two-electron stream of the
+              # FermiNet.
+              'use_last_layer': False,
           },
+          # Only used if network_type is 'psiformer'.
+          'psiformer': {
+              'num_layers': 2,
+              'num_heads': 4,
+              'heads_dim': 64,
+              'mlp_hidden_dims': (256,),
+              'use_layer_norm': False,
+          },
+          # Config common to all architectures.
+          'determinants': 16,  # Number of determinants.
           'bias_orbitals': False,  # include bias in last layer to orbitals
-          # Whether to use the last layer of the two-electron stream of the
-          # DetNet
-          'use_last_layer': False,
           # If true, determinants are dense rather than block-sparse
           'full_det': True,
           # If specified, include a pre-determinant Jastrow factor.

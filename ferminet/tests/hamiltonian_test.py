@@ -188,8 +188,8 @@ class LaplacianTest(parameterized.TestCase):
     batch = 4
     cfg = base_config.default()
     cfg.network.full_det = full_det
-    cfg.network.detnet.hidden_dims = ((8, 4),)*2
-    cfg.network.detnet.determinants = 2
+    cfg.network.ferminet.hidden_dims = ((8, 4),) * 2
+    cfg.network.determinants = 2
     feature_layer = networks.make_ferminet_features(
         natoms,
         cfg.system.electrons,
@@ -200,7 +200,7 @@ class LaplacianTest(parameterized.TestCase):
         charges,
         full_det=full_det,
         feature_layer=feature_layer,
-        **cfg.network.detnet
+        **cfg.network.ferminet
     )
     log_network = lambda *args, **kwargs: network.apply(*args, **kwargs)[1]
     key = jax.random.PRNGKey(47)

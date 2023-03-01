@@ -169,6 +169,7 @@ class ApplyLayersFn(Protocol):
       r_ae: jnp.ndarray,
       ee: jnp.ndarray,
       r_ee: jnp.ndarray,
+      spins: jnp.ndarray,
       charges: jnp.ndarray,
   ) -> jnp.ndarray:
     """Forward evaluation of the equivariant interaction layers.
@@ -179,6 +180,7 @@ class ApplyLayersFn(Protocol):
       r_ae: electron-nuclear distances.
       ee: electron-electron vectors.
       r_ee: electron-electron distances.
+      spins: spin of each electron.
       charges: nuclear charges.
 
     Returns:
@@ -533,6 +535,7 @@ def make_fermi_net_layers(
       r_ae: jnp.ndarray,
       ee: jnp.ndarray,
       r_ee: jnp.ndarray,
+      spins: jnp.ndarray,
       charges: jnp.ndarray,
   ) -> jnp.ndarray:
     """Applies the FermiNet interaction layers to a walker configuration.
@@ -543,6 +546,7 @@ def make_fermi_net_layers(
       r_ae: electron-nuclear distances.
       ee: electron-electron vectors.
       r_ee: electron-electron distances.
+      spins: spin of each electron.
       charges: nuclear charges.
 
     Returns:
@@ -550,7 +554,7 @@ def make_fermi_net_layers(
       output_dim, is given by init, and is suitable for projection into orbital
       space.
     """
-    del charges  # Unused.
+    del spins, charges  # Unused.
 
     ae_features, ee_features = options.feature_layer.apply(
         ae=ae, r_ae=r_ae, ee=ee, r_ee=r_ee, **params['input']
@@ -578,7 +582,7 @@ def make_fermi_net_layers(
 def make_orbitals(
     nspins: Tuple[int, ...],
     charges: jnp.ndarray,
-    options: FermiNetOptions,
+    options: BaseNetworkOptions,
     equivariant_layers: Tuple[InitLayersFn, ApplyLayersFn],
 ) -> ...:
   """Returns init, apply pair for orbitals.
@@ -678,11 +682,15 @@ def make_orbitals(
       columns under the exchange of inputs of shape (ndet, nalpha+nbeta,
       nalpha+nbeta) (or (ndet, nalpha, nalpha) and (ndet, nbeta, nbeta)).
     """
-    del spins
-
     ae, ee, r_ae, r_ee = construct_input_features(pos, atoms, ndim=options.ndim)
     h_to_orbitals = equivariant_layers_apply(
-        params['layers'], ae=ae, r_ae=r_ae, ee=ee, r_ee=r_ee, charges=charges
+        params['layers'],
+        ae=ae,
+        r_ae=r_ae,
+        ee=ee,
+        r_ee=r_ee,
+        spins=spins,
+        charges=charges,
     )
 
     if options.envelope.apply_type == envelopes.EnvelopeType.PRE_ORBITAL:

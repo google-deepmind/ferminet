@@ -75,8 +75,8 @@ class QmcTest(parameterized.TestCase):
     else:
       cfg = diatomic.get_config()
       cfg.system.molecule_name = system
-    cfg.network.detnet.hidden_dims = ((16, 4),) * 2
-    cfg.network.detnet.determinants = 2
+    cfg.network.ferminet.hidden_dims = ((16, 4),) * 2
+    cfg.network.determinants = 2
     cfg.batch_size = 32
     cfg.pretrain.iterations = 10
     cfg.mcmc.burn_in = 10
@@ -118,8 +118,8 @@ class QmcPyscfMolTest(parameterized.TestCase):
     cfg = base_config.default()
     cfg.system.pyscf_mol = mol
 
-    cfg.network.detnet.hidden_dims = ((16, 4),) * 2
-    cfg.network.detnet.determinants = 2
+    cfg.network.ferminet.hidden_dims = ((16, 4),) * 2
+    cfg.network.determinants = 2
     cfg.batch_size = 32
     cfg.pretrain.iterations = 10
     cfg.mcmc.burn_in = 10
