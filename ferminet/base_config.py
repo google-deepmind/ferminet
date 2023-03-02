@@ -184,6 +184,31 @@ def default() -> ml_collections.ConfigDict:
               # Whether to use the last layer of the two-electron stream of the
               # FermiNet.
               'use_last_layer': False,
+              # Use separate learnable parameters for pairs of spin-parallel and
+              # spin-antiparallel electrons.
+              'separate_spin_channels': False,
+              # Dimensions of embeddings for SchNet-style convolution layers
+              # (e-e) SchNet-style convolution layers (e-e only) proposed by
+              # Gerard et al.  Note: unlike Gerard, we do not currently use
+              # separate weights for same-spin and opposite spin interactions
+              # unless separate_spin_channels is enabled.  Must be either empty
+              # (don't use), or a tuple of embedding dimensions of length N
+              # (use_last_layer=False) or N+1 (use_last_layer=True), where N is
+              # the number of layers specified in hidden_dims.
+              'schnet_electron_electron_convolutions': (),
+              # Dimension of each layer of the electron-nuclear auxiliary
+              # stream.  Must be same length as hidden_dims-1
+              # (use_last_layer=False) or hidden_dims (use_last_layer=True).  If
+              # falsy, not used.
+              'electron_nuclear_aux_dims': (),
+              # Dimensions of the embedding of the nuclear features used in
+              # SchNet-style convolutions.  If falsy, not used.
+              'nuclear_embedding_dim': 0,
+              # Dimensions of embeddings for SchNet-style convolution layers
+              # (e-n) proposed by Gerard et al.  Requires
+              # electron_nuclear_aux_dims and nuclear_embedding_dim to also be
+              # set. Length as for schnet_electron_electron_convolutions.
+              'schnet_electron_nuclear_convolutions': (),
           },
           # Only used if network_type is 'psiformer'.
           'psiformer': {

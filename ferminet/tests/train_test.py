@@ -133,6 +133,35 @@ class QmcPyscfMolTest(parameterized.TestCase):
     # ensure they actually run without a top-level error.
     train.train(cfg)
 
+  @parameterized.parameters(
+      (False, (16, 16), (), 0, ()),
+      (True, (16, 16), (), 0, ()),
+      (False, (), (16, 16), 16, (16, 16)),
+      (False, (16, 16), (16, 16), 16, (16, 16)),
+      (True, (16, 16), (16, 16), 16, (16, 16)),
+  )
+  def test_schnet_training_step(
+      self, split_spins, ee_dims, en_aux_dims, n_aux_dims, en_dims
+  ):
+    cfg = atom.get_config()
+    cfg.system.atom = 'He'
+    cfg.update_from_flattened_dict({
+        'batch_size': 32,
+        'pretrain.iterations': 10,
+        'mcmc.burn_in': 10,
+        'optim.iterations': 2,
+        'network.determinants': 1,
+        'network.ferminet.hidden_dims': ((16, 4), (16, 4)),
+        'network.ferminet.separate_spin_channels': split_spins,
+        'network.ferminet.schnet_electron_electron_convolutions': ee_dims,
+        'network.ferminet.electron_nuclear_aux_dims': en_aux_dims,
+        'network.ferminet.nuclear_embedding_dim': n_aux_dims,
+        'network.ferminet.schnet_electron_nuclear_convolutions': en_dims,
+        'log.save_path': self.create_tempdir().full_path,
+    })
+    cfg = base_config.resolve(cfg)
+    train.train(cfg)
+
 
 if __name__ == '__main__':
   absltest.main()

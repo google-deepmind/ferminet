@@ -170,7 +170,8 @@ class NetworksTest(parameterized.TestCase):
           d_r_ee_zeros, np.zeros_like(d_r_ee_zeros), atol=1E-5, rtol=1E-5)
       self.assertTrue(np.all(np.abs(d_r_ee_non_zeros) > 0.0))
 
-  def test_construct_symmetric_features(self):
+  @parameterized.parameters(None, 4)
+  def test_construct_symmetric_features(self, naux_features):
     dtype = np.float32
     hidden_units_one = 8  # 128
     hidden_units_two = 4  # 32
@@ -181,8 +182,14 @@ class NetworksTest(parameterized.TestCase):
         low=-5,
         high=5,
         size=(sum(nspins), sum(nspins), hidden_units_two)).astype(dtype)
+    if naux_features:
+      h_aux = np.random.uniform(size=(sum(nspins), naux_features)).astype(dtype)
+    else:
+      h_aux = None
     h_two = h_two + np.transpose(h_two, axes=(1, 0, 2))
-    features = networks.construct_symmetric_features(h_one, h_two, nspins)
+    features = networks.construct_symmetric_features(
+        h_one, h_two, nspins, h_aux=h_aux
+    )
     # Swap electrons
     swaps = np.arange(sum(nspins))
     np.random.shuffle(swaps[:nspins[0]])
@@ -191,8 +198,10 @@ class NetworksTest(parameterized.TestCase):
     for i, j in enumerate(swaps):
       inverse_swaps[j] = i
     inverse_swaps = np.asarray(inverse_swaps)
+    h_aux_swap = h_aux if h_aux is None else h_aux[swaps]
     features_swap = networks.construct_symmetric_features(
-        h_one[swaps], h_two[swaps][:, swaps], nspins)
+        h_one[swaps], h_two[swaps][:, swaps], nspins, h_aux=h_aux_swap
+    )
     np.testing.assert_allclose(
         features, features_swap[inverse_swaps], atol=1E-5, rtol=1E-5)
 
