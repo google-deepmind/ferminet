@@ -916,7 +916,7 @@ def make_fermi_net_layers(
       h_two: Tuple[jnp.ndarray, ...],
       h_elec_ion: Optional[jnp.ndarray],
       nuclear_embedding: Optional[jnp.ndarray],
-  ) -> Tuple[jnp.ndarray, jnp.ndarray, Optional[jnp.ndarray]]:
+  ) -> Tuple[jnp.ndarray, Tuple[jnp.ndarray, ...], Optional[jnp.ndarray]]:
     if options.separate_spin_channels:
       assert len(h_two) == 2
     else:
@@ -960,7 +960,7 @@ def make_fermi_net_layers(
           h_elec_ion, **params['electron_ion']
       )
 
-    return h_one, h_two, h_elec_ion  # pytype: disable=bad-return-type  # jax-ndarray
+    return h_one, h_two, h_elec_ion
 
   def apply(
       params,
@@ -1024,7 +1024,7 @@ def make_fermi_net_layers(
       nuclear_embedding = None
 
     for i in range(len(options.hidden_dims)):
-      h_one, h_two, h_elec_ion = apply_layer(  # pytype: disable=wrong-arg-types  # jax-ndarray
+      h_one, h_two, h_elec_ion = apply_layer(
           params['streams'][i],
           h_one,
           h_two,
