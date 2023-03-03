@@ -180,6 +180,8 @@ def default() -> ml_collections.ConfigDict:
           # Config specific to original FermiNet architecture.
           # Only used if network_type is 'ferminet'.
           'ferminet': {
+              # FermiNet architecture: Pfau, Spencer, Matthews, Foulkes, Phys
+              # Rev Research 033429 (2020).
               'hidden_dims': ((256, 32), (256, 32), (256, 32), (256, 32)),
               # Whether to use the last layer of the two-electron stream of the
               # FermiNet.
@@ -187,6 +189,9 @@ def default() -> ml_collections.ConfigDict:
               # Use separate learnable parameters for pairs of spin-parallel and
               # spin-antiparallel electrons.
               'separate_spin_channels': False,
+              # SchNet-style convolutions for permutation-equivariant blocks in
+              # FermiNet proposed by Gerard, Scherbela, Marquetand, Grohs,
+              # arXiv:2205.09438 (NeurIPS 2022).
               # Dimensions of embeddings for SchNet-style convolution layers
               # (e-e) SchNet-style convolution layers (e-e only) proposed by
               # Gerard et al.  Note: unlike Gerard, we do not currently use
@@ -212,6 +217,8 @@ def default() -> ml_collections.ConfigDict:
           },
           # Only used if network_type is 'psiformer'.
           'psiformer': {
+              # PsiFormer architecture: von Glehn, Spencer, Pfau,
+              # arXiv:2211.13672 (2022), accepted to ICLR 2023.
               'num_layers': 2,
               'num_heads': 4,
               'heads_dim': 64,

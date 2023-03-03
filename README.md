@@ -228,7 +228,22 @@ implementation:
   eprint={2011.07125},
   archivePrefix={arXiv},
   primaryClass={physics.comp-ph},
-  url = {https://arxiv.org/abs/2011.07125}
+  url={https://arxiv.org/abs/2011.07125}
+}
+```
+
+The PsiFormer architecture is detailed in an ICLR 2023 paper, preprint
+reference:
+
+```
+@misc{vonglehn2022psiformer,
+  title={A Self-Attention Ansatz for Ab-initio Quantum Chemistry},
+  author={Ingrid von Glehn and James S Spencer and David Pfau},
+  year={2022},
+  eprint={2211.13672},
+  archivePrefix={arXiv},
+  primaryClass={physics.chem-ph},
+  url={https://arxiv.org/abs/2211.13672},
 }
 ```
 
