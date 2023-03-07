@@ -56,12 +56,11 @@ calculation.
 ferminet --config ferminet/configs/atom.py --config.system.atom Li --config.batch_size 256 --config.pretrain.iterations 100
 ```
 
-will train FermiNet to find the ground-state wavefunction of the Li atom with a
-bond-length of 1.63999 angstroms using a batch size of 1024 MCMC configurations
-("walkers" in variational Monte Carlo language), and 100 iterations of
-pretraining (the default of 1000 is overkill for such a small system). The
-system and hyperparameters can be controlled by modifying the config file or
-(better, for one-off changes) using flags. See the
+will train FermiNet to find the ground-state wavefunction of the Li atom using a
+batch size of 1024 MCMC configurations ("walkers" in variational Monte Carlo
+language), and 100 iterations of pretraining (the default of 1000 is overkill
+for such a small system). The system and hyperparameters can be controlled by
+modifying the config file or (better, for one-off changes) using flags. See the
 [ml_collections](https://github.com/google/ml_collections)' documentation for
 further details on the flag syntax. Details of all available config settings are
 in `ferminet/base_config.py`.
