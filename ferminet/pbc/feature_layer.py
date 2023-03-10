@@ -21,8 +21,26 @@ with Fermionic Neural Networks. arXiv preprint arXiv:2202.05183.
 
 from typing import Optional, Tuple
 
+import chex
 from ferminet import networks
 import jax.numpy as jnp
+
+
+def periodic_norm(metric: jnp.ndarray, scaled_r: jnp.ndarray) -> jnp.ndarray:
+  """Returns the periodic norm of a set of vectors.
+
+  Args:
+    metric: metric tensor in fractional coordinate system, A.T A, where A is the
+      lattice vectors.
+    scaled_r: vectors in fractional coordinates of the lattice cell, with
+      trailing dimension ndim, to compute the periodic norm of.
+  """
+  chex.assert_rank(metric, expected_ranks=2)
+  a = (1 - jnp.cos(2 * jnp.pi * scaled_r))
+  b = jnp.sin(2 * jnp.pi * scaled_r)
+  cos_term = jnp.einsum('...m,mn,...n->...', a, metric, a)
+  sin_term = jnp.einsum('...m,mn,...n->...', b, metric, b)
+  return (1 / (2 * jnp.pi)) * jnp.sqrt(cos_term + sin_term)
 
 
 def make_pbc_feature_layer(
@@ -53,14 +71,6 @@ def make_pbc_feature_layer(
   reciprocal_vecs = jnp.linalg.inv(lattice)
   lattice_metric = lattice.T @ lattice
 
-  def periodic_norm(vec, metric):
-    a = (1 - jnp.cos(2 * jnp.pi * vec))
-    b = jnp.sin(2 * jnp.pi * vec)
-    # i,j = nelectron, natom for ae
-    cos_term = jnp.einsum('ijm,mn,ijn->ij', a, metric, a)
-    sin_term = jnp.einsum('ijm,mn,ijn->ij', b, metric, b)
-    return (1 / (2 * jnp.pi)) * jnp.sqrt(cos_term + sin_term)
-
   def init() -> Tuple[Tuple[int, int], networks.Param]:
     if include_r_ae:
       return (natoms * (2 * ndim + 1), 2 * ndim + 1), {}
@@ -78,11 +88,11 @@ def make_pbc_feature_layer(
     ee = jnp.concatenate(
         (jnp.sin(2 * jnp.pi * s_ee), jnp.cos(2 * jnp.pi * s_ee)), axis=-1)
     # Distance features defined on orthonormal projections
-    r_ae = periodic_norm(s_ae, lattice_metric)
+    r_ae = periodic_norm(lattice_metric, s_ae)
     # Don't take gradients through |0|
     n = ee.shape[0]
     s_ee += jnp.eye(n)[..., None]
-    r_ee = periodic_norm(s_ee, lattice_metric) * (1.0 - jnp.eye(n))
+    r_ee = periodic_norm(lattice_metric, s_ee) * (1.0 - jnp.eye(n))
 
     if include_r_ae:
       ae_features = jnp.concatenate((r_ae[..., None], ae), axis=2)
