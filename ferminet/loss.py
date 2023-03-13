@@ -35,9 +35,9 @@ class AuxiliaryLossData:
     local_energy: local energy for each MCMC configuration.
     clipped_energy: local energy after clipping has been applied
   """
-  variance: jnp.DeviceArray
-  local_energy: jnp.DeviceArray
-  clipped_energy: jnp.DeviceArray
+  variance: jax.Array
+  local_energy: jax.Array
+  clipped_energy: jax.Array
 
 
 class LossFn(Protocol):
