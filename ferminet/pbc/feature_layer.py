@@ -47,6 +47,7 @@ def make_pbc_feature_layer(
     natoms: Optional[int] = None,
     nspins: Optional[Tuple[int, ...]] = None,
     ndim: int = 3,
+    rescale_inputs: bool = False,
     lattice: Optional[jnp.ndarray] = None,
     include_r_ae: bool = True,
 ) -> networks.FeatureLayer:
@@ -56,6 +57,8 @@ def make_pbc_feature_layer(
       natoms: number of atoms.
       nspins: tuple of the number of spin-up and spin-down electrons.
       ndim: dimension of the system.
+      rescale_inputs: If true, rescales r_ae for stability. Note that unlike in
+        the OBC case, we do not rescale r_ee as well.
       lattice: Matrix whose columns are the primitive lattice vectors of the
         system, shape (ndim, ndim).
       include_r_ae: Flag to enable electron-atom distance features. Set to False
@@ -89,6 +92,8 @@ def make_pbc_feature_layer(
         (jnp.sin(2 * jnp.pi * s_ee), jnp.cos(2 * jnp.pi * s_ee)), axis=-1)
     # Distance features defined on orthonormal projections
     r_ae = periodic_norm(lattice_metric, s_ae)
+    if rescale_inputs:
+      r_ae = jnp.log(1 + r_ae)
     # Don't take gradients through |0|
     n = ee.shape[0]
     s_ee += jnp.eye(n)[..., None]
