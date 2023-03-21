@@ -49,12 +49,14 @@ def setUpModule():
 
 
 def _config_params():
-  for system, optimizer in itertools.product(('Li', 'LiH'), ('kfac', 'adam')):
-    yield {'system': system, 'optimizer': optimizer}
+  for system, optimizer, complex_ in itertools.product(
+      ('Li', 'LiH'), ('kfac', 'adam'), (True, False)):
+    yield {'system': system, 'optimizer': optimizer, 'complex_': complex_}
   for optimizer in ('kfac', 'adam', 'lamb', 'none'):
     yield {
         'system': 'H' if optimizer in ('kfac', 'adam') else 'Li',
-        'optimizer': optimizer
+        'optimizer': optimizer,
+        'complex_': False,
     }
 
 
@@ -68,7 +70,7 @@ class QmcTest(parameterized.TestCase):
     pyscf.lib.param.TMPDIR = None
 
   @parameterized.parameters(_config_params())
-  def test_training_step(self, system, optimizer):
+  def test_training_step(self, system, optimizer, complex_):
     if system in ('H', 'Li'):
       cfg = atom.get_config()
       cfg.system.atom = system
@@ -77,6 +79,7 @@ class QmcTest(parameterized.TestCase):
       cfg.system.molecule_name = system
     cfg.network.ferminet.hidden_dims = ((16, 4),) * 2
     cfg.network.determinants = 2
+    cfg.network.complex = complex_
     cfg.batch_size = 32
     cfg.pretrain.iterations = 10
     cfg.mcmc.burn_in = 10

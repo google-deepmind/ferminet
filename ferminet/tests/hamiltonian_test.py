@@ -68,7 +68,7 @@ class HamiltonianTest(parameterized.TestCase):
     charges = 2 * np.ones(shape=(1,))
     expected_kinetic_energy = -(1 - 2 / np.abs(np.linalg.norm(xs))) / 2
 
-    kinetic = hamiltonian.local_kinetic_energy(h_atom_log_psi)
+    kinetic = hamiltonian.local_kinetic_energy(h_atom_log_psi_signed)
     kinetic_energy = kinetic(
         dummy_params,
         networks.FermiNetData(
@@ -163,7 +163,7 @@ class LaplacianTest(parameterized.TestCase):
     )
     dummy_params = {}
     t_l_fn = jax.vmap(
-        hamiltonian.local_kinetic_energy(h_atom_log_psi),
+        hamiltonian.local_kinetic_energy(h_atom_log_psi_signed),
         in_axes=(
             None,
             networks.FermiNetData(
@@ -209,7 +209,7 @@ class LaplacianTest(parameterized.TestCase):
     spins = np.sign(np.random.normal(scale=1, size=(batch, sum(nspins))))
     t_l_fn = jax.jit(
         jax.vmap(
-            hamiltonian.local_kinetic_energy(log_network),
+            hamiltonian.local_kinetic_energy(network.apply),
             in_axes=(
                 None,
                 networks.FermiNetData(

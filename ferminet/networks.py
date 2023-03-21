@@ -276,6 +276,7 @@ class BaseNetworkOptions:
     feature_layer: Feature object to create and apply the input features for the
       one- and two-electron layers.
     jastrow: Type of Jastrow factor if used, or 'none' if no Jastrow factor.
+    complex_output: If true, the network outputs complex numbers.
   """
 
   ndim: int = 3
@@ -289,6 +290,7 @@ class BaseNetworkOptions:
           takes_self=False))
   feature_layer: FeatureLayer = None
   jastrow: jastrows.JastrowType = jastrows.JastrowType.NONE
+  complex_output: bool = False
 
 
 @attr.s(auto_attribs=True, kw_only=True)
@@ -1103,6 +1105,8 @@ def make_orbitals(
         # Spin-factored block-diagonal determinant. Need nspin orbitals per
         # electron per determinant.
         norbitals = nspin * options.determinants
+      if options.complex_output:
+        norbitals *= 2  # one output is real, one is imaginary
       nspin_orbitals.append(norbitals)
 
     # create envelope params
@@ -1112,7 +1116,10 @@ def make_orbitals(
       output_dims = dims_orbital_in
     elif options.envelope.apply_type == envelopes.EnvelopeType.PRE_DETERMINANT:
       # Applied to orbitals.
-      output_dims = nspin_orbitals
+      if options.complex_output:
+        output_dims = [nspin_orbital // 2 for nspin_orbital in nspin_orbitals]
+      else:
+        output_dims = nspin_orbitals
     else:
       raise ValueError('Unknown envelope type')
     params['envelope'] = options.envelope.init(
@@ -1191,6 +1198,11 @@ def make_orbitals(
         network_blocks.linear_layer(h, **p)
         for h, p in zip(h_to_orbitals, params['orbital'])
     ]
+    if options.complex_output:
+      # create imaginary orbitals
+      orbitals = [
+          orbital[..., ::2] + 1.0j * orbital[..., 1::2] for orbital in orbitals
+      ]
 
     # Apply envelopes if required.
     if options.envelope.apply_type == envelopes.EnvelopeType.PRE_DETERMINANT:
@@ -1242,6 +1254,7 @@ def make_fermi_net(
     envelope: Optional[envelopes.Envelope] = None,
     feature_layer: Optional[FeatureLayer] = None,
     jastrow: Union[str, jastrows.JastrowType] = jastrows.JastrowType.NONE,
+    complex_output: bool = False,
     bias_orbitals: bool = False,
     full_det: bool = True,
     rescale_inputs: bool = False,
@@ -1264,6 +1277,7 @@ def make_fermi_net(
     envelope: Envelope to use to impose orbitals go to zero at infinity.
     feature_layer: Input feature construction.
     jastrow: Type of Jastrow factor if used, or no jastrow if 'default'.
+    complex_output: If true, the network outputs complex numbers.
     bias_orbitals: If true, include a bias in the final linear layer to shape
       the outputs into orbitals.
     full_det: If true, evaluate determinants over all electrons. Otherwise,
@@ -1320,6 +1334,7 @@ def make_fermi_net(
       envelope=envelope,
       feature_layer=feature_layer,
       jastrow=jastrow,
+      complex_output=complex_output,
       bias_orbitals=bias_orbitals,
       full_det=full_det,
       hidden_dims=hidden_dims,

@@ -332,6 +332,7 @@ def make_fermi_net(
     envelope: Optional[envelopes.Envelope] = None,
     feature_layer: Optional[networks.FeatureLayer] = None,
     jastrow: Union[str, jastrows.JastrowType] = jastrows.JastrowType.SIMPLE_EE,
+    complex_output: bool = False,
     bias_orbitals: bool = False,
     rescale_inputs: bool = False,
     # Psiformer-specific kwargs below.
@@ -353,6 +354,7 @@ def make_fermi_net(
     envelope: Envelope to use to impose orbitals go to zero at infinity.
     feature_layer: Input feature construction.
     jastrow: Type of Jastrow factor if used, or 'simple_ee' if 'default'.
+    complex_output: If true, the wavefunction output is complex-valued.
     bias_orbitals: If true, include a bias in the final linear layer to shape
       the outputs into orbitals.
     rescale_inputs: If true, rescale the inputs so they grow as log(|r|).
@@ -390,6 +392,7 @@ def make_fermi_net(
       envelope=envelope,
       feature_layer=feature_layer,
       jastrow=jastrow,
+      complex_output=complex_output,
       bias_orbitals=bias_orbitals,
       full_det=True,  # Required for Psiformer.
       rescale_inputs=rescale_inputs,

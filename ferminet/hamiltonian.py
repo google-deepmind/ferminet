@@ -50,6 +50,7 @@ class MakeLocalEnergy(Protocol):
       charges: jnp.ndarray,
       nspins: Sequence[int],
       use_scan: bool = False,
+      complex_output: bool = False,
       **kwargs: Any
   ) -> LocalEnergy:
     """Builds the LocalEnergy function.
@@ -61,6 +62,7 @@ class MakeLocalEnergy(Protocol):
       charges: nuclear charges.
       nspins: Number of particles of each spin.
       use_scan: Whether to use a `lax.scan` for computing the laplacian.
+      complex_output: If true, the output of f is complex-valued.
       **kwargs: additional kwargs to use for creating the specific Hamiltonian.
     """
 
@@ -70,37 +72,70 @@ KineticEnergy = Callable[
 ]
 
 
+def select_output(f: Callable[..., Sequence[Any]],
+                  argnum: int) -> Callable[..., Any]:
+  """Return the argnum-th result from callable f."""
+
+  def f_selected(*args, **kwargs):
+    return f(*args, **kwargs)[argnum]
+
+  return f_selected
+
+
 def local_kinetic_energy(
-    f: networks.LogFermiNetLike, use_scan: bool = False
+    f: networks.FermiNetLike,
+    use_scan: bool = False,
+    complex_output: bool = False,
 ) -> KineticEnergy:
   r"""Creates a function to for the local kinetic energy, -1/2 \nabla^2 ln|f|.
 
   Args:
-    f: Callable which evaluates the log of the magnitude of the wavefunction.
+    f: Callable which evaluates the wavefunction as a
+      (sign or phase, log magnitude) tuple.
     use_scan: Whether to use a `lax.scan` for computing the laplacian.
+    complex_output: If true, the output of f is complex-valued.
 
   Returns:
     Callable which evaluates the local kinetic energy,
     -1/2f \nabla^2 f = -1/2 (\nabla^2 log|f| + (\nabla log|f|)^2).
   """
 
+  phase_f = select_output(f, 0)
+  logabs_f = select_output(f, 1)
+
   def _lapl_over_f(params, data):
     n = data.positions.shape[0]
     eye = jnp.eye(n)
-    grad_f = jax.grad(f, argnums=1)
+    grad_f = jax.grad(logabs_f, argnums=1)
     def grad_f_closure(x):
       return grad_f(params, x, data.spins, data.atoms, data.charges)
 
     primal, dgrad_f = jax.linearize(grad_f_closure, data.positions)
 
+    if complex_output:
+      grad_phase = jax.grad(phase_f, argnums=1)
+      def grad_phase_closure(x):
+        return grad_phase(params, x, data.spins, data.atoms, data.charges)
+      phase_primal, dgrad_phase = jax.linearize(
+          grad_phase_closure, data.positions)
+      hessian_diagonal = (
+          lambda i: dgrad_f(eye[i])[i] + 1.j * dgrad_phase(eye[i])[i]
+      )
+    else:
+      hessian_diagonal = lambda i: dgrad_f(eye[i])[i]
+
     if use_scan:
       _, diagonal = lax.scan(
-          lambda i, _: (i + 1, dgrad_f(eye[i])[i]), 0, None, length=n)
+          lambda i, _: (i + 1, hessian_diagonal(i)), 0, None, length=n)
       result = -0.5 * jnp.sum(diagonal)
     else:
       result = -0.5 * lax.fori_loop(
-          0, n, lambda i, val: val + dgrad_f(eye[i])[i], 0.0)
-    return result - 0.5 * jnp.sum(primal ** 2)
+          0, n, lambda i, val: val + hessian_diagonal(i), 0.0)
+    result -= 0.5 * jnp.sum(primal ** 2)
+    if complex_output:
+      result += 0.5 * jnp.sum(phase_primal ** 2)
+      result -= 1.j * jnp.sum(primal * phase_primal)
+    return result
 
   return _lapl_over_f
 
@@ -165,6 +200,7 @@ def local_energy(
     charges: jnp.ndarray,
     nspins: Sequence[int],
     use_scan: bool = False,
+    complex_output: bool = False,
 ) -> LocalEnergy:
   """Creates the function to evaluate the local energy.
 
@@ -175,6 +211,7 @@ def local_energy(
     charges: Shape (natoms). Nuclear charges of the atoms.
     nspins: Number of particles of each spin.
     use_scan: Whether to use a `lax.scan` for computing the laplacian.
+    complex_output: If true, the output of f is complex-valued.
 
   Returns:
     Callable with signature e_l(params, key, data) which evaluates the local
@@ -182,8 +219,9 @@ def local_energy(
     and a single MCMC configuration in data.
   """
   del nspins
-  log_abs_f = lambda *args, **kwargs: f(*args, **kwargs)[1]
-  ke = local_kinetic_energy(log_abs_f, use_scan=use_scan)
+  ke = local_kinetic_energy(f,
+                            use_scan=use_scan,
+                            complex_output=complex_output)
 
   def _e_l(
       params: networks.ParamTree, key: chex.PRNGKey, data: networks.FermiNetData

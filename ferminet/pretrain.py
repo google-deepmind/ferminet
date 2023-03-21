@@ -139,6 +139,7 @@ def make_pretrain_step(
   def pretrain_step(data, target, params, state, key, logprob):
     """One iteration of pretraining to match HF."""
 
+    cnorm = lambda x, y: (x - y) * jnp.conj(x - y)  # complex norm
     def loss_fn(
         params: networks.ParamTree, data: networks.FermiNetData, target: ...
     ):
@@ -153,11 +154,11 @@ def make_pretrain_step(
             (jnp.concatenate((target[0], jnp.zeros((ndet, na, nb))), axis=-1),
              jnp.concatenate((jnp.zeros((ndet, nb, na)), target[1]), axis=-1)),
             axis=-2)
-        result = jnp.mean((target[:, None, ...] - orbitals[0]) ** 2)
+        result = jnp.mean(cnorm(target[:, None, ...], orbitals[0])).real
       else:
         result = jnp.array(
             [
-                jnp.mean((t[:, None, ...] - o) ** 2)
+                jnp.mean(cnorm(t[:, None, ...], o)).real
                 for t, o in zip(target, orbitals)
             ]
         ).sum()

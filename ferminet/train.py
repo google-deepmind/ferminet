@@ -426,6 +426,7 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
         bias_orbitals=cfg.network.bias_orbitals,
         full_det=cfg.network.full_det,
         rescale_inputs=cfg.network.get('rescale_inputs', False),
+        complex_output=cfg.network.get('complex', False),
         **cfg.network.ferminet,
     )
   elif cfg.network.network_type == 'psiformer':
@@ -439,6 +440,7 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
         jastrow=cfg.network.get('jastrow', 'default'),
         bias_orbitals=cfg.network.bias_orbitals,
         rescale_inputs=cfg.network.get('rescale_inputs', False),
+        complex_output=cfg.network.get('complex', False),
         **cfg.network.psiformer,
     )
   key, subkey = jax.random.split(key)
@@ -446,10 +448,20 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
   params = kfac_jax.utils.replicate_all_local_devices(params)
   signed_network = network.apply
   # Often just need log|psi(x)|.
-  log_network = lambda *args, **kwargs: signed_network(*args, **kwargs)[1]
+  logabs_network = lambda *args, **kwargs: signed_network(*args, **kwargs)[1]
   batch_network = jax.vmap(
-      log_network, in_axes=(None, 0, 0, 0, 0), out_axes=0
+      logabs_network, in_axes=(None, 0, 0, 0, 0), out_axes=0
   )  # batched network
+
+  # Exclusively when computing the gradient wrt the energy for complex
+  # wavefunctions, it is necessary to have log(psi) rather than log(|psi|).
+  # This is unused if the wavefunction is real-valued.
+  def log_network(*args, **kwargs):
+    if not cfg.network.get('complex', False):
+      raise ValueError('This function should never be used if the '
+                       'wavefunction is real-valued.')
+    phase, mag = signed_network(*args, **kwargs)
+    return mag + 1.j * phase
 
   # Set up checkpointing and restore params/data if necessary
   # Mirror behaviour of checkpoints in TF FermiNet.
@@ -554,13 +566,15 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
         atoms=atoms,
         charges=charges,
         nspins=nspins,
-        use_scan=False)
+        use_scan=False,
+        complex_output=cfg.network.get('complex', False))
   evaluate_loss = qmc_loss_functions.make_loss(
-      log_network,
+      log_network if cfg.network.get('complex', False) else logabs_network,
       local_energy,
       clip_local_energy=cfg.optim.clip_local_energy,
       clip_from_median=cfg.optim.clip_median,
       center_at_clipped_energy=cfg.optim.center_at_clip,
+      complex_output=cfg.network.get('complex', False)
   )
   # Compute the learning rate
   def learning_rate_schedule(t_: jnp.ndarray) -> jnp.ndarray:

@@ -118,7 +118,10 @@ def slogdet(x):
     sign, (natural) logarithm of the determinant of x.
   """
   if x.shape[-1] == 1:
-    sign = jnp.sign(x[..., 0, 0])
+    if x.dtype == jnp.complex64 or x.dtype == jnp.complex128:
+      sign = x[..., 0, 0] / jnp.abs(x[..., 0, 0])
+    else:
+      sign = jnp.sign(x[..., 0, 0])
     logdet = jnp.log(jnp.abs(x[..., 0, 0]))
   else:
     sign, logdet = jnp.linalg.slogdet(x)
@@ -154,17 +157,21 @@ def logdet_matmul(
                            [x.reshape(-1) for x in xs if x.shape[-1] == 1], 1)
   # Pass initial value to functools so sign_in = 1, logdet = 0 if all matrices
   # are 1x1.
-  sign_in, logdet = functools.reduce(
+  phase_in, logdet = functools.reduce(
       lambda a, b: (a[0] * b[0], a[1] + b[1]),
       [slogdet(x) for x in xs if x.shape[-1] > 1], (1, 0))
 
   # log-sum-exp trick
   maxlogdet = jnp.max(logdet)
-  det = sign_in * det1d * jnp.exp(logdet - maxlogdet)
+  det = phase_in * det1d * jnp.exp(logdet - maxlogdet)
   if w is None:
     result = jnp.sum(det)
   else:
     result = jnp.matmul(det, w)[0]
-  sign_out = jnp.sign(result)
+  # return phase as a unit-norm complex number, rather than as an angle
+  if result.dtype == jnp.complex64 or result.dtype == jnp.complex128:
+    phase_out = jnp.angle(result)  # result / jnp.abs(result)
+  else:
+    phase_out = jnp.sign(result)
   log_out = jnp.log(jnp.abs(result)) + maxlogdet
-  return sign_out, log_out
+  return phase_out, log_out

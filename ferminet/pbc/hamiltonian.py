@@ -156,6 +156,7 @@ def local_energy(
     charges: jnp.ndarray,
     nspins: Sequence[int],
     use_scan: bool = False,
+    complex_output: bool = False,
     lattice: Optional[jnp.ndarray] = None,
     heg: bool = True,
     convergence_radius: int = 5,
@@ -169,6 +170,7 @@ def local_energy(
     charges: Shape (natoms). Nuclear charges of the atoms.
     nspins: Number of particles of each spin.
     use_scan: Whether to use a `lax.scan` for computing the laplacian.
+    complex_output: If true, the output of f is complex-valued.
     lattice: Shape (ndim, ndim). Matrix of lattice vectors. Default: identity
       matrix.
     heg: bool. Flag to enable features specific to the electron gas.
@@ -183,8 +185,8 @@ def local_energy(
   if lattice is None:
     lattice = jnp.eye(3)
 
-  log_abs_f = lambda *args, **kwargs: f(*args, **kwargs)[1]
-  ke = hamiltonian.local_kinetic_energy(log_abs_f, use_scan=use_scan)
+  ke = hamiltonian.local_kinetic_energy(f, use_scan=use_scan,
+                                        complex_output=complex_output)
   potential_energy = make_ewald_potential(
       lattice, atoms, charges, convergence_radius, heg
   )

@@ -73,6 +73,7 @@ def clip_local_values(
     clip_scale: float,
     clip_from_median: bool,
     center_at_clipped_value: bool,
+    complex_output: bool = False,
 ) -> Tuple[jnp.ndarray, jnp.ndarray]:
   """Clips local operator estimates to remove outliers.
 
@@ -91,6 +92,7 @@ def clip_local_values(
     center_at_clipped_value: If true, center the local energy differences passed
       back to the gradient around the clipped quantities, so the mean difference
       across the batch is guaranteed to be zero.
+    complex_output: If true, the local energies will be complex valued.
 
   Returns:
     Tuple of the central value (estimate of the expectation value of the
@@ -101,6 +103,10 @@ def clip_local_values(
 
   batch_mean = lambda values: constants.pmean(jnp.mean(values))
 
+  def clip_at_total_variation(values, center, scale):
+    tv = batch_mean(jnp.abs(values- center))
+    return jnp.clip(values, center - scale * tv, center + scale * tv)
+
   if clip_from_median:
     # More natural place to center the clipping, but expensive due to both
     # the median and all_gather (at least on multihost)
@@ -108,9 +114,16 @@ def clip_local_values(
   else:
     clip_center = mean_local_values
   # roughly, the total variation of the local energies
-  tv = batch_mean(jnp.abs(local_values - clip_center))
-  clipped_local_values = jnp.clip(local_values, clip_center - clip_scale * tv,
-                                  clip_center + clip_scale * tv)
+  if complex_output:
+    clipped_local_values = (
+        clip_at_total_variation(
+            local_values.real, clip_center.real, clip_scale) +
+        1.j * clip_at_total_variation(
+            local_values.imag, clip_center.imag, clip_scale)
+    )
+  else:
+    clipped_local_values = clip_at_total_variation(
+        local_values, clip_center, clip_scale)
   if center_at_clipped_value:
     diff_center = batch_mean(clipped_local_values)
   else:
@@ -123,7 +136,8 @@ def make_loss(network: networks.LogFermiNetLike,
               local_energy: hamiltonian.LocalEnergy,
               clip_local_energy: float = 0.0,
               clip_from_median: bool = True,
-              center_at_clipped_energy: bool = True) -> LossFn:
+              center_at_clipped_energy: bool = True,
+              complex_output: bool = False) -> LossFn:
   """Creates the loss function, including custom gradients.
 
   Args:
@@ -142,6 +156,7 @@ def make_loss(network: networks.LogFermiNetLike,
     center_at_clipped_energy: If true, center the local energy differences
       passed back to the gradient around the clipped local energy, so the mean
       difference across the batch is guaranteed to be zero.
+    complex_output: If true, the local energies will be complex valued.
 
   Returns:
     Callable with signature (params, data) and returns (loss, aux_data), where
@@ -185,9 +200,10 @@ def make_loss(network: networks.LogFermiNetLike,
     keys = jax.random.split(key, num=data.positions.shape[0])
     e_l = batch_local_energy(params, keys, data)
     loss = constants.pmean(jnp.mean(e_l))
-    variance = constants.pmean(jnp.mean((e_l - loss)**2))
+    loss_diff = e_l - loss
+    variance = constants.pmean(jnp.mean(loss_diff * jnp.conj(loss_diff)))
     return loss, AuxiliaryLossData(
-        variance=variance, local_energy=e_l, clipped_energy=e_l)
+        variance=variance.real, local_energy=e_l, clipped_energy=e_l)
 
   @total_energy.defjvp
   def total_energy_jvp(primals, tangents):  # pylint: disable=unused-variable
@@ -201,7 +217,8 @@ def make_loss(network: networks.LogFermiNetLike,
           loss,
           clip_local_energy,
           clip_from_median,
-          center_at_clipped_energy)
+          center_at_clipped_energy,
+          complex_output)
     else:
       diff = aux_data.local_energy - loss
 
@@ -220,10 +237,21 @@ def make_loss(network: networks.LogFermiNetLike,
         data_tangents.charges,
     )
     psi_primal, psi_tangent = jax.jvp(batch_network, primals, tangents)
-    kfac_jax.register_normal_predictive_distribution(psi_primal[:, None])
-    primals_out = loss, aux_data
-    device_batch_size = jnp.shape(aux_data.local_energy)[0]
-    tangents_out = (jnp.dot(psi_tangent, diff) / device_batch_size, aux_data)
+    if complex_output:
+      clipped_el = diff + aux_data.clipped_energy
+      term1 = (jnp.dot(clipped_el, jnp.conjugate(psi_tangent)) +
+               jnp.dot(jnp.conjugate(clipped_el), psi_tangent))
+      term2 = jnp.sum(aux_data.clipped_energy*psi_tangent.real)
+      kfac_jax.register_normal_predictive_distribution(
+          psi_primal.real[:, None])
+      primals_out = loss.real, aux_data
+      device_batch_size = jnp.shape(aux_data.local_energy)[0]
+      tangents_out = ((term1 - 2*term2).real / device_batch_size, aux_data)
+    else:
+      kfac_jax.register_normal_predictive_distribution(psi_primal[:, None])
+      primals_out = loss, aux_data
+      device_batch_size = jnp.shape(aux_data.local_energy)[0]
+      tangents_out = (jnp.dot(psi_tangent, diff) / device_batch_size, aux_data)
     return primals_out, tangents_out
 
   return total_energy
