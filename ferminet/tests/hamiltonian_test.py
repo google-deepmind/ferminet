@@ -122,7 +122,7 @@ class HamiltonianTest(parameterized.TestCase):
     charges = np.ones(shape=(1,))
     dummy_params = {}
     local_energy = hamiltonian.local_energy(
-        h_atom_log_psi_signed, atoms, charges, nspins=(1, 0), use_scan=False
+        h_atom_log_psi_signed, charges, nspins=(1, 0), use_scan=False
     )
 
     xs = np.random.normal(size=(100, 3))

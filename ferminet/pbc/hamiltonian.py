@@ -152,7 +152,6 @@ def make_ewald_potential(
 
 def local_energy(
     f: networks.FermiNetLike,
-    atoms: jnp.ndarray,
     charges: jnp.ndarray,
     nspins: Sequence[int],
     use_scan: bool = False,
@@ -166,7 +165,6 @@ def local_energy(
   Args:
     f: Callable which returns the sign and log of the magnitude of the
       wavefunction given the network parameters and configurations data.
-    atoms: Shape (natoms, ndim). Positions of the atoms.
     charges: Shape (natoms). Nuclear charges of the atoms.
     nspins: Number of particles of each spin.
     use_scan: Whether to use a `lax.scan` for computing the laplacian.
@@ -187,9 +185,6 @@ def local_energy(
 
   ke = hamiltonian.local_kinetic_energy(f, use_scan=use_scan,
                                         complex_output=complex_output)
-  potential_energy = make_ewald_potential(
-      lattice, atoms, charges, convergence_radius, heg
-  )
 
   def _e_l(
       params: networks.ParamTree, key: chex.PRNGKey, data: networks.FermiNetData
@@ -202,7 +197,11 @@ def local_energy(
       data: MCMC configuration.
     """
     del key  # unused
-    ae, ee, _, _ = networks.construct_input_features(data.positions, atoms)
+    potential_energy = make_ewald_potential(
+        lattice, data.atoms, charges, convergence_radius, heg
+    )
+    ae, ee, _, _ = networks.construct_input_features(
+        data.positions, data.atoms)
     potential = potential_energy(ae, ee)
     kinetic = ke(params, data)
     return potential + kinetic

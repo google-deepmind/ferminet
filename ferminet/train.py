@@ -555,7 +555,6 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
     make_local_energy = getattr(local_energy_module, local_energy_fn)  # type: hamiltonian.MakeLocalEnergy
     local_energy = make_local_energy(
         f=signed_network,
-        atoms=atoms,
         charges=charges,
         nspins=nspins,
         use_scan=False,
@@ -563,7 +562,6 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
   else:
     local_energy = hamiltonian.local_energy(
         f=signed_network,
-        atoms=atoms,
         charges=charges,
         nspins=nspins,
         use_scan=False,

@@ -14,14 +14,18 @@
 
 """Evaluating the Hamiltonian on a wavefunction."""
 
-from typing import Any, Callable, Sequence
+from typing import Any, Callable, Sequence, Union
 
 import chex
 from ferminet import networks
 import jax
 from jax import lax
 import jax.numpy as jnp
+import numpy as np
 from typing_extensions import Protocol
+
+
+Array = Union[jnp.ndarray, np.ndarray]
 
 
 class LocalEnergy(Protocol):
@@ -140,7 +144,7 @@ def local_kinetic_energy(
   return _lapl_over_f
 
 
-def potential_electron_electron(r_ee: jnp.ndarray) -> jnp.ndarray:
+def potential_electron_electron(r_ee: Array) -> jnp.ndarray:
   """Returns the electron-electron potential.
 
   Args:
@@ -151,8 +155,7 @@ def potential_electron_electron(r_ee: jnp.ndarray) -> jnp.ndarray:
   return jnp.sum(jnp.triu(1 / r_ee[..., 0], k=1))
 
 
-def potential_electron_nuclear(charges: jnp.ndarray,
-                               r_ae: jnp.ndarray) -> jnp.ndarray:
+def potential_electron_nuclear(charges: Array, r_ae: Array) -> jnp.ndarray:
   """Returns the electron-nuclearpotential.
 
   Args:
@@ -163,8 +166,7 @@ def potential_electron_nuclear(charges: jnp.ndarray,
   return -jnp.sum(charges / r_ae[..., 0])
 
 
-def potential_nuclear_nuclear(charges: jnp.ndarray,
-                              atoms: jnp.ndarray) -> jnp.ndarray:
+def potential_nuclear_nuclear(charges: Array, atoms: Array) -> jnp.ndarray:
   """Returns the electron-nuclearpotential.
 
   Args:
@@ -176,8 +178,8 @@ def potential_nuclear_nuclear(charges: jnp.ndarray,
       jnp.triu((charges[None, ...] * charges[..., None]) / r_aa, k=1))
 
 
-def potential_energy(r_ae: jnp.ndarray, r_ee: jnp.ndarray, atoms: jnp.ndarray,
-                     charges: jnp.ndarray) -> jnp.ndarray:
+def potential_energy(r_ae: Array, r_ee: Array, atoms: Array,
+                     charges: Array) -> jnp.ndarray:
   """Returns the potential energy for this electron configuration.
 
   Args:
@@ -196,7 +198,6 @@ def potential_energy(r_ae: jnp.ndarray, r_ee: jnp.ndarray, atoms: jnp.ndarray,
 
 def local_energy(
     f: networks.FermiNetLike,
-    atoms: jnp.ndarray,
     charges: jnp.ndarray,
     nspins: Sequence[int],
     use_scan: bool = False,
@@ -207,7 +208,6 @@ def local_energy(
   Args:
     f: Callable which returns the sign and log of the magnitude of the
       wavefunction given the network parameters and configurations data.
-    atoms: Shape (natoms, ndim). Positions of the atoms.
     charges: Shape (natoms). Nuclear charges of the atoms.
     nspins: Number of particles of each spin.
     use_scan: Whether to use a `lax.scan` for computing the laplacian.
@@ -234,8 +234,9 @@ def local_energy(
       data: MCMC configuration.
     """
     del key  # unused
-    _, _, r_ae, r_ee = networks.construct_input_features(data.positions, atoms)
-    potential = potential_energy(r_ae, r_ee, atoms, charges)
+    _, _, r_ae, r_ee = networks.construct_input_features(
+        data.positions, data.atoms)
+    potential = potential_energy(r_ae, r_ee, data.atoms, charges)
     kinetic = ke(params, data)
     return potential + kinetic
 

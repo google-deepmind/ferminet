@@ -61,7 +61,6 @@ class PbcHamiltonianTest(parameterized.TestCase):
 
     local_energy = hamiltonian.local_energy(
         f=network.apply,
-        atoms=atoms,
         charges=charges,
         nspins=nspins,
         use_scan=False,
