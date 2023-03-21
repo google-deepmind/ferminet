@@ -110,7 +110,7 @@ def clip_local_values(
   if clip_from_median:
     # More natural place to center the clipping, but expensive due to both
     # the median and all_gather (at least on multihost)
-    clip_center = jnp.median(constants.all_gather(local_values))
+    clip_center = jnp.median(constants.all_gather(local_values).real)
   else:
     clip_center = mean_local_values
   # roughly, the total variation of the local energies
