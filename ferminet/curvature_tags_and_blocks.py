@@ -13,7 +13,6 @@
 # limitations under the License.
 
 """Curvature blocks for FermiNet."""
-import functools
 from typing import Any, Mapping, Optional, Sequence, Set, Tuple
 import chex
 import jax
@@ -97,8 +96,13 @@ class QmcBlockedDense(kfac_jax.TwoKroneckerFactored):
     inputs_cov = jnp.einsum("bijk,bijl->jkl", x, x) / normalizer
     dy = jnp.reshape(dy, dy.shape[:-2] + (-1,))
     outputs_cov = jnp.einsum("bijk,bijl->jkl", dy, dy) / normalizer
+
     state.inputs_factor.update(inputs_cov, ema_old, ema_new)
     state.outputs_factor.update(outputs_cov, ema_old, ema_new)
+
+    state.inputs_factor.sync(pmap_axis_name)
+    state.outputs_factor.sync(pmap_axis_name)
+
     return state
 
   def _init(
@@ -136,11 +140,9 @@ class QmcBlockedDense(kfac_jax.TwoKroneckerFactored):
       exact_powers: chex.Numeric,
       approx_powers: chex.Numeric,
       eigenvalues: bool,
-      pmap_axis_name: Optional[str],
   ) -> kfac_jax.TwoKroneckerFactored.State:
     del eigenvalues
-    state.inputs_factor.sync(pmap_axis_name)
-    state.outputs_factor.sync(pmap_axis_name)
+
     if exact_powers:
       raise NotImplementedError(
           "Caching of exact powers is not yet implemented for QmcBlockedDense.")
@@ -150,14 +152,13 @@ class QmcBlockedDense(kfac_jax.TwoKroneckerFactored):
                                   f"yet implemented.")
       cache = state.cache[str(power)]
       pi_adjusted_inverse = jax.vmap(
-          functools.partial(kfac_jax.utils.pi_adjusted_kronecker_inverse,
-                            pmap_axis_name=pmap_axis_name),
-          (0, 0, None), (0, 0)
+          kfac_jax.utils.pi_adjusted_kronecker_inverse,
+          (0, None), (0, 0)
       )
       cache["inputs_factor"], cache["outputs_factor"] = pi_adjusted_inverse(
           state.inputs_factor.value,
           state.outputs_factor.value,
-          identity_weight
+          damping=identity_weight,
       )
     return state
 
