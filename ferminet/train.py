@@ -393,7 +393,7 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
     feature_layer_module = importlib.import_module(feature_layer_module)
     make_feature_layer = getattr(feature_layer_module, feature_layer_fn)
     feature_layer = make_feature_layer(
-        charges,
+        charges.shape[0],
         cfg.system.electrons,
         cfg.system.ndim,
         **cfg.network.make_feature_layer_kwargs)  # type: networks.FeatureLayer
