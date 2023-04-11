@@ -40,7 +40,7 @@ class StatisticsTest(parameterized.TestCase):
     # Exponentially weighted algorithm is equivalent to that in pandas without
     # bias correction or adjusting for the initial iterations:
     ewm = pd.Series(data).ewm(adjust=False, alpha=alpha)
-    expected_mean = ewm.mean(bias=True)
+    expected_mean = ewm.mean()
     expected_variance = ewm.var(bias=True)
     with self.subTest('Check mean'):
       np.testing.assert_allclose([s.mean for s in stats], expected_mean)
