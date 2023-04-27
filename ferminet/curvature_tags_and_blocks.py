@@ -14,12 +14,15 @@
 
 """Curvature blocks for FermiNet."""
 from typing import Any, Mapping, Optional, Sequence, Set, Tuple
-import chex
 import jax
 import jax.numpy as jnp
 import kfac_jax
 import numpy as np
 
+
+Array = kfac_jax.utils.Array
+Scalar = kfac_jax.utils.Scalar
+Numeric = kfac_jax.utils.Numeric
 
 vmap_psd_inv_cholesky = jax.vmap(kfac_jax.utils.psd_inv_cholesky, (0, None), 0)
 vmap_matmul = jax.vmap(jnp.matmul, in_axes=(0, 0), out_axes=0)
@@ -42,16 +45,16 @@ def register_qmc(y, x, w, **kwargs):
 class RepeatedDenseBlock(kfac_jax.DenseTwoKroneckerFactored):
   """Dense block that is repeatedly applied to multiple inputs (e.g. vmap)."""
 
-  def fixed_scale(self) -> chex.Numeric:
+  def fixed_scale(self) -> Numeric:
     (x_shape,) = self.inputs_shapes
     return float(kfac_jax.utils.product(x_shape) // (x_shape[0] * x_shape[-1]))
 
   def update_curvature_matrix_estimate(
       self,
       state: kfac_jax.TwoKroneckerFactored.State,
-      estimation_data: Mapping[str, Sequence[chex.Array]],
-      ema_old: chex.Numeric,
-      ema_new: chex.Numeric,
+      estimation_data: Mapping[str, Sequence[Array]],
+      ema_old: Numeric,
+      ema_new: Numeric,
       batch_size: int,
       pmap_axis_name: Optional[str],
   ) -> kfac_jax.TwoKroneckerFactored.State:
@@ -75,15 +78,15 @@ class QmcBlockedDense(kfac_jax.TwoKroneckerFactored):
   def output_size(self) -> int:
     raise NotImplementedError()
 
-  def fixed_scale(self) -> chex.Numeric:
+  def fixed_scale(self) -> Numeric:
     return float(self.parameters_shapes[0][1])
 
   def update_curvature_matrix_estimate(
       self,
       state: kfac_jax.TwoKroneckerFactored.State,
-      estimation_data: Mapping[str, Sequence[chex.Array]],
-      ema_old: chex.Numeric,
-      ema_new: chex.Numeric,
+      estimation_data: Mapping[str, Sequence[Array]],
+      ema_old: Numeric,
+      ema_new: Numeric,
       batch_size: int,
       pmap_axis_name: Optional[str],
   ) -> kfac_jax.TwoKroneckerFactored.State:
@@ -107,9 +110,9 @@ class QmcBlockedDense(kfac_jax.TwoKroneckerFactored):
 
   def _init(
       self,
-      rng: chex.PRNGKey,
-      exact_powers_to_cache: Set[chex.Scalar],
-      approx_powers_to_cache: Set[chex.Scalar],
+      rng: kfac_jax.utils.PRNGKey,
+      exact_powers_to_cache: Set[Scalar],
+      approx_powers_to_cache: Set[Scalar],
       cache_eigenvalues: bool,
   ) -> kfac_jax.TwoKroneckerFactored.State:
     del rng, cache_eigenvalues
@@ -128,17 +131,18 @@ class QmcBlockedDense(kfac_jax.TwoKroneckerFactored):
       )
     return kfac_jax.TwoKroneckerFactored.State(
         cache=cache,
-        inputs_factor=kfac_jax.utils.WeightedMovingAverage.zero((j, k, k)),
-        outputs_factor=kfac_jax.utils.WeightedMovingAverage.zero(
+        inputs_factor=
+        kfac_jax.utils.WeightedMovingAverage.zeros_array((j, k, k)),
+        outputs_factor=kfac_jax.utils.WeightedMovingAverage.zeros_array(
             (j, m * n, m * n)),
     )
 
   def _update_cache(
       self,
       state: kfac_jax.TwoKroneckerFactored.State,
-      identity_weight: chex.Numeric,
-      exact_powers: chex.Numeric,
-      approx_powers: chex.Numeric,
+      identity_weight: kfac_jax.utils.Numeric,
+      exact_powers: set[kfac_jax.utils.Scalar],
+      approx_powers: set[kfac_jax.utils.Scalar],
       eigenvalues: bool,
   ) -> kfac_jax.TwoKroneckerFactored.State:
     del eigenvalues
@@ -165,12 +169,12 @@ class QmcBlockedDense(kfac_jax.TwoKroneckerFactored):
   def multiply_matpower(
       self,
       state: kfac_jax.TwoKroneckerFactored.State,
-      vector: Sequence[chex.Array],
-      identity_weight: chex.Numeric,
-      power: chex.Scalar,
+      vector: Sequence[Array],
+      identity_weight: Numeric,
+      power: Scalar,
       exact_power: bool,
       use_cached: bool,
-  ) -> Tuple[chex.Array, ...]:
+  ) -> Tuple[Array, ...]:
     w, = vector
     # kmjn
     v = w
@@ -202,7 +206,7 @@ class QmcBlockedDense(kfac_jax.TwoKroneckerFactored):
     return (v,)
 
 
-def _dense(x: chex.Array, params: Sequence[chex.Array]) -> chex.Array:
+def _dense(x: Array, params: Sequence[Array]) -> Array:
   """Example of a dense layer function."""
   w, *opt_b = params
   y = jnp.matmul(x, w)
