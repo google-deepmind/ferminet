@@ -391,18 +391,20 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
     feature_layer_module, feature_layer_fn = (
         cfg.network.make_feature_layer_fn.rsplit('.', maxsplit=1))
     feature_layer_module = importlib.import_module(feature_layer_module)
-    make_feature_layer = getattr(feature_layer_module, feature_layer_fn)
+    make_feature_layer: networks.MakeFeatureLayer = getattr(
+        feature_layer_module, feature_layer_fn
+    )
     feature_layer = make_feature_layer(
-        charges,
-        cfg.system.electrons,
-        cfg.system.ndim,
-        **cfg.network.make_feature_layer_kwargs)  # type: networks.FeatureLayer
+        natoms=charges.shape[0],
+        nspins=cfg.system.electrons,
+        ndim=cfg.system.ndim,
+        **cfg.network.make_feature_layer_kwargs)
   else:
     feature_layer = networks.make_ferminet_features(
-        charges.shape[0],
-        cfg.system.electrons,
-        cfg.system.ndim,
-        cfg.network.get('rescale_inputs', False),
+        natoms=charges.shape[0],
+        nspins=cfg.system.electrons,
+        ndim=cfg.system.ndim,
+        rescale_inputs=cfg.network.get('rescale_inputs', False),
     )
 
   if cfg.network.make_envelope_fn:
