@@ -14,12 +14,14 @@
 
 """Super simple checkpoints using numpy."""
 
+import dataclasses
 import datetime
 import os
 from typing import Optional
 import zipfile
 
 from absl import logging
+from ferminet import networks
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -108,7 +110,7 @@ def save(save_path: str, t: int, data, params, opt_state, mcmc_width) -> str:
     np.savez(
         f,
         t=t,
-        data=data,
+        data=dataclasses.asdict(data),
         params=params,
         opt_state=opt_state,
         mcmc_width=mcmc_width)
@@ -144,16 +146,20 @@ def restore(restore_filename: str, batch_size: Optional[int] = None):
     # Retrieve data from npz file. Non-array variables need to be converted back
     # to natives types using .tolist().
     t = ckpt_data['t'].tolist() + 1  # Return the iterations completed.
-    data = ckpt_data['data']
+    data = networks.FermiNetData(**ckpt_data['data'].item())
     params = ckpt_data['params'].tolist()
     opt_state = ckpt_data['opt_state'].tolist()
     mcmc_width = jnp.array(ckpt_data['mcmc_width'].tolist())
-    if data.shape[0] != jax.device_count():
+    if data.positions.shape[0] != jax.device_count():
       raise ValueError(
-          f'Incorrect number of devices found. Expected {data.shape[0]}, found '
-          f'{jax.device_count()}.')
-    if batch_size and data.shape[0] * data.shape[1] != batch_size:
+          'Incorrect number of devices found. Expected'
+          f' {data.positions.shape[0]}, found {jax.device_count()}.'
+      )
+    if (
+        batch_size
+        and data.positions.shape[0] * data.positions.shape[1] != batch_size
+    ):
       raise ValueError(
           f'Wrong batch size in loaded data. Expected {batch_size}, found '
-          f'{data.shape[0] * data.shape[1]}.')
+          f'{data.positions.shape[0] * data.positions.shape[1]}.')
   return t, data, params, opt_state, mcmc_width

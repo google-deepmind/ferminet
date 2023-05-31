@@ -499,6 +499,9 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
     pos = kfac_jax.utils.broadcast_all_local_devices(pos)
     spins = jnp.reshape(spins, data_shape + spins.shape[1:])
     spins = kfac_jax.utils.broadcast_all_local_devices(spins)
+    data = networks.FermiNetData(
+        positions=pos, spins=spins, atoms=batch_atoms, charges=batch_charges
+    )
 
     t_init = 0
     opt_state_ckpt = None
@@ -523,12 +526,12 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
         network.orbitals, in_axes=(None, 0, 0, 0, 0), out_axes=0
     )
     sharded_key, subkeys = kfac_jax.utils.p_split(sharded_key)
-    params, pos = pretrain.pretrain_hartree_fock(
+    params, data.positions = pretrain.pretrain_hartree_fock(
         params=params,
-        positions=pos,
+        positions=data.positions,
         spins=pretrain_spins,
-        atoms=batch_atoms,
-        charges=batch_charges,
+        atoms=data.atoms,
+        charges=data.charges,
         batch_network=batch_network,
         batch_orbitals=batch_orbitals,
         network_options=network.options,
@@ -620,13 +623,7 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
         # debug=True
     )
     sharded_key, subkeys = kfac_jax.utils.p_split(sharded_key)
-    opt_state = optimizer.init(
-        params,
-        subkeys,
-        networks.FermiNetData(
-            positions=pos, spins=spins, atoms=batch_atoms, charges=batch_charges
-        ),
-    )
+    opt_state = optimizer.init(params, subkeys, data)
     opt_state = opt_state_ckpt or opt_state  # avoid overwriting ckpted state
   else:
     raise ValueError(f'Not a recognized optimizer: {cfg.optim.optimizer}')
@@ -658,8 +655,6 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
         jnp.asarray(cfg.mcmc.move_width))
   pmoves = np.zeros(cfg.mcmc.adapt_frequency)
 
-  data = networks.FermiNetData(
-      positions=pos, spins=spins, atoms=batch_atoms, charges=batch_charges)
   if t_init == 0:
     logging.info('Burning in MCMC chain for %d steps', cfg.mcmc.burn_in)
 
