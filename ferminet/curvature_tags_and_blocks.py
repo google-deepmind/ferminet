@@ -13,7 +13,7 @@
 # limitations under the License.
 
 """Curvature blocks for FermiNet."""
-from typing import Any, Mapping, Optional, Sequence, Set, Tuple
+from typing import Any, Mapping, Sequence, Set, Tuple
 import jax
 import jax.numpy as jnp
 import kfac_jax
@@ -56,8 +56,6 @@ class RepeatedDenseBlock(kfac_jax.DenseTwoKroneckerFactored):
       ema_old: Numeric,
       ema_new: Numeric,
       batch_size: int,
-      pmap_axis_name: Optional[str],
-      sync: Array | bool = True,
   ) -> kfac_jax.TwoKroneckerFactored.State:
     estimation_data = dict(**estimation_data)
     x, = estimation_data["inputs"]
@@ -72,8 +70,6 @@ class RepeatedDenseBlock(kfac_jax.DenseTwoKroneckerFactored):
         ema_old=ema_old,
         ema_new=ema_new,
         batch_size=batch_size,
-        pmap_axis_name=pmap_axis_name,
-        sync=sync,
     )
 
 
@@ -96,7 +92,6 @@ class QmcBlockedDense(kfac_jax.TwoKroneckerFactored):
       ema_old: Numeric,
       ema_new: Numeric,
       batch_size: int,
-      pmap_axis_name: Optional[str],
   ) -> kfac_jax.TwoKroneckerFactored.State:
     x, = estimation_data["inputs"]
     dy, = estimation_data["outputs_tangent"]
@@ -110,9 +105,6 @@ class QmcBlockedDense(kfac_jax.TwoKroneckerFactored):
 
     state.inputs_factor.update(inputs_cov, ema_old, ema_new)
     state.outputs_factor.update(outputs_cov, ema_old, ema_new)
-
-    state.inputs_factor.sync(pmap_axis_name)
-    state.outputs_factor.sync(pmap_axis_name)
 
     return state
 
