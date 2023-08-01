@@ -571,14 +571,27 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
         nspins=nspins,
         use_scan=False,
         complex_output=cfg.network.get('complex', False))
-  evaluate_loss = qmc_loss_functions.make_loss(
-      log_network if cfg.network.get('complex', False) else logabs_network,
-      local_energy,
-      clip_local_energy=cfg.optim.clip_local_energy,
-      clip_from_median=cfg.optim.clip_median,
-      center_at_clipped_energy=cfg.optim.center_at_clip,
-      complex_output=cfg.network.get('complex', False)
-  )
+  if cfg.optim.objective == 'vmc':
+    evaluate_loss = qmc_loss_functions.make_loss(
+        log_network if cfg.network.get('complex', False) else logabs_network,
+        local_energy,
+        clip_local_energy=cfg.optim.clip_local_energy,
+        clip_from_median=cfg.optim.clip_median,
+        center_at_clipped_energy=cfg.optim.center_at_clip,
+        complex_output=cfg.network.get('complex', False)
+    )
+  elif cfg.optim.objective == 'wvmc':
+    evaluate_loss = qmc_loss_functions.make_wmc_loss(
+        log_network if cfg.network.get('complex', False) else logabs_network,
+        local_energy,
+        clip_local_energy=cfg.optim.clip_local_energy,
+        clip_from_median=cfg.optim.clip_median,
+        center_at_clipped_energy=cfg.optim.center_at_clip,
+        complex_output=cfg.network.get('complex', False)
+    )
+  else:
+    raise ValueError(f'Not a recognized objective: {cfg.optim.objective}')
+  
   # Compute the learning rate
   def learning_rate_schedule(t_: jnp.ndarray) -> jnp.ndarray:
     return cfg.optim.lr.rate * jnp.power(

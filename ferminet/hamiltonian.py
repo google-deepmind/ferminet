@@ -144,15 +144,17 @@ def local_kinetic_energy(
   return _lapl_over_f
 
 
-def potential_electron_electron(r_ee: Array) -> jnp.ndarray:
+def potential_electron_electron(pos: Array) -> jnp.ndarray:
   """Returns the electron-electron potential.
 
   Args:
-    r_ee: Shape (neletrons, nelectrons, :). r_ee[i,j,0] gives the distance
-      between electrons i and j. Other elements in the final axes are not
-      required.
+    pos: Shape (neletrons, ndim). Electron positions.
   """
-  return jnp.sum(jnp.triu(1 / r_ee[..., 0], k=1))
+  nelectrons = pos.shape[0]
+  r_ee = jnp.sqrt(jnp.sum((pos[None, ...] - pos[:, None] + 
+      jnp.eye(nelectrons)[..., None])**2, axis=-1))
+  r_ee = r_ee[jnp.triu_indices_from(r_ee, 1)]
+  return (1./r_ee).sum()
 
 
 def potential_electron_nuclear(charges: Array, r_ae: Array) -> jnp.ndarray:
@@ -173,25 +175,25 @@ def potential_nuclear_nuclear(charges: Array, atoms: Array) -> jnp.ndarray:
     charges: Shape (natoms). Nuclear charges of the atoms.
     atoms: Shape (natoms, ndim). Positions of the atoms.
   """
-  r_aa = jnp.linalg.norm(atoms[None, ...] - atoms[:, None], axis=-1)
+  natoms = atoms.shape[0]
+  r_aa = jnp.sqrt(jnp.sum((atoms[None, ...] - atoms[:, None] + 
+      jnp.eye(natoms)[..., None])**2, axis=-1))
   return jnp.sum(
       jnp.triu((charges[None, ...] * charges[..., None]) / r_aa, k=1))
 
 
-def potential_energy(r_ae: Array, r_ee: Array, atoms: Array,
+def potential_energy(r_ae: Array, pos: Array, atoms: Array,
                      charges: Array) -> jnp.ndarray:
   """Returns the potential energy for this electron configuration.
 
   Args:
     r_ae: Shape (nelectrons, natoms). r_ae[i, j] gives the distance between
       electron i and atom j.
-    r_ee: Shape (neletrons, nelectrons, :). r_ee[i,j,0] gives the distance
-      between electrons i and j. Other elements in the final axes are not
-      required.
+    pos: Shape (neletrons, ndim). Electron positions.
     atoms: Shape (natoms, ndim). Positions of the atoms.
     charges: Shape (natoms). Nuclear charges of the atoms.
   """
-  return (potential_electron_electron(r_ee) +
+  return (potential_electron_electron(pos) +
           potential_electron_nuclear(charges, r_ae) +
           potential_nuclear_nuclear(charges, atoms))
 
@@ -234,9 +236,9 @@ def local_energy(
       data: MCMC configuration.
     """
     del key  # unused
-    _, _, r_ae, r_ee = networks.construct_input_features(
-        data.positions, data.atoms)
-    potential = potential_energy(r_ae, r_ee, data.atoms, charges)
+    _, _, r_ae, _ = networks.construct_input_features(data.positions, data.atoms)
+    pos = data.positions.reshape(r_ae.shape[0],-1)
+    potential = potential_energy(r_ae, pos, data.atoms, charges)
     kinetic = ke(params, data)
     return potential + kinetic
 
