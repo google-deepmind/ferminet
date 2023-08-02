@@ -258,12 +258,12 @@ def make_loss(network: networks.LogFermiNetLike,
   return total_energy
 
 
-def make_wmc_loss(network: networks.LogFermiNetLike,
-                  local_energy: hamiltonian.LocalEnergy,
-                  clip_local_energy: float = 0.0,
-                  clip_from_median: bool = True,
-                  center_at_clipped_energy: bool = True,
-                  complex_output: bool = False) -> LossFn:
+def make_wvmc_loss(network: networks.LogFermiNetLike,
+                   local_energy: hamiltonian.LocalEnergy,
+                   clip_local_energy: float = 0.0,
+                   clip_from_median: bool = True,
+                   center_at_clipped_energy: bool = True,
+                   complex_output: bool = False) -> LossFn:
   """Creates the loss function, including custom gradients.
 
   Args:
@@ -356,33 +356,31 @@ def make_wmc_loss(network: networks.LogFermiNetLike,
     else:
       diff = aux_data.local_energy - loss
 
-    def log_q(_p, _x):
-      out = batch_network(_p, _x, data.spins, data.atoms, data.charges)
+    def log_q(_params, _pos, _spins, _atoms, _charges):
+      out = batch_network(_params, _pos, _spins, _atoms, _charges)
       kfac_jax.register_normal_predictive_distribution(out[:,None])
       return out.sum()
 
     score = jax.grad(log_q, argnums=1)
-    primals = (primals[0], primals[2].positions)
-    tangents = (tangents[0], tangents[2].positions)
-    score_primal, score_tangent = jax.jvp(score, primals, tangents)
-    
-    score_norm = (score_primal**2).sum(1, keepdims=True)
-    median = jnp.median(constants.all_gather(score_norm))
-    deviation = jnp.mean(jnp.abs(score_norm - median))
-    mask = score_norm < (median + 5*deviation)
-    log_q_tangent_out = (aux_data.grad_local_energy*score_tangent*mask).sum(1)
-    log_q_tangent_out *= (len(mask)/mask.sum())
-
     primals = (primals[0], data.positions, data.spins, data.atoms, data.charges)
     tangents = (
         tangents[0],
         tangents[2].positions,
         tangents[2].spins,
         tangents[2].atoms,
-        tangents[2].charges,
+        tangents[2].charges
     )
+    score_primal, score_tangent = jax.jvp(score, primals, tangents)
+    
+    score_norm = jnp.linalg.norm(score_primal, axis=-1, keepdims=True)
+    median = jnp.median(constants.all_gather(score_norm))
+    deviation = jnp.mean(jnp.abs(score_norm - median))
+    mask = score_norm < (median + 5*deviation)
+    log_q_tangent_out = (aux_data.grad_local_energy*score_tangent*mask).sum(1)
+    log_q_tangent_out *= (len(mask)/mask.sum())
+
     psi_primal, psi_tangent = jax.jvp(batch_network, primals, tangents)
-    log_q_tangent_out = diff*psi_tangent
+    log_q_tangent_out += diff*psi_tangent
     primals_out = loss, aux_data
     tangents_out = (log_q_tangent_out.mean(), aux_data)
     return primals_out, tangents_out

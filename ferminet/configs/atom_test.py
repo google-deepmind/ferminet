@@ -73,6 +73,9 @@ def get_config():
     cfg.system.set_molecule = _adjust_nuclear_charge
     cfg.config_module = '.atom'
   cfg.network.network_type = 'psiformer'
-  cfg.optim.iterations = 10000
-  cfg.optim.objective = 'vmc'
+  cfg.optim.iterations = 10_000
+  cfg.optim.lr.delay = 5_000
+  cfg.optim.clip_median = True
+  cfg.debug.deterministic = True
+  cfg.optim.kfac.norm_constraint = 1e-3
   return cfg
