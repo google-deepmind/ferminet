@@ -471,9 +471,8 @@ def construct_input_features(
   r_ae = jnp.linalg.norm(ae, axis=2, keepdims=True)
   # Avoid computing the norm of zero, as is has undefined grad
   n = ee.shape[0]
-  # r_ee = (
-  #     jnp.linalg.norm(ee + jnp.eye(n)[..., None], axis=-1) * (1.0 - jnp.eye(n)))
-  r_ee = jnp.sqrt(((ee + jnp.eye(n)[..., None])**2).sum(2)) * (1.0 - jnp.eye(n))
+  r_ee = (
+      jnp.linalg.norm(ee + jnp.eye(n)[..., None], axis=-1) * (1.0 - jnp.eye(n)))
   return ae, ee, r_ae, r_ee[..., None]
 
 
