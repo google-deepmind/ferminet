@@ -580,8 +580,8 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
         center_at_clipped_energy=cfg.optim.center_at_clip,
         complex_output=cfg.network.get('complex', False)
     )
-  elif cfg.optim.objective == 'wvmc':
-    evaluate_loss = qmc_loss_functions.make_wvmc_loss(
+  elif cfg.optim.objective == 'wqmc':
+    evaluate_loss = qmc_loss_functions.make_wqmc_loss(
         log_network if cfg.network.get('complex', False) else logabs_network,
         local_energy,
         clip_local_energy=cfg.optim.clip_local_energy,

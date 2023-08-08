@@ -174,25 +174,25 @@ def potential_nuclear_nuclear(charges: Array, atoms: Array) -> jnp.ndarray:
     charges: Shape (natoms). Nuclear charges of the atoms.
     atoms: Shape (natoms, ndim). Positions of the atoms.
   """
-  natoms = atoms.shape[0]
-  r_aa = jnp.sqrt(jnp.sum((atoms[None, ...] - atoms[:, None] + 
-      jnp.eye(natoms)[..., None])**2, axis=-1))
+  r_aa = jnp.linalg.norm(atoms[None, ...] - atoms[:, None], axis=-1)
   return jnp.sum(
       jnp.triu((charges[None, ...] * charges[..., None]) / r_aa, k=1))
 
 
-def potential_energy(r_ae: Array, pos: Array, atoms: Array,
+def potential_energy(r_ae: Array, r_ee: Array, atoms: Array,
                      charges: Array) -> jnp.ndarray:
   """Returns the potential energy for this electron configuration.
 
   Args:
     r_ae: Shape (nelectrons, natoms). r_ae[i, j] gives the distance between
       electron i and atom j.
-    pos: Shape (neletrons, ndim). Electron positions.
+    r_ee: Shape (neletrons, nelectrons, :). r_ee[i,j,0] gives the distance
+      between electrons i and j. Other elements in the final axes are not
+      required.
     atoms: Shape (natoms, ndim). Positions of the atoms.
     charges: Shape (natoms). Nuclear charges of the atoms.
   """
-  return (potential_electron_electron(pos) +
+  return (potential_electron_electron(r_ee) +
           potential_electron_nuclear(charges, r_ae) +
           potential_nuclear_nuclear(charges, atoms))
 

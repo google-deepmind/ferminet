@@ -64,7 +64,7 @@ def _adjust_nuclear_charge(cfg):
 def get_config():
   """Returns config for running generic atoms with qmc."""
   cfg = base_config.default()
-  cfg.system.atom = ''
+  cfg.system.atom = 'Li'
   cfg.system.charge = 0
   cfg.system.delta_charge = 0.0
   cfg.system.spin_polarisation = ml_collections.FieldReference(
@@ -78,4 +78,5 @@ def get_config():
   cfg.optim.clip_median = True
   cfg.debug.deterministic = True
   cfg.optim.kfac.norm_constraint = 1e-3
+  cfg.optim.objective = 'wqmc'
   return cfg

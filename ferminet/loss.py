@@ -258,13 +258,13 @@ def make_loss(network: networks.LogFermiNetLike,
   return total_energy
 
 
-def make_wvmc_loss(network: networks.LogFermiNetLike,
+def make_wqmc_loss(network: networks.LogFermiNetLike,
                    local_energy: hamiltonian.LocalEnergy,
                    clip_local_energy: float = 0.0,
                    clip_from_median: bool = True,
                    center_at_clipped_energy: bool = True,
                    complex_output: bool = False) -> LossFn:
-  """Creates the loss function, including custom gradients.
+  """Creates the WQMC loss function, including custom gradients.
 
   Args:
     network: callable which evaluates the log of the magnitude of the
@@ -362,7 +362,7 @@ def make_wvmc_loss(network: networks.LogFermiNetLike,
       return out.sum()
 
     score = jax.grad(log_q, argnums=1)
-    primals = (primals[0], data.positions, data.spins, data.atoms, data.charges)
+    primals = (params, data.positions, data.spins, data.atoms, data.charges)
     tangents = (
         tangents[0],
         tangents[2].positions,
