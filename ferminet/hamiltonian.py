@@ -50,7 +50,6 @@ class MakeLocalEnergy(Protocol):
   def __call__(
       self,
       f: networks.FermiNetLike,
-      atoms: jnp.ndarray,
       charges: jnp.ndarray,
       nspins: Sequence[int],
       use_scan: bool = False,
@@ -62,7 +61,6 @@ class MakeLocalEnergy(Protocol):
     Args:
       f: Callable which evaluates the sign and log of the magnitude of the
         wavefunction.
-      atoms: atomic positions.
       charges: nuclear charges.
       nspins: Number of particles of each spin.
       use_scan: Whether to use a `lax.scan` for computing the laplacian.
