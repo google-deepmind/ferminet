@@ -473,7 +473,6 @@ def construct_input_features(
   n = ee.shape[0]
   r_ee = (
       jnp.linalg.norm(ee + jnp.eye(n)[..., None], axis=-1) * (1.0 - jnp.eye(n)))
-
   return ae, ee, r_ae, r_ee[..., None]
 
 

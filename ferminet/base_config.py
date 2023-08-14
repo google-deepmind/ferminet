@@ -53,6 +53,7 @@ def default() -> ml_collections.ConfigDict:
       # importlib.import_module.
       'config_module': __name__,
       'optim': {
+          'objective': 'vmc',  # objective type. Either 'vmc' or 'wqmc'
           'iterations': 1000000,  # number of iterations
           'optimizer': 'kfac',  # one of adam, kfac, lamb, none
           'lr': {

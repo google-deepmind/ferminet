@@ -150,7 +150,8 @@ def potential_electron_electron(r_ee: Array) -> jnp.ndarray:
       between electrons i and j. Other elements in the final axes are not
       required.
   """
-  return jnp.sum(jnp.triu(1 / r_ee[..., 0], k=1))
+  r_ee = r_ee[jnp.triu_indices_from(r_ee[..., 0], 1)]
+  return (1.0 / r_ee).sum()
 
 
 def potential_electron_nuclear(charges: Array, r_ae: Array) -> jnp.ndarray:
@@ -233,7 +234,8 @@ def local_energy(
     """
     del key  # unused
     _, _, r_ae, r_ee = networks.construct_input_features(
-        data.positions, data.atoms)
+        data.positions, data.atoms
+    )
     potential = potential_energy(r_ae, r_ee, data.atoms, charges)
     kinetic = ke(params, data)
     return potential + kinetic
