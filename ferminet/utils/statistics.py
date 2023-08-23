@@ -19,7 +19,7 @@ import attr
 from jax import numpy as jnp
 import numpy as np
 
-T = TypeVar('T', float, np.ndarray, jnp.array)
+T = TypeVar('T', float, np.ndarray, jnp.ndarray)
 
 
 @attr.s(auto_attribs=True)
