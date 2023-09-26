@@ -32,7 +32,7 @@ class JastrowType(enum.Enum):
 def _jastrow_ee(
     r_ee: jnp.ndarray,
     params: ParamTree,
-    nspins: jnp.ndarray,
+    nspins: tuple[int, int],
     jastrow_fun: Callable[[jnp.ndarray, float, jnp.ndarray], jnp.ndarray],
 ) -> jnp.ndarray:
   """Jastrow factor for electron-electron cusps."""
@@ -41,8 +41,8 @@ def _jastrow_ee(
       for r in jnp.split(r_ee, nspins[0:1], axis=0)
   ]
   r_ees_parallel = jnp.concatenate([
-      r_ees[0][0][jnp.triu_indices(nspins[0], k=1)],  # pytype: disable=wrong-arg-types  # jnp-type
-      r_ees[1][1][jnp.triu_indices(nspins[1], k=1)],  # pytype: disable=wrong-arg-types  # jnp-type
+      r_ees[0][0][jnp.triu_indices(nspins[0], k=1)],
+      r_ees[1][1][jnp.triu_indices(nspins[1], k=1)],
   ])
 
   if r_ees_parallel.shape[0] > 0:
@@ -80,7 +80,9 @@ def make_simple_ee_jastrow() -> ...:
     return params
 
   def apply(
-      r_ee: jnp.ndarray, params: ParamTree, nspins: jnp.ndarray
+      r_ee: jnp.ndarray,
+      params: ParamTree,
+      nspins: tuple[int, int],
   ) -> jnp.ndarray:
     """Jastrow factor for electron-electron cusps."""
     return _jastrow_ee(r_ee, params, nspins, jastrow_fun=simple_ee_cusp_fun)
