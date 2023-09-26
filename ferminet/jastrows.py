@@ -41,8 +41,8 @@ def _jastrow_ee(
       for r in jnp.split(r_ee, nspins[0:1], axis=0)
   ]
   r_ees_parallel = jnp.concatenate([
-      r_ees[0][0][jnp.triu_indices(nspins[0], k=1)],
-      r_ees[1][1][jnp.triu_indices(nspins[1], k=1)],
+      r_ees[0][0][jnp.triu_indices(nspins[0], k=1)],  # pytype: disable=wrong-arg-types  # jnp-type
+      r_ees[1][1][jnp.triu_indices(nspins[1], k=1)],  # pytype: disable=wrong-arg-types  # jnp-type
   ])
 
   if r_ees_parallel.shape[0] > 0:
