@@ -72,6 +72,10 @@ def default() -> ml_collections.ConfigDict:
           # average clipped energy rather than average energy, guaranteeing that
           # the average energy difference will be zero in each batch.
           'center_at_clip': True,
+          # If true, keep the parameters and optimizer state from the previous
+          # step and revert them if they become NaN after an update. Mainly
+          # useful for excited states
+          'reset_if_nan': False,
           # KFAC hyperparameters. See KFAC documentation for details.
           'kfac': {
               'invert_every': 1,
