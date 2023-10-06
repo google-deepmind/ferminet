@@ -33,6 +33,7 @@ from ferminet import pretrain
 from ferminet import psiformer
 from ferminet.utils import statistics
 from ferminet.utils import system
+from ferminet.utils import utils
 from ferminet.utils import writers
 import jax
 from jax.experimental import multihost_utils
@@ -369,6 +370,7 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
   # Device logging
   num_devices = jax.local_device_count()
   num_hosts = jax.device_count() // num_devices
+  num_states = cfg.system.get('states', 0) or 1  # avoid 0/1 confusion
   logging.info('Starting QMC with %i XLA devices per host '
                'across %i hosts.', num_devices, num_hosts)
   if cfg.batch_size % (num_devices * num_hosts) != 0:
@@ -376,6 +378,7 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
                      f'got batch size {cfg.batch_size} for '
                      f'{num_devices * num_hosts} devices.')
   host_batch_size = cfg.batch_size // num_hosts  # batch size per host
+  total_host_batch_size = host_batch_size * num_states
   device_batch_size = host_batch_size // num_devices  # batch size per device
   data_shape = (num_devices, device_batch_size)
 
@@ -405,6 +408,9 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
   # Create parameters, network, and vmaped/pmaped derivations
 
   if cfg.pretrain.method == 'hf' and cfg.pretrain.iterations > 0:
+    if cfg.system.states > 1:
+      raise NotImplementedError(
+          'Pretraining not yet implemented for excited states')
     hartree_fock = pretrain.get_hf(
         pyscf_mol=cfg.system.get('pyscf_mol'),
         molecule=cfg.system.molecule,
@@ -451,6 +457,7 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
         charges,
         ndim=cfg.system.ndim,
         determinants=cfg.network.determinants,
+        states=cfg.system.states,
         envelope=envelope,
         feature_layer=feature_layer,
         jastrow=cfg.network.get('jastrow', 'default'),
@@ -466,6 +473,7 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
         charges,
         ndim=cfg.system.ndim,
         determinants=cfg.network.determinants,
+        states=cfg.system.states,
         envelope=envelope,
         feature_layer=feature_layer,
         jastrow=cfg.network.get('jastrow', 'default'),
@@ -479,7 +487,12 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
   params = kfac_jax.utils.replicate_all_local_devices(params)
   signed_network = network.apply
   # Often just need log|psi(x)|.
-  logabs_network = lambda *args, **kwargs: signed_network(*args, **kwargs)[1]
+  if cfg.system.get('states', 0):
+    logabs_network = utils.select_output(
+        networks.make_total_ansatz(signed_network,
+                                   cfg.system.get('states', 0)), 1)
+  else:
+    logabs_network = lambda *args, **kwargs: signed_network(*args, **kwargs)[1]
   batch_network = jax.vmap(
       logabs_network, in_axes=(None, 0, 0, 0, 0), out_axes=0
   )  # batched network
@@ -521,12 +534,15 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
         subkey,
         cfg.system.molecule,
         cfg.system.electrons,
-        batch_size=host_batch_size,
+        batch_size=total_host_batch_size,
         init_width=cfg.mcmc.init_width,
     )
-    pos = jnp.reshape(pos, data_shape + pos.shape[1:])
+    # For excited states, each device has a batch of walkers, where each walker
+    # is nstates * nelectrons. The vmap over nstates is handled in the function
+    # created in make_total_ansatz
+    pos = jnp.reshape(pos, data_shape + (-1,))
     pos = kfac_jax.utils.broadcast_all_local_devices(pos)
-    spins = jnp.reshape(spins, data_shape + spins.shape[1:])
+    spins = jnp.reshape(spins, data_shape + (-1,))
     spins = kfac_jax.utils.broadcast_all_local_devices(spins)
     data = networks.FermiNetData(
         positions=pos, spins=spins, atoms=batch_atoms, charges=batch_charges
@@ -579,7 +595,7 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
       device_batch_size,
       steps=cfg.mcmc.steps,
       atoms=atoms_to_mcmc,
-      blocks=cfg.mcmc.blocks,
+      blocks=cfg.mcmc.blocks * num_states,
   )
   # Construct loss and optimizer
   if cfg.system.make_local_energy_fn:
@@ -592,6 +608,7 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
         charges=charges,
         nspins=nspins,
         use_scan=False,
+        states=cfg.system.get('states', 0),
         **cfg.system.make_local_energy_kwargs)
   else:
     local_energy = hamiltonian.local_energy(
@@ -599,7 +616,8 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
         charges=charges,
         nspins=nspins,
         use_scan=False,
-        complex_output=cfg.network.get('complex', False))
+        complex_output=cfg.network.get('complex', False),
+        states=cfg.system.get('states', 0))
   if cfg.optim.objective == 'vmc':
     evaluate_loss = qmc_loss_functions.make_loss(
         log_network if cfg.network.get('complex', False) else logabs_network,

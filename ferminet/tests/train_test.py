@@ -49,14 +49,19 @@ def setUpModule():
 
 
 def _config_params():
-  for system, optimizer, complex_ in itertools.product(
-      ('Li', 'LiH'), ('kfac', 'adam'), (True, False)):
-    yield {'system': system, 'optimizer': optimizer, 'complex_': complex_}
+  for system, optimizer, complex_, states in itertools.product(
+      ('Li', 'LiH'), ('kfac', 'adam'), (True, False), (0, 2)):
+    if states == 0 or not complex_:
+      yield {'system': system,
+             'optimizer': optimizer,
+             'complex_': complex_,
+             'states': states}
   for optimizer in ('kfac', 'adam', 'lamb', 'none'):
     yield {
         'system': 'H' if optimizer in ('kfac', 'adam') else 'Li',
         'optimizer': optimizer,
         'complex_': False,
+        'states': 0,
     }
 
 
@@ -70,7 +75,7 @@ class QmcTest(parameterized.TestCase):
     pyscf.lib.param.TMPDIR = None
 
   @parameterized.parameters(_config_params())
-  def test_training_step(self, system, optimizer, complex_):
+  def test_training_step(self, system, optimizer, complex_, states):
     if system in ('H', 'Li'):
       cfg = atom.get_config()
       cfg.system.atom = system
@@ -81,7 +86,8 @@ class QmcTest(parameterized.TestCase):
     cfg.network.determinants = 2
     cfg.network.complex = complex_
     cfg.batch_size = 32
-    cfg.pretrain.iterations = 10
+    cfg.system.states = states
+    cfg.pretrain.iterations = 10 if states == 0 else 0
     cfg.mcmc.burn_in = 10
     cfg.optim.optimizer = optimizer
     cfg.optim.iterations = 3

@@ -14,6 +14,7 @@
 
 """Implementation of Fermionic Neural Network in JAX."""
 import enum
+import functools
 from typing import Any, Iterable, Mapping, MutableMapping, Optional, Sequence, Tuple, Union
 
 import attr
@@ -267,6 +268,7 @@ class BaseNetworkOptions:
   Attributes:
     ndim: dimension of system. Change only with caution.
     determinants: Number of determinants to use.
+    states: Number of outputs, one per excited (or ground) state. Ignored if 0.
     full_det: If true, evaluate determinants over all electrons. Otherwise,
       block-diagonalise determinants into spin channels.
     rescale_inputs: If true, rescale the inputs so they grow as log(|r|).
@@ -281,6 +283,7 @@ class BaseNetworkOptions:
 
   ndim: int = 3
   determinants: int = 16
+  states: int = 0
   full_det: bool = True
   rescale_inputs: bool = False
   bias_orbitals: bool = False
@@ -1096,14 +1099,15 @@ def make_orbitals(
 
     # How many spin-orbitals do we need to create per spin channel?
     nspin_orbitals = []
+    num_states = max(options.states, 1)
     for nspin in active_spin_channels:
       if options.full_det:
         # Dense determinant. Need N orbitals per electron per determinant.
-        norbitals = sum(nspins) * options.determinants
+        norbitals = sum(nspins) * options.determinants * num_states
       else:
         # Spin-factored block-diagonal determinant. Need nspin orbitals per
         # electron per determinant.
-        norbitals = nspin * options.determinants
+        norbitals = nspin * options.determinants * num_states
       if options.complex_output:
         norbitals *= 2  # one output is real, one is imaginary
       nspin_orbitals.append(norbitals)
@@ -1241,6 +1245,83 @@ def make_orbitals(
   return init, apply
 
 
+## Excited States  ##
+
+
+def make_state_matrix(signed_network: FermiNetLike, n: int) -> FermiNetLike:
+  """Construct a matrix-output ansatz which gives the Slater matrix of states.
+
+  Let signed_network(params, pos, spins, options) be a function which returns
+  psi_1(pos), psi_2(pos), ... psi_n(pos) as a pair of arrays of length n, one
+  with values of sign(psi_k), one with values of log(psi_k). Then this function
+  returns a new function which computes the matrix psi_i(pos_j), given an array
+  of positions (and possibly spins) which has n times as many dimensions as
+  expected by signed_network. The output of this new meta-matrix is also given
+  as a sign, log pair.
+
+  Args:
+    signed_network: A function with the same calling convention as the FermiNet.
+    n: the number of excited states, needed to know how to shape the determinant
+
+  Returns:
+    A function with two outputs which combines the individual excited states
+    into a matrix of wavefunctions, one with the sign and one with the log.
+  """
+
+  def state_matrix(params, pos, spins, atoms, charges, **kwargs):
+    """Evaluate state_matrix for a given ansatz."""
+    # `pos` has shape (n*nelectron*ndim), but can be reshaped as
+    # (n, nelectron, ndim), that is, the first dimension indexes which excited
+    # state we are considering, the second indexes electrons, and the third
+    # indexes spatial dimensions. `spins` has the same ordering of indices,
+    # but does not have the spatial dimensions. `atoms` does not have the
+    # leading index of number of excited states, as the different states are
+    # always evaluated at the same atomic geometry.
+    pos_ = jnp.reshape(pos, [n, -1])
+    partial_network = functools.partial(
+        signed_network, atoms=atoms, charges=charges, **kwargs)
+    spins_ = jnp.reshape(spins, [n, -1])
+    vmap_network = jax.vmap(partial_network, (None, 0, 0))
+    sign_mat, log_mat = vmap_network(params, pos_, spins_)
+    return sign_mat, log_mat
+
+  return state_matrix
+
+
+def make_total_ansatz(signed_network: FermiNetLike, n: int) -> FermiNetLike:
+  """Construct a single-output ansatz which gives the meta-Slater determinant.
+
+  Let signed_network(params, pos, spins, options) be a function which returns
+  psi_1(pos), psi_2(pos), ... psi_n(pos) as a pair of arrays, one with values
+  of sign(psi_k), one with values of log(psi_k). Then this function returns a
+  new function which computes det[psi_i(pos_j)], given an array of positions
+  (and possibly spins) which has n times as many dimensions as expected by
+  signed_network. The output of this new meta-determinant is also given as a
+  sign, log pair.
+
+  Args:
+    signed_network: A function with the same calling convention as the FermiNet.
+    n: the number of excited states, needed to know how to shape the determinant
+
+  Returns:
+    A function with a single output which combines the individual excited states
+    into a greater wavefunction given by the meta-Slater determinant.
+  """
+  state_matrix = make_state_matrix(signed_network, n)
+
+  def total_ansatz(params, pos, spins, atoms, charges, **kwargs):
+    """Evaluate meta_determinant for a given ansatz."""
+    sign_mat, log_mat = state_matrix(
+        params, pos, spins, atoms=atoms, charges=charges, **kwargs)
+
+    logmax = jnp.max(log_mat)  # logsumexp trick
+    sign_out, log_out = jnp.linalg.slogdet(sign_mat * jnp.exp(log_mat - logmax))
+    log_out += n * logmax
+    return sign_out, log_out
+
+  return total_ansatz
+
+
 ## FermiNet ##
 
 
@@ -1250,6 +1331,7 @@ def make_fermi_net(
     *,
     ndim: int = 3,
     determinants: int = 16,
+    states: int = 0,
     envelope: Optional[envelopes.Envelope] = None,
     feature_layer: Optional[FeatureLayer] = None,
     jastrow: Union[str, jastrows.JastrowType] = jastrows.JastrowType.NONE,
@@ -1273,6 +1355,7 @@ def make_fermi_net(
     charges: (natom) array of atom nuclear charges.
     ndim: dimension of system. Change only with caution.
     determinants: Number of determinants to use.
+    states: Number of outputs, one per excited (or ground) state. Ignored if 0.
     envelope: Envelope to use to impose orbitals go to zero at infinity.
     feature_layer: Input feature construction.
     jastrow: Type of Jastrow factor if used, or no jastrow if 'default'.
@@ -1306,7 +1389,9 @@ def make_fermi_net(
     Network object containing init, apply, orbitals, options, where init and
     apply are callables which initialise the network parameters and apply the
     network respectively, orbitals is a callable which applies the network up to
-    the orbitals, and options specifies the settings used in the network.
+    the orbitals, and options specifies the settings used in the network. If
+    options.states > 1, the length of the vectors returned by apply are equal
+    to the number of states.
   """
   if sum([nspin for nspin in nspins if nspin > 0]) == 0:
     raise ValueError('No electrons present!')
@@ -1329,6 +1414,7 @@ def make_fermi_net(
   options = FermiNetOptions(
       ndim=ndim,
       determinants=determinants,
+      states=states,
       rescale_inputs=rescale_inputs,
       envelope=envelope,
       feature_layer=feature_layer,
@@ -1384,7 +1470,15 @@ def make_fermi_net(
     """
 
     orbitals = orbitals_apply(params, pos, spins, atoms, charges)
-    return network_blocks.logdet_matmul(orbitals)
+    if options.states:
+      batch_logdet_matmul = jax.vmap(network_blocks.logdet_matmul, in_axes=0)
+      orbitals = [
+          jnp.reshape(orbital, (options.states, -1) + orbital.shape[1:])
+          for orbital in orbitals
+      ]
+      return batch_logdet_matmul(*orbitals)
+    else:
+      return network_blocks.logdet_matmul(orbitals)
 
   return Network(
       options=options, init=init, apply=apply, orbitals=orbitals_apply

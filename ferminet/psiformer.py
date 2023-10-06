@@ -329,6 +329,7 @@ def make_fermi_net(
     *,
     ndim: int = 3,
     determinants: int = 16,
+    states: int = 0,
     envelope: Optional[envelopes.Envelope] = None,
     feature_layer: Optional[networks.FeatureLayer] = None,
     jastrow: Union[str, jastrows.JastrowType] = jastrows.JastrowType.SIMPLE_EE,
@@ -351,6 +352,7 @@ def make_fermi_net(
     charges: (natom) array of atom nuclear charges.
     ndim: Dimension of the system. Change only with caution.
     determinants: Number of determinants.
+    states: Number of outputs, one per excited (or ground) state. Ignored if 0.
     envelope: Envelope to use to impose orbitals go to zero at infinity.
     feature_layer: Input feature construction.
     jastrow: Type of Jastrow factor if used, or 'simple_ee' if 'default'.
@@ -389,6 +391,7 @@ def make_fermi_net(
   options = PsiformerOptions(
       ndim=ndim,
       determinants=determinants,
+      states=states,
       envelope=envelope,
       feature_layer=feature_layer,
       jastrow=jastrow,
@@ -436,7 +439,15 @@ def make_fermi_net(
       of and log absolute value of the network evaluated at x.
     """
     orbitals = orbitals_apply(params, pos, spins, atoms, charges)
-    return network_blocks.logdet_matmul(orbitals)
+    if options.states:
+      batch_logdet_matmul = jax.vmap(network_blocks.logdet_matmul, in_axes=0)
+      orbitals = [
+          jnp.reshape(orbital, (options.states, -1) + orbital.shape[1:])
+          for orbital in orbitals
+      ]
+      return batch_logdet_matmul(*orbitals)
+    else:
+      return network_blocks.logdet_matmul(orbitals)
 
   return networks.Network(
       options=options,

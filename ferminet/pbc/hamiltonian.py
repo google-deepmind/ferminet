@@ -20,7 +20,7 @@ with Fermionic Neural Networks. arXiv preprint arXiv:2202.05183.
 """
 
 import itertools
-from typing import Callable, Optional, Sequence
+from typing import Callable, Optional, Sequence, Tuple
 
 import chex
 from ferminet import hamiltonian
@@ -156,6 +156,7 @@ def local_energy(
     nspins: Sequence[int],
     use_scan: bool = False,
     complex_output: bool = False,
+    states: int = 0,
     lattice: Optional[jnp.ndarray] = None,
     heg: bool = True,
     convergence_radius: int = 5,
@@ -169,6 +170,8 @@ def local_energy(
     nspins: Number of particles of each spin.
     use_scan: Whether to use a `lax.scan` for computing the laplacian.
     complex_output: If true, the output of f is complex-valued.
+    states: Number of excited states to compute. Not implemented, only present
+      for consistency of calling convention.
     lattice: Shape (ndim, ndim). Matrix of lattice vectors. Default: identity
       matrix.
     heg: bool. Flag to enable features specific to the electron gas.
@@ -179,6 +182,8 @@ def local_energy(
     energy of the wavefunction given the parameters params, RNG state key,
     and a single MCMC configuration in data.
   """
+  if states:
+    raise NotImplementedError('Excited states not implemented with PBC.')
   del nspins
   if lattice is None:
     lattice = jnp.eye(3)
@@ -188,7 +193,7 @@ def local_energy(
 
   def _e_l(
       params: networks.ParamTree, key: chex.PRNGKey, data: networks.FermiNetData
-  ) -> jnp.ndarray:
+  ) -> Tuple[jnp.ndarray, Optional[jnp.ndarray]]:
     """Returns the total energy.
 
     Args:
@@ -204,6 +209,6 @@ def local_energy(
         data.positions, data.atoms)
     potential = potential_energy(ae, ee)
     kinetic = ke(params, data)
-    return potential + kinetic
+    return potential + kinetic, None
 
   return _e_l

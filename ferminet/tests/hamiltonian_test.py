@@ -138,7 +138,7 @@ class HamiltonianTest(parameterized.TestCase):
             ),
         ),
     )
-    energies = batch_local_energy(
+    energies, _ = batch_local_energy(
         dummy_params,
         keys,
         networks.FermiNetData(

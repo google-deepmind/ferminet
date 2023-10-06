@@ -35,11 +35,13 @@ class AuxiliaryLossData:
     local_energy: local energy for each MCMC configuration.
     clipped_energy: local energy after clipping has been applied
     grad_local_energy: gradient of the local energy.
+    local_energy_mat: for excited states, the local energy matrix.
   """
   variance: jax.Array
   local_energy: jax.Array
   clipped_energy: jax.Array
   grad_local_energy: jax.Array | None
+  local_energy_mat: jax.Array | None
 
 
 class LossFn(Protocol):
@@ -172,7 +174,7 @@ def make_loss(network: networks.LogFermiNetLike,
           0,
           networks.FermiNetData(positions=0, spins=0, atoms=0, charges=0),
       ),
-      out_axes=0,
+      out_axes=(0, 0)
   )
   batch_network = jax.vmap(network, in_axes=(None, 0, 0, 0, 0), out_axes=0)
 
@@ -200,7 +202,7 @@ def make_loss(network: networks.LogFermiNetLike,
       over the batch and over all devices inside a pmap.
     """
     keys = jax.random.split(key, num=data.positions.shape[0])
-    e_l = batch_local_energy(params, keys, data)
+    e_l, e_l_mat = batch_local_energy(params, keys, data)
     loss = constants.pmean(jnp.mean(e_l))
     loss_diff = e_l - loss
     variance = constants.pmean(jnp.mean(loss_diff * jnp.conj(loss_diff)))
@@ -209,6 +211,7 @@ def make_loss(network: networks.LogFermiNetLike,
         local_energy=e_l,
         clipped_energy=e_l,
         grad_local_energy=None,
+        local_energy_mat=e_l_mat,
     )
 
   @total_energy.defjvp
@@ -303,7 +306,7 @@ def make_wqmc_loss(
           0,
           networks.FermiNetData(positions=0, spins=0, atoms=0, charges=0),
       ),
-      out_axes=0,
+      out_axes=(0, 0)
   )
   batch_network = jax.vmap(network, in_axes=(None, 0, 0, 0, 0), out_axes=0)
 
@@ -331,7 +334,7 @@ def make_wqmc_loss(
       over the batch and over all devices inside a pmap.
     """
     keys = jax.random.split(key, num=data.positions.shape[0])
-    e_l = batch_local_energy(params, keys, data)
+    e_l, e_l_mat = batch_local_energy(params, keys, data)
     loss = constants.pmean(jnp.mean(e_l))
     loss_diff = e_l - loss
     variance = constants.pmean(jnp.mean(loss_diff * jnp.conj(loss_diff)))
@@ -343,7 +346,7 @@ def make_wqmc_loss(
           atoms=data.atoms,
           charges=data.charges,
       )
-      return batch_local_energy(params, keys, network_data).sum()
+      return batch_local_energy(params, keys, network_data)[0].sum()
 
     grad_e_l = jax.grad(batch_local_energy_pos)(data.positions)
     grad_e_l = jnp.tanh(jax.lax.stop_gradient(grad_e_l))
@@ -352,6 +355,7 @@ def make_wqmc_loss(
         local_energy=e_l,
         clipped_energy=e_l,
         grad_local_energy=grad_e_l,
+        local_energy_mat=e_l_mat,
     )
 
   @total_energy.defjvp

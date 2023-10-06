@@ -131,6 +131,10 @@ def default() -> ml_collections.ConfigDict:
           # Dimensionality. Change with care. FermiNet implementation currently
           # assumes 3D systems.
           'ndim': 3,
+          # Number of excited states. If 0, use normal ground state machinery.
+          # If 1, compute ground state using excited state machinery. If >1,
+          # compute that many excited states.
+          'states': 0,
           # Units of *input* coords of atoms. Either 'bohr' or
           # 'angstrom'. Internally work in a.u.; positions in
           # Angstroms are converged to Bohr.

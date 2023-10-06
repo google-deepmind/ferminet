@@ -73,7 +73,7 @@ class PbcHamiltonianTest(parameterized.TestCase):
     )
 
     key, subkey = jax.random.split(key)
-    e1 = local_energy(params, subkey, data)
+    e1, _ = local_energy(params, subkey, data)
 
     # Select random electron coordinate to displace by a random lattice vec
     key, subkey = jax.random.split(key)
@@ -87,7 +87,7 @@ class PbcHamiltonianTest(parameterized.TestCase):
     )
 
     key, subkey = jax.random.split(key)
-    e2 = local_energy(params, subkey, data2)
+    e2, _ = local_energy(params, subkey, data2)
 
     atol, rtol = 4.e-3, 4.e-3
     np.testing.assert_allclose(e1, e2, atol=atol, rtol=rtol)
