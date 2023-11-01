@@ -68,7 +68,7 @@ def get_config():
   cfg.system.charge = 0
   cfg.system.delta_charge = 0.0
   cfg.system.states = 3
-  cfg.pretrain.iterations = 0
+  cfg.pretrain.iterations = 1000
   cfg.optim.reset_if_nan = True
   cfg.system.spin_polarisation = ml_collections.FieldReference(
       None, field_type=int)

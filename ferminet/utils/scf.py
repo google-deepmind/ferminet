@@ -29,12 +29,22 @@
 #   are solutions to the Hartree-Fock equations.
 
 
-from typing import Sequence, Tuple, Optional
+from typing import Optional, Sequence, Tuple, Union
 
 from absl import logging
+from ferminet.utils import gto
 from ferminet.utils import system
+import jax.numpy as jnp
+import jax.tree_util
 import numpy as np
 import pyscf
+
+
+NDArray = Union[jnp.ndarray, np.ndarray]
+
+# For excitations, tuple of (spin, orbital) pairs giving the orbitals which are
+# swapped.
+SpinOrbitalSwap = tuple[tuple[int, int], tuple[int, int]]
 
 
 class Scf:
@@ -55,6 +65,9 @@ class Scf:
     restricted: If true, use the restricted Hartree-Fock method, otherwise use
       the unrestricted Hartree-Fock method.
     mean_field: the actual UHF object.
+    mo_coeff: The molecular orbital coefficients computed by Hartree-Fock.
+    excitations: Stores a list of atomic orbitals to swap to construct excited
+      states of the lowest energy.
   """
 
   def __init__(self,
@@ -65,6 +78,9 @@ class Scf:
                restricted: bool = True):
     if pyscf_mol:
       self._mol = pyscf_mol
+      # Create pure-JAX Mol object so that GTOs can be evaluated in traced
+      # JAX functions
+      self._mol_jax = gto.Mol.from_pyscf_mol(self._mol)
     else:
       self.molecule = molecule
       self.nelectrons = nelectrons
@@ -74,14 +90,19 @@ class Scf:
 
     self.restricted = restricted
     self.mean_field = None
+    self.excitations = None
 
     pyscf.lib.param.TMPDIR = None
 
-  def run(self, dm0: Optional[np.ndarray] = None):
+  def run(self,
+          dm0: Optional[np.ndarray] = None,
+          excitations: int = 0):
     """Runs the Hartree-Fock calculation.
 
     Args:
       dm0: Optional density matrix to initialize the calculation.
+      excitations: Stores a list of atomic orbitals to swap to construct excited
+        states of the lowest energy.
 
     Returns:
       A pyscf scf object (i.e. pyscf.scf.rhf.RHF, pyscf.scf.uhf.UHF or
@@ -111,6 +132,7 @@ class Scf:
       self._mol.build()
       if self._mol.nelectron != sum(self.nelectrons):
         raise RuntimeError('PySCF molecule not consistent with QMC molecule.')
+      self._mol_jax = gto.Mol.from_pyscf_mol(self._mol)
     if self.restricted:
       self.mean_field = pyscf.scf.RHF(self._mol)
     else:
@@ -122,17 +144,36 @@ class Scf:
                    'density matrix.')
       # 1e solvers (e.g. uhf.HF1e) do not take any keyword arguments.
       self.mean_field.kernel()
+    if excitations > 0:
+      self.excitations = get_excitations(
+          self.mean_field, n=excitations, preserve_spin=True)
     return self.mean_field
 
-  def eval_mos(self, positions: np.ndarray,
-               deriv: bool = False) -> Tuple[np.ndarray, np.ndarray]:
+  @property
+  def mo_coeff(self) -> Optional[np.ndarray]:
+    if self.mean_field.mo_coeff is None:
+      return None
+    elif self.restricted:
+      return np.asarray(self.mean_field.mo_coeff)[None]
+    else:
+      return np.asarray(self.mean_field.mo_coeff)
+
+  @mo_coeff.setter
+  def mo_coeff(self, mo_coeff):
+    if (self.mean_field is not None and
+        self.mean_field.mo_coeff is not None and
+        self.mean_field.mo_coeff.ndim != mo_coeff.ndim):
+      raise ValueError('Attempting to override mo_coeffs with different rank. '
+                       f'Got {mo_coeff.shape=}, have '
+                       f'{self.mean_field.mo_coeff.shape=}')
+    self.mean_field.mo_coeff = mo_coeff
+
+  def eval_mos(self, positions: NDArray) -> Tuple[NDArray, NDArray]:
     """Evaluates the Hartree-Fock single-particle orbitals at a set of points.
 
     Args:
       positions: numpy array of shape (N, 3) of the positions in space at which
         to evaluate the Hartree-Fock orbitals.
-      deriv: If True, also calculate the first derivatives of the
-        single-particle orbitals.
 
     Returns:
       Pair of numpy float64 arrays of shape (N, M) (deriv=False) or (4, N, M)
@@ -161,13 +202,169 @@ class Scf:
     if self._mol.cart:
       raise NotImplementedError(
           'Evaluation of molecular orbitals using cartesian GTOs.')
-    # Note sph refers to the use of spherical GTO basis sets rather than
-    # Cartesian GO basis sets. The coordinate system used for the electron
-    # positions is Cartesian in both cases.
-    gto_op = 'GTOval_sph_deriv1' if deriv else 'GTOval_sph'
-    ao_values = self._mol.eval_gto(gto_op, positions)
-    mo_values = tuple(np.matmul(ao_values, coeff) for coeff in coeffs)
+    ao_values = self._mol_jax.eval_gto(positions)
+    mo_values = tuple(jnp.matmul(ao_values, coeff) for coeff in coeffs)
     if self.restricted:
       # duplicate for beta electrons.
       mo_values *= 2
     return mo_values
+
+  def eval_orbitals(self,
+                    pos: NDArray,
+                    nspins: Tuple[int, int]) -> Tuple[NDArray, NDArray]:
+    """Evaluates SCF orbitals at a set of positions.
+
+    Args:
+      pos: an array of electron positions to evaluate the orbitals at, of shape
+        (..., nelec*3), where the leading dimensions are arbitrary, nelec is the
+        number of electrons and the spin up electrons are ordered before the
+        spin down electrons.
+      nspins: tuple with number of spin up and spin down electrons.
+
+    Returns:
+      tuple with matrices of orbitals for spin up and spin down electrons, with
+      the same leading dimensions as in pos.
+    """
+    if not isinstance(pos, np.ndarray):  # works even with JAX array
+      try:
+        pos = pos.copy()
+      except AttributeError as exc:
+        raise ValueError('Input must be either NumPy or JAX array.') from exc
+    leading_dims = pos.shape[:-1]
+    # split into separate electrons
+    pos = jnp.reshape(pos, [-1, 3])  # (batch*nelec, 3)
+    mos = self.eval_mos(pos)  # (batch*nelec, nbasis), (batch*nelec, nbasis)
+    # Reshape into (batch, nelec, nbasis) for each spin channel.
+    mos = [jnp.reshape(mo, leading_dims + (sum(nspins), -1)) for mo in mos]
+    # Return (using Aufbau principle) the matrices for the occupied alpha and
+    # beta orbitals. Number of alpha electrons given by nspins[0].
+    alpha_spin = mos[0][..., :nspins[0], :nspins[0]]
+    beta_spin = mos[1][..., nspins[0]:, :nspins[1]]
+    if self.excitations is not None:
+      # Some indexing gymnastics to get out excited states as well.
+      # Excited states are given along the second index, after the batch.
+      alpha_spins = [alpha_spin]
+      beta_spins = [beta_spin]
+      # TODO(pfau, jamessspencer): More jaxlike to vmap over excitations.
+      for excitation in self.excitations:
+        alpha_excited = alpha_spin.copy()
+        beta_excited = beta_spin.copy()
+        for occ_index, unocc_index in excitation[2]:
+          spin_occ, i_occ = occ_index
+          spin_unocc, i_unocc = unocc_index
+          if spin_occ == 0:
+            alpha_excited = alpha_excited.at[..., i_occ].set(
+                mos[spin_unocc][..., :nspins[0], i_unocc])
+          elif spin_occ == 1:
+            beta_excited = beta_excited.at[..., i_occ].set(
+                mos[spin_unocc][..., nspins[0]:, i_unocc])
+          else:
+            raise ValueError(f'Invalid {spin_occ=}')
+        alpha_spins.append(alpha_excited)
+        beta_spins.append(beta_excited)
+      alpha_spin = jnp.stack(alpha_spins, axis=-3)
+      beta_spin = jnp.stack(beta_spins, axis=-3)
+
+    return alpha_spin, beta_spin
+
+
+# pylint: disable=protected-access
+def scf_flatten(scf: Scf):
+  # `children` are fields which require an extra leading dimension with pmap
+  children = ()
+  # `aux_data` are any fields which are required to reconstruct the original
+  # object, but would not actually end up as data in the compiled graph.
+  aux_data = (scf.mo_coeff,
+              scf._mol_jax._spec,
+              scf._mol,
+              scf.restricted,
+              scf.excitations)
+  return children, aux_data
+
+
+def scf_unflatten(aux_data, children) -> Scf:
+  assert not children  # children should be empty.
+  mo_coeff, spec, mol, restricted, excitations = aux_data
+  scf = Scf(pyscf_mol=mol.copy(), restricted=restricted)
+  scf.mo_coeff = mo_coeff
+  scf._mol_jax._spec = spec
+  scf.excitations = excitations
+  return scf
+# pylint: enable=protected-access
+
+
+jax.tree_util.register_pytree_node(Scf, scf_flatten, scf_unflatten)
+
+
+def get_excitations(
+    mean_field: ...,
+    n: int = 10,
+    preserve_spin: bool = False
+) -> list[tuple[float, int, list[SpinOrbitalSwap]]]:
+  """Compute energies of lowest n single/double excitations from HF result.
+
+  Args:
+     mean_field: scf mean_field returned by pyscf.
+     n: Maximum number of excitations to return.
+     preserve_spin: If true, return only excitations which preserve spin.
+
+  Returns:
+    List of at most n excitations, where each excitation is a tuple of energy
+    difference of the HF eigenvalues of the occupied orbitals, change in spin,
+    followed by an arbitrary number of tuples containing pairs of occupied /
+    unoccupied indices, each of which is a tuple of (spin, orbital), giving the
+    orbitals which are swapped.
+  """
+  occ, energy = mean_field.mo_occ, mean_field.mo_energy
+  nocc = [int(occ[spin].sum()) for spin in range(2)]
+  norb = [len(occ[spin]) for spin in range(2)]
+  # A list of tuples containing energy difference, change in spin, followed by
+  # an arbitrary number of tuples containing pairs of occupied / unoccupied
+  # indices, each of which is a tuple of (spin, orbital), giving the orbitals
+  # which are swapped.
+  res = []
+
+  # Single excitations
+
+  for spin_occ in range(2):
+    for i_occ in range(nocc[spin_occ]):
+      for spin_unocc in range(2):
+        for i_unocc in range(nocc[spin_unocc], norb[spin_unocc]):
+          delta_e = (energy[spin_unocc][i_unocc] - energy[spin_occ][i_occ])
+          res.append((delta_e, spin_occ - spin_unocc,
+                      [((spin_occ, i_occ), (spin_unocc, i_unocc))]))
+
+  # Double excitations
+  for spin_occ1 in range(2):
+    for i_occ1 in range(nocc[spin_occ1]):
+      for spin_unocc1 in range(2):
+        for i_unocc1 in range(nocc[spin_unocc1], norb[spin_unocc1]):
+          for spin_occ2 in range(2):
+            for i_occ2 in range(nocc[spin_occ2]):
+              for spin_unocc2 in range(2):
+                for i_unocc2 in range(nocc[spin_unocc2], norb[spin_unocc2]):
+                  occ_index1 = spin_occ1, i_occ1
+                  occ_index2 = spin_occ2, i_occ2
+                  unocc_index1 = spin_unocc1, i_unocc1
+                  unocc_index2 = spin_unocc2, i_unocc2
+                  if ((occ_index1 < occ_index2) and
+                      (unocc_index1 < unocc_index2)):
+                    delta_e = (
+                        energy[spin_unocc1][i_unocc1] +
+                        energy[spin_unocc2][i_unocc2] -
+                        energy[spin_occ1][i_occ1] - energy[spin_occ2][i_occ2])
+                    res.append(
+                        (delta_e,
+                         spin_occ1 + spin_occ2 - spin_unocc1 - spin_unocc2, [
+                             (occ_index1, unocc_index1),
+                             (occ_index2, unocc_index2)
+                         ]))
+
+  if preserve_spin:
+    res = [x for x in res if x[1] == 0]
+  if len(res) < n:
+    raise ValueError('Insufficient single and double excitations. '
+                     f'Want {n}, have {len(res)}. Try a larger basis set?')
+  # Take the first n excitations.
+  # Note that this has a heavy bias towards single excitations.
+  return sorted(res, key=lambda x: x[0])[:n]

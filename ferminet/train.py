@@ -408,15 +408,13 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
   # Create parameters, network, and vmaped/pmaped derivations
 
   if cfg.pretrain.method == 'hf' and cfg.pretrain.iterations > 0:
-    if cfg.system.states > 1:
-      raise NotImplementedError(
-          'Pretraining not yet implemented for excited states')
     hartree_fock = pretrain.get_hf(
         pyscf_mol=cfg.system.get('pyscf_mol'),
         molecule=cfg.system.molecule,
         nspins=nspins,
         restricted=False,
-        basis=cfg.pretrain.basis)
+        basis=cfg.pretrain.basis,
+        states=cfg.system.states)
     # broadcast the result of PySCF from host 0 to all other hosts
     hartree_fock.mean_field.mo_coeff = multihost_utils.broadcast_one_to_all(
         hartree_fock.mean_field.mo_coeff
@@ -584,6 +582,7 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
         electrons=cfg.system.electrons,
         scf_approx=hartree_fock,
         iterations=cfg.pretrain.iterations,
+        states=cfg.system.states,
     )
 
   # Main training

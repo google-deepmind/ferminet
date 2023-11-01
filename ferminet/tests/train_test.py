@@ -87,7 +87,7 @@ class QmcTest(parameterized.TestCase):
     cfg.network.complex = complex_
     cfg.batch_size = 32
     cfg.system.states = states
-    cfg.pretrain.iterations = 10 if states == 0 else 0
+    cfg.pretrain.iterations = 10
     cfg.mcmc.burn_in = 10
     cfg.optim.optimizer = optimizer
     cfg.optim.iterations = 3

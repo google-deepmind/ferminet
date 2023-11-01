@@ -269,7 +269,7 @@ def default() -> ml_collections.ConfigDict:
       'pretrain': {
           'method': 'hf',  # Currently only 'hf' is supported.
           'iterations': 1000,  # Only used if method is 'hf'.
-          'basis': 'sto-6g',
+          'basis': 'ccpvdz',  # Larger than STO-6G, but good for excited states
       },
   })
 
