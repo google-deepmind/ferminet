@@ -176,7 +176,7 @@ class ApplyLayersFn(Protocol):
     """Forward evaluation of the equivariant interaction layers.
 
     Args:
-      params: parameters for the interaction and permuation-equivariant layers.
+      params: parameters for the interaction and permutation-equivariant layers.
       ae: electron-nuclear vectors.
       r_ae: electron-nuclear distances.
       ee: electron-electron vectors.
@@ -307,7 +307,7 @@ class FermiNetOptions(BaseNetworkOptions):
       tuple.
     separate_spin_channels: If True, use separate two-electron streams for
       spin-parallel and spin-antiparallel  pairs of electrons. If False, use the
-      same stream for all pairs of elecrons.
+      same stream for all pairs of electrons.
     schnet_electron_electron_convolutions: Tuple of embedding dimension to use
       for a SchNet-style convolution between the one- and two-electron streams
       at each layer of the network. If empty, the original FermiNet embedding is
@@ -979,7 +979,7 @@ def make_fermi_net_layers(
     """Applies the FermiNet interaction layers to a walker configuration.
 
     Args:
-      params: parameters for the interaction and permuation-equivariant layers.
+      params: parameters for the interaction and permutation-equivariant layers.
       ae: electron-nuclear vectors.
       r_ae: electron-nuclear distances.
       ee: electron-electron vectors.

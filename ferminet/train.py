@@ -17,7 +17,7 @@
 import functools
 import importlib
 import time
-from typing import Optional, Sequence, Tuple, Union
+from typing import Optional, Mapping, Sequence, Tuple, Union
 
 from absl import logging
 import chex
@@ -53,12 +53,13 @@ def _assign_spin_configuration(
   return jnp.tile(spins[None], reps=(batch_size, 1))
 
 
-def init_electrons(
+def init_electrons(  # pylint: disable=dangerous-default-value
     key,
     molecule: Sequence[system.Atom],
     electrons: Sequence[int],
     batch_size: int,
     init_width: float,
+    core_electrons: Mapping[str, int] = {},
 ) -> Tuple[jnp.ndarray, jnp.ndarray]:
   """Initializes electron positions around each atom.
 
@@ -70,6 +71,8 @@ def init_electrons(
       devices.
     init_width: width of (atom-centred) Gaussian used to generate initial
       electron configurations.
+    core_electrons: mapping of element symbol to number of core electrons
+      included in the pseudopotential.
 
   Returns:
     array of (batch_size, (nalpha+nbeta)*ndim) of initial (random) electron
@@ -78,7 +81,9 @@ def init_electrons(
     of spin configurations, where 1 and -1 indicate alpha and beta electrons
     respectively.
   """
-  if sum(atom.charge for atom in molecule) != sum(electrons):
+  total_electrons = sum(atom.charge - core_electrons.get(atom.symbol, 0)
+                        for atom in molecule)
+  if total_electrons != sum(electrons):
     if len(molecule) == 1:
       atomic_spin_configs = [electrons]
     else:
@@ -86,7 +91,9 @@ def init_electrons(
                                 'exists for charged molecules.')
   else:
     atomic_spin_configs = [
-        (atom.element.nalpha, atom.element.nbeta) for atom in molecule
+        (atom.element.nalpha - core_electrons.get(atom.symbol, 0) // 2,
+         atom.element.nbeta - core_electrons.get(atom.symbol, 0) // 2)
+        for atom in molecule
     ]
     assert sum(sum(x) for x in atomic_spin_configs) == sum(electrons)
     while tuple(sum(x) for x in zip(*atomic_spin_configs)) != electrons:
@@ -528,12 +535,24 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
     key, subkey = jax.random.split(key)
     # make sure data on each host is initialized differently
     subkey = jax.random.fold_in(subkey, jax.process_index())
+    # extract number of electrons of each spin around each atom removed because
+    # of pseudopotentials
+    if cfg.system.pyscf_mol:
+      cfg.system.pyscf_mol.build()
+      core_electrons = {
+          atom: ecp_table[0]
+          for atom, ecp_table in cfg.system.pyscf_mol._ecp.items()  # pylint: disable=protected-access
+      }
+    else:
+      core_electrons = {}
+    # create electron state (position and spin)
     pos, spins = init_electrons(
         subkey,
         cfg.system.molecule,
         cfg.system.electrons,
         batch_size=total_host_batch_size,
         init_width=cfg.mcmc.init_width,
+        core_electrons=core_electrons,
     )
     # For excited states, each device has a batch of walkers, where each walker
     # is nstates * nelectrons. The vmap over nstates is handled in the function
@@ -610,13 +629,16 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
         states=cfg.system.get('states', 0),
         **cfg.system.make_local_energy_kwargs)
   else:
+    pp_symbols = cfg.system.get('pp', {'symbols': None}).get('symbols')
     local_energy = hamiltonian.local_energy(
         f=signed_network,
         charges=charges,
         nspins=nspins,
         use_scan=False,
         complex_output=cfg.network.get('complex', False),
-        states=cfg.system.get('states', 0))
+        states=cfg.system.get('states', 0),
+        pp_type=cfg.system.get('pp', {'type': 'ccecp'}).get('type'),
+        pp_symbols=pp_symbols if cfg.system.get('use_pp') else None)
   if cfg.optim.objective == 'vmc':
     evaluate_loss = qmc_loss_functions.make_loss(
         log_network if cfg.network.get('complex', False) else logabs_network,

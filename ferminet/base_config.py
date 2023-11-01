@@ -139,6 +139,20 @@ def default() -> ml_collections.ConfigDict:
           # 'angstrom'. Internally work in a.u.; positions in
           # Angstroms are converged to Bohr.
           'units': 'bohr',
+          # If true, use pseudopotentials
+          'use_pp': False,
+          # Config for pseudopotential if cfg.system.pp is True
+          'pp': {
+              # If a pseudopotential is used, specify which. Ignored if no
+              # pseudopotential is used.
+              'type': 'ccecp',
+              # If a pseudopotential is used, specify the basis set. Ignored if
+              # no pseudopotential is used.
+              'basis': 'ccecp-cc-pVDZ',
+              # If a pseudopotential is used, list the symbols of elements for
+              # which it will be used.
+              'symbols': None,
+          },
           # 2. Specify the system using pyscf. Must be a pyscf.gto.Mole object.
           'pyscf_mol': None,
           # 3. Specify the system inside a function evaluated after the config

@@ -142,6 +142,37 @@ class QmcPyscfMolTest(parameterized.TestCase):
     # ensure they actually run without a top-level error.
     train.train(cfg)
 
+  @parameterized.parameters([{'states': 0}, {'states': 3}])
+  def test_pseudopotential_step(self, states):
+    cfg = base_config.default()
+    mol = pyscf.gto.Mole()
+    mol.atom = ['Li 0 0 0']
+    mol.basis = {'Li': cfg.system.pp.basis}
+    mol.ecp = {'Li': cfg.system.pp.type}
+
+    mol.charge = 0
+    mol.spin = 1
+    mol.unit = 'angstrom'
+    mol.build()
+    cfg.system.pyscf_mol = mol
+
+    cfg.network.ferminet.hidden_dims = ((16, 4),) * 2
+    cfg.network.determinants = 2
+    cfg.batch_size = 32
+    cfg.pretrain.iterations = 0
+    cfg.mcmc.burn_in = 0
+    cfg.system.use_pp = True
+    cfg.system.pp.symbols = ['Li']
+    cfg.system.states = states
+    cfg.system.electrons = (1, 0)
+    cfg.optim.iterations = 3
+    cfg.debug.check_nan = True
+    cfg.log.save_path = self.create_tempdir().full_path
+    cfg = base_config.resolve(cfg)
+    # Calculation is too small to test the results for accuracy. Test just to
+    # ensure they actually run without a top-level error.
+    train.train(cfg)
+
   @parameterized.parameters(
       (False, (16, 16), (), 0, ()),
       (True, (16, 16), (), 0, ()),

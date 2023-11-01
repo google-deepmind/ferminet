@@ -18,6 +18,7 @@ from typing import Any, Callable, Optional, Sequence, Tuple, Union
 
 import chex
 from ferminet import networks
+from ferminet import pseudopotential as pp
 from ferminet.utils import utils
 import jax
 from jax import lax
@@ -239,6 +240,8 @@ def local_energy(
     use_scan: bool = False,
     complex_output: bool = False,
     states: int = 0,
+    pp_type: str = 'ccecp',
+    pp_symbols: Sequence[str] | None = None,
 ) -> LocalEnergy:
   """Creates the function to evaluate the local energy.
 
@@ -251,6 +254,10 @@ def local_energy(
     complex_output: If true, the output of f is complex-valued.
     states: Number of excited states to compute. If 0, compute ground state with
       default machinery. If 1, compute ground state with excited state machinery
+    pp_type: type of pseudopotential to use. Only used if ecp_symbols is
+      provided.
+    pp_symbols: sequence of element symbols for which the pseudopotential is
+      used.
 
   Returns:
     Callable with signature e_l(params, key, data) which evaluates the local
@@ -261,12 +268,30 @@ def local_energy(
     raise NotImplementedError(
         'Excited states not implemented with complex output')
   del nspins
+
   if states:
     ke = excited_kinetic_energy_matrix(f, states)
   else:
     ke = local_kinetic_energy(f,
                               use_scan=use_scan,
                               complex_output=complex_output)
+
+  if not pp_symbols:
+    effective_charges = charges
+    use_pp = False
+  else:
+    effective_charges, pp_local, pp_nonlocal = pp.make_pp_potential(
+        charges=charges,
+        symbols=pp_symbols,
+        quad_degree=4,
+        ecp=pp_type,
+        complex_output=complex_output
+    )
+    use_pp = not jnp.all(effective_charges == charges)
+
+  if not use_pp:
+    pp_local = lambda *args, **kwargs: 0.0
+    pp_nonlocal = lambda *args, **kwargs: 0.0
 
   def _e_l(
       params: networks.ParamTree, key: chex.PRNGKey, data: networks.FermiNetData
@@ -278,16 +303,30 @@ def local_energy(
       key: RNG state.
       data: MCMC configuration.
     """
-    del key  # unused
     if states:
       # Compute features
       vmap_features = jax.vmap(networks.construct_input_features, (0, None))
       positions = jnp.reshape(data.positions, [states, -1])
-      _, _, r_ae, r_ee = vmap_features(positions, data.atoms)
+      ae, _, r_ae, r_ee = vmap_features(positions, data.atoms)
 
       # Compute potential energy
       vmap_pot = jax.vmap(potential_energy, (0, 0, None, None))
-      pot_spectrum = vmap_pot(r_ae, r_ee, data.atoms, charges)[:, None]
+      pot_spectrum = vmap_pot(
+          r_ae, r_ee, data.atoms, effective_charges)[:, None]
+
+      if use_pp:
+        data_vmap_dims = networks.FermiNetData(
+            positions=0, spins=0, atoms=None, charges=None)
+        data_ = networks.FermiNetData(
+            positions=positions,
+            spins=jnp.reshape(data.spins, [states, -1]),
+            atoms=data.atoms,
+            charges=data.charges,
+        )
+        pot_spectrum += jax.vmap(pp_local, (0,))(r_ae)[:, None]
+        vmap_pp_nonloc = jax.vmap(
+            pp_nonlocal, (None, None, None, data_vmap_dims, 0, 0))
+        pot_spectrum += vmap_pp_nonloc(key, f, params, data_, ae, r_ae)
 
       # Compute kinetic energy and matrix of states
       psi_mat, kin_mat = ke(params, data)
@@ -297,10 +336,12 @@ def local_energy(
       energy_mat = jnp.linalg.solve(psi_mat, hpsi_mat)
       total_energy = jnp.trace(energy_mat)
     else:
-      _, _, r_ae, r_ee = networks.construct_input_features(
+      ae, _, r_ae, r_ee = networks.construct_input_features(
           data.positions, data.atoms
       )
-      potential = potential_energy(r_ae, r_ee, data.atoms, charges)
+      potential = (potential_energy(r_ae, r_ee, data.atoms, effective_charges) +
+                   pp_local(r_ae) +
+                   pp_nonlocal(key, f, params, data, ae, r_ae))
       kinetic = ke(params, data)
       total_energy = potential + kinetic
       energy_mat = None  # Not necessary for ground state
