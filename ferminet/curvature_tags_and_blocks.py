@@ -141,8 +141,8 @@ class QmcBlockedDense(kfac_jax.TwoKroneckerFactored):
       self,
       state: kfac_jax.TwoKroneckerFactored.State,
       identity_weight: kfac_jax.utils.Numeric,
-      exact_powers: set[kfac_jax.utils.Scalar],
-      approx_powers: set[kfac_jax.utils.Scalar],
+      exact_powers: Set[kfac_jax.utils.Scalar],
+      approx_powers: Set[kfac_jax.utils.Scalar],
       eigenvalues: bool,
   ) -> kfac_jax.TwoKroneckerFactored.State:
     del eigenvalues
