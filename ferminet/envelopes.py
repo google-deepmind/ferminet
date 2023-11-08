@@ -35,6 +35,7 @@ class EnvelopeType(enum.Enum):
 class EnvelopeLabel(enum.Enum):
   """Available multiplicative envelope functions."""
   ISOTROPIC = enum.auto()
+  BOTTLENECK = enum.auto()
   DIAGONAL = enum.auto()
   FULL = enum.auto()
   NULL = enum.auto()
@@ -119,6 +120,47 @@ def make_isotropic_envelope() -> Envelope:
     """Computes an isotropic exponentially-decaying multiplicative envelope."""
     del ae, r_ee  # unused
     return jnp.sum(jnp.exp(-r_ae * sigma) * pi, axis=1)
+
+  return Envelope(EnvelopeType.PRE_DETERMINANT, init, apply)
+
+
+def make_bottleneck_envelope(nenv: int = 16) -> Envelope:
+  """Each orbital has a linear projection of a small number of envelopes.
+
+  Rather than a separate envelope for all num_determinant*num_electron
+  orbitals, construct a fixed number of envelopes and then project those
+  envelopes linearly into a num_determinant*num_electron space, one per
+  orbital. This has minimal impact on time but a significant impact on space.
+  This also is *slightly* more expressive than the isotropic envelope in some
+  cases, leading to improved accuracy on some systems, while being noisier on
+  others. This also leads to occasional numerical instability, so it is
+  recommended to set reset_if_nan to True when using this.
+
+  Args:
+    nenv: the fixed number of envelopes. Ideally smaller than num_determinants*
+      num_electrons
+
+  Returns:
+    An Envelope object with a type specifier, init and apply functions.
+  """
+
+  def init(
+      natom: int, output_dims: Sequence[int], ndim: int = 3
+  ) -> Sequence[Mapping[str, jnp.ndarray]]:
+    del ndim  # unused
+    params = []
+    for output_dim in output_dims:
+      params.append({
+          'pi': jnp.ones(shape=(natom, nenv)),
+          'sigma': jnp.ones(shape=(natom, nenv)),
+          'w': jnp.ones(shape=(nenv, output_dim)) / nenv,
+      })
+    return params
+
+  def apply(*, ae: jnp.ndarray, r_ae: jnp.ndarray, r_ee: jnp.ndarray,
+            pi: jnp.ndarray, sigma: jnp.ndarray, w: jnp.ndarray) -> jnp.ndarray:
+    del ae, r_ee  # unused
+    return jnp.sum(jnp.exp(-r_ae * sigma) * pi, axis=1) @ w
 
   return Envelope(EnvelopeType.PRE_DETERMINANT, init, apply)
 
@@ -268,6 +310,7 @@ def get_envelope(
       EnvelopeLabel.STO: make_sto_envelope,
       EnvelopeLabel.STO_POLY: make_sto_poly_envelope,
       EnvelopeLabel.ISOTROPIC: make_isotropic_envelope,
+      EnvelopeLabel.BOTTLENECK: make_bottleneck_envelope,
       EnvelopeLabel.DIAGONAL: make_diagonal_envelope,
       EnvelopeLabel.FULL: make_full_envelope,
       EnvelopeLabel.NULL: make_null_envelope,
