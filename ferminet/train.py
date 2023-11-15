@@ -16,6 +16,7 @@
 
 import functools
 import importlib
+import os
 import time
 from typing import Optional, Mapping, Sequence, Tuple, Union
 
@@ -29,6 +30,7 @@ from ferminet import hamiltonian
 from ferminet import loss as qmc_loss_functions
 from ferminet import mcmc
 from ferminet import networks
+from ferminet import observables
 from ferminet import pretrain
 from ferminet import psiformer
 from ferminet.utils import statistics
@@ -528,8 +530,13 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
       checkpoint.find_last_checkpoint(ckpt_restore_path))
 
   if ckpt_restore_filename:
-    t_init, data, params, opt_state_ckpt, mcmc_width_ckpt = checkpoint.restore(
-        ckpt_restore_filename, host_batch_size)
+    (t_init,
+     data,
+     params,
+     opt_state_ckpt,
+     mcmc_width_ckpt,
+     density_state_ckpt) = checkpoint.restore(
+         ckpt_restore_filename, host_batch_size)
   else:
     logging.info('No checkpoint found. Training new model.')
     key, subkey = jax.random.split(key)
@@ -568,9 +575,58 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
     t_init = 0
     opt_state_ckpt = None
     mcmc_width_ckpt = None
+    density_state_ckpt = None
 
-  # Set up logging
+  # Set up logging and observables
   train_schema = ['step', 'energy', 'ewmean', 'ewvar', 'pmove']
+
+  if cfg.system.states:
+    energy_matrix_file = open(
+        os.path.join(ckpt_save_path, 'energy_matrix.npy'), 'ab')
+
+  observable_fns = {}
+  observable_states = {}  # only relevant for density matrix
+  if cfg.observables.s2:
+    observable_fns['s2'] = observables.make_s2(
+        signed_network,
+        nspins,
+        states=cfg.system.states)
+    observable_states['s2'] = None
+    train_schema += ['s2']
+    if cfg.system.states:
+      s2_matrix_file = open(
+          os.path.join(ckpt_save_path, 's2_matrix.npy'), 'ab')
+  if cfg.observables.dipole:
+    observable_fns['dipole'] = observables.make_dipole(
+        signed_network,
+        states=cfg.system.states)
+    observable_states['dipole'] = None
+    train_schema += ['mu_x', 'mu_y', 'mu_z']
+    if cfg.system.states:
+      dipole_matrix_file = open(
+          os.path.join(ckpt_save_path, 'dipole_matrix.npy'), 'ab')
+  # Do this *before* creating density matrix function, as that is a special case
+  observable_fns = observables.make_observable_fns(observable_fns)
+
+  if cfg.observables.density:
+    (observable_states['density'],
+     density_update,
+     observable_fns['density']) = observables.make_density_matrix(
+         signed_network, data.positions, cfg, density_state_ckpt)
+    # Because the density matrix can be quite large, even without excited
+    # states, we always save it directly to .npy file instead of writing to CSV
+    density_matrix_file = open(
+        os.path.join(ckpt_save_path, 'density_matrix.npy'), 'ab')
+    # custom pmaping just for density matrix function
+    pmap_density_axes = observables.DensityState(t=None,
+                                                 positions=0,
+                                                 probabilities=0,
+                                                 move_width=0,
+                                                 pmove=None,
+                                                 mo_coeff=None)
+    pmap_fn = constants.pmap(observable_fns['density'],
+                             in_axes=(0, 0, pmap_density_axes))
+    observable_fns['density'] = lambda *a, **kw: pmap_fn(*a, **kw).mean(0)
 
   # Initialisation done. We now want to have different PRNG streams on each
   # device. Shard the key over devices
@@ -782,7 +838,7 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
     num_resets = 0  # used if reset_if_nan is true
     for t in range(t_init, cfg.optim.iterations):
       sharded_key, subkeys = kfac_jax.utils.p_split(sharded_key)
-      data, params, opt_state, loss, unused_aux_data, pmove = step(
+      data, params, opt_state, loss, aux_data, pmove = step(
           data,
           params,
           opt_state,
@@ -798,14 +854,19 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
           alpha=0.1, observation=loss, previous_stats=weighted_stats)
       pmove = pmove[0]
 
+      # Update observables
+      observable_data = {
+          key: fn(params, data, observable_states[key])
+          for key, fn in observable_fns.items()
+      }
+      if cfg.observables.density:
+        sharded_key, subkeys = kfac_jax.utils.p_split(sharded_key)
+        observable_states['density'] = density_update(
+            subkeys, params, data, observable_states['density'])
+
       # Update MCMC move width
-      if t > 0 and t % cfg.mcmc.adapt_frequency == 0:
-        if np.mean(pmoves) > 0.55:
-          mcmc_width *= 1.1
-        if np.mean(pmoves) < 0.5:
-          mcmc_width /= 1.1
-        pmoves[:] = 0
-      pmoves[t%cfg.mcmc.adapt_frequency] = pmove
+      mcmc_width, pmoves = mcmc.update_mcmc_width(
+          t, mcmc_width, cfg.mcmc.adapt_frequency, pmove, pmoves)
 
       if cfg.debug.check_nan:
         tree = {'params': params, 'loss': loss}
@@ -824,18 +885,56 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
 
       # Logging
       if t % cfg.log.stats_frequency == 0:
-        logging.info(
-            'Step %05d: %03.4f E_h, exp. variance=%03.4f E_h^2, pmove=%0.2f', t,
-            loss, weighted_stats.variance, pmove)
-        writer.write(
-            t,
-            step=t,
-            energy=np.asarray(loss),
-            ewmean=np.asarray(weighted_stats.mean),
-            ewvar=np.asarray(weighted_stats.variance),
-            pmove=np.asarray(pmove))
+        logging_str = ('Step %05d: '
+                       '%03.4f E_h, exp. variance=%03.4f E_h^2, pmove=%0.2f')
+        logging_args = t, loss, weighted_stats.variance, pmove
+        writer_kwargs = {
+            'step': t,
+            'energy': np.asarray(loss),
+            'ewmean': np.asarray(weighted_stats.mean),
+            'ewvar': np.asarray(weighted_stats.variance),
+            'pmove': np.asarray(pmove),
+        }
+        for key in observable_data:
+          obs_data = observable_data[key]
+          if cfg.system.states:
+            obs_data = np.trace(obs_data, axis1=-1, axis2=-2)
+          if key == 'dipole':
+            writer_kwargs['mu_x'] = obs_data[0]
+            writer_kwargs['mu_y'] = obs_data[1]
+            writer_kwargs['mu_z'] = obs_data[2]
+          elif key == 'density':
+            pass
+          elif key == 's2':
+            writer_kwargs[key] = obs_data
+            logging_str += ', <S^2>=%03.4f'
+            logging_args += obs_data,
+        logging.info(logging_str, *logging_args)
+        writer.write(t, **writer_kwargs)
+
+      # Log data about observables too big to fit in a CSV
+      if cfg.system.states:
+        energy_matrix = aux_data.local_energy_mat
+        energy_matrix = np.nanmean(np.nanmean(energy_matrix, axis=0), axis=0)
+        np.save(energy_matrix_file, energy_matrix)
+        if cfg.observables.s2:
+          np.save(s2_matrix_file, observable_data['s2'])
+        if cfg.observables.dipole:
+          np.save(dipole_matrix_file, observable_data['dipole'])
+      if cfg.observables.density:
+        np.save(density_matrix_file, observable_data['density'])
 
       # Checkpointing
       if time.time() - time_of_last_ckpt > cfg.log.save_frequency * 60:
         checkpoint.save(ckpt_save_path, t, data, params, opt_state, mcmc_width)
         time_of_last_ckpt = time.time()
+
+    # Shut down logging at end
+    if cfg.system.states:
+      energy_matrix_file.close()
+      if cfg.observables.s2:
+        s2_matrix_file.close()
+      if cfg.observables.dipole:
+        dipole_matrix_file.close()
+    if cfg.observables.density:
+      density_matrix_file.close()

@@ -274,6 +274,12 @@ def default() -> ml_collections.ConfigDict:
           'make_envelope_fn': '',
           'make_envelope_kwargs': {},
       },
+      'observables': {
+          's2': False,  # spin magnitude
+          'density': False,  # density matrix
+          'density_basis': 'def2-tzvpd',  # basis used for DM calculation
+          'dipole': False,  # dipole moment
+      },
       'debug': {
           # Check optimizer state, parameters and loss and raise an exception if
           # NaN is found.

@@ -24,6 +24,7 @@ from ferminet import networks
 import jax
 from jax import lax
 from jax import numpy as jnp
+import numpy as np
 
 
 def _harmonic_mean(x, atoms):
@@ -282,3 +283,40 @@ def make_mcmc_step(batch_network,
     return new_data, pmove
 
   return mcmc_step
+
+
+def update_mcmc_width(
+    t: int,
+    width: jnp.ndarray,
+    adapt_frequency: int,
+    pmove: jnp.ndarray,
+    pmoves: np.ndarray,
+    pmove_max: float = 0.55,
+    pmove_min: float = 0.5,
+) -> tuple[jnp.ndarray, np.ndarray]:
+  """Updates the width in MCMC steps.
+
+  Args:
+    t: Current step.
+    width: Current MCMC width.
+    adapt_frequency: The number of iterations after which the update is applied.
+    pmove: Acceptance ratio in the last step.
+    pmoves: Acceptance ratio over the last N steps, where N is the number of
+      steps between MCMC width updates.
+    pmove_max: The upper threshold for the range of allowed pmove values
+    pmove_min: The lower threshold for the range of allowed pmove values
+
+  Returns:
+    width: Updated MCMC width.
+    pmoves: Updated `pmoves`.
+  """
+
+  t_since_mcmc_update = t % adapt_frequency
+  # update `pmoves`; `pmove` should be the same across devices
+  pmoves[t_since_mcmc_update] = pmove.reshape(-1)[0].item()
+  if t > 0 and t_since_mcmc_update == 0:
+    if np.mean(pmoves) > pmove_max:
+      width *= 1.1
+    elif np.mean(pmoves) < pmove_min:
+      width /= 1.1
+  return width, pmoves

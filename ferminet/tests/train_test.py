@@ -92,6 +92,9 @@ class QmcTest(parameterized.TestCase):
     cfg.optim.optimizer = optimizer
     cfg.optim.iterations = 3
     cfg.debug.check_nan = True
+    cfg.observables.s2 = True
+    cfg.observables.dipole = True
+    cfg.observables.density = True
     cfg.log.save_path = self.create_tempdir().full_path
     cfg = base_config.resolve(cfg)
     # Calculation is too small to test the results for accuracy. Test just to
