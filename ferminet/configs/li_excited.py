@@ -70,6 +70,9 @@ def get_config():
   cfg.system.states = 3
   cfg.pretrain.iterations = 1000
   cfg.optim.reset_if_nan = True
+  cfg.observables.s2 = True
+  cfg.observables.dipole = True
+  cfg.observables.density = True
   cfg.system.spin_polarisation = ml_collections.FieldReference(
       None, field_type=int)
   with cfg.ignore_type():

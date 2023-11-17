@@ -156,11 +156,23 @@ parallelisation is essential. This is supported via JAX's
 [pmap](https://jax.readthedocs.io/en/latest/jax.html#parallelization-pmap).
 Multiple GPUs will be automatically detected and used if available.
 
+## Excited States
+
+Excited state properties of systems can be calculated using the [Natural Excited
+States for VMC (NES-VMC) algorithm](https://arxiv.org/abs/2308.16848).
+To enable the calculation of `k` states of a system, simply set
+`cfg.system.states=k` in the config file.
+
 ## Output
 
 The results directory contains `train_stats.csv` which contains the local energy
 and MCMC acceptance probability for each iteration, and the `checkpoints`
-directory, which contains the checkpoints generated during training.
+directory, which contains the checkpoints generated during training. When
+computing observables of excited states or the density matrix for the ground
+state, `.npy` files are also saved to the same folder. A single NumPy array is
+saved for every iteration of optimization into the same file. An example Colab
+notebook analyzing these outputs is given in `notebooks/excited_states_analysis.ipynb`.
+<a target="_blank" href="https://colab.research.google.com/github/deepmind/ferminet/blob/master/notebooks/excited_states_analysis.ipynb"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="(Open in Colab!)"/></a>
 
 ## Pretrained Models
 
@@ -243,6 +255,46 @@ reference:
   archivePrefix={arXiv},
   primaryClass={physics.chem-ph},
   url={https://arxiv.org/abs/2211.13672},
+}
+```
+
+Periodic boundary conditions were originally introduced in a Physical Review
+Letters article:
+
+```
+@article{cassella2023discovering,
+  title={Discovering quantum phase transitions with fermionic neural networks},
+  author={Cassella, Gino and Sutterud, Halvard and Azadi, Sam and Drummond, ND and Pfau, David and Spencer, James S and Foulkes, W Matthew C},
+  journal={Physical review letters},
+  volume={130},
+  number={3},
+  pages={036401},
+  year={2023},
+  publisher={APS}
+}
+```
+
+Wasserstein QMC (thanks to Kirill Neklyudov) is described in a NeurIPS 2023
+article:
+
+```
+@article{neklyudov2023wasserstein,
+  title={Wasserstein Quantum Monte Carlo: A Novel Approach for Solving the Quantum Many-Body Schr{\"o}dinger Equation},
+  author={Neklyudov, Kirill and Nys, Jannes and Thiede, Luca and Carrasquilla, Juan and Liu, Qiang and Welling, Max and Makhzani, Alireza},
+  journal={NeurIPS},
+  year={2023}
+}
+```
+
+Natural excited states was introduced in this article, which is also the first
+paper from our group using pseudopotentials
+
+```
+@article{pfau2023natural,
+  title={Natural Quantum Monte Carlo Computation of Excited States},
+  author={Pfau, David and Axelrod, Simon and Sutterud, Halvard and von Glehn, Ingrid and Spencer, James S},
+  journal={arXiv preprint arXiv:2308.16848},
+  year={2023}
 }
 ```
 
