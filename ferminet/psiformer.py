@@ -404,7 +404,7 @@ def make_fermi_net(
       heads_dim=heads_dim,
       mlp_hidden_dims=mlp_hidden_dims,
       use_layer_norm=use_layer_norm,
-  )
+  )  # pytype: disable=wrong-keyword-args
 
   psiformer_layers = make_psiformer_layers(nspins, charges.shape[0], options)
 
