@@ -172,7 +172,7 @@ computing observables of excited states or the density matrix for the ground
 state, `.npy` files are also saved to the same folder. A single NumPy array is
 saved for every iteration of optimization into the same file. An example Colab
 notebook analyzing these outputs is given in `notebooks/excited_states_analysis.ipynb`.
-<a target="_blank" href="https://colab.research.google.com/github/deepmind/ferminet/blob/master/notebooks/excited_states_analysis.ipynb"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="(Open in Colab!)"/></a>
+<a target="_blank" href="https://colab.research.google.com/github/google-deepmind/ferminet/blob/main/ferminet/notebooks/excited_states_analysis.ipynb"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="(Open in Colab!)"/></a>
 
 ## Pretrained Models
 
