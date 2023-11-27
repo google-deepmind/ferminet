@@ -45,7 +45,9 @@ class GtoTest(parameterized.TestCase):
     jax_eval_gto = jax.jit(mol_jax.eval_gto) if jit else mol_jax.eval_gto
     aos_jax = jax_eval_gto(coords)
 
-    np.testing.assert_allclose(aos_pyscf, aos_jax, atol=1E-4)
+    # Loose tolerances due to float32. With float64, these agree to better than
+    # 1e-10.
+    np.testing.assert_allclose(aos_pyscf, aos_jax, atol=4.e-4, rtol=2.e-4)
 
   def test_grad_solid_harmonic(self):
     np.random.seed(0)
@@ -58,10 +60,10 @@ class GtoTest(parameterized.TestCase):
 
     with self.subTest('by hand'):
       observed = gto.grad_solid_harmonic(r, l_max)
-      np.testing.assert_allclose(observed, expected, atol=1E-4)
+      np.testing.assert_allclose(observed, expected, atol=1.e-4)
     with self.subTest('by jax'):
       observed_jacfwd = gto.grad_solid_harmonic_by_jacfwd(r, l_max)
-      np.testing.assert_allclose(observed_jacfwd, expected, atol=1E-4)
+      np.testing.assert_allclose(observed_jacfwd, expected, atol=1.e-4)
 
 if __name__ == '__main__':
   absltest.main()
