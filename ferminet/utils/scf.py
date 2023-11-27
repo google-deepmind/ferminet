@@ -38,6 +38,9 @@ import jax.numpy as jnp
 import jax.tree_util
 import numpy as np
 import pyscf
+import pyscf.gto
+import pyscf.lib
+import pyscf.scf
 
 
 NDArray = Union[jnp.ndarray, np.ndarray]
