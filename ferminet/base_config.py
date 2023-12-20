@@ -56,6 +56,7 @@ def default() -> ml_collections.ConfigDict:
           'objective': 'vmc',  # objective type. Either 'vmc' or 'wqmc'
           'iterations': 1000000,  # number of iterations
           'optimizer': 'kfac',  # one of adam, kfac, lamb, none
+          'laplacian': 'default',  # of of default or folx (for forward lapl)
           'lr': {
               'rate': 0.05,  # learning rate
               'decay': 1.0,  # exponent of learning rate decay

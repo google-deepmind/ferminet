@@ -55,13 +55,23 @@ def _config_params():
       yield {'system': system,
              'optimizer': optimizer,
              'complex_': complex_,
-             'states': states}
+             'states': states,
+             'laplacian': 'default'}
   for optimizer in ('kfac', 'adam', 'lamb', 'none'):
     yield {
         'system': 'H' if optimizer in ('kfac', 'adam') else 'Li',
         'optimizer': optimizer,
         'complex_': False,
         'states': 0,
+        'laplacian': 'default',
+    }
+  for states, laplacian in itertools.product((0, 2), ('default', 'folx')):
+    yield {
+        'system': 'Li',
+        'optimizer': 'kfac',
+        'complex_': False,
+        'states': states,
+        'laplacian': laplacian
     }
 
 
@@ -75,7 +85,7 @@ class QmcTest(parameterized.TestCase):
     pyscf.lib.param.TMPDIR = None
 
   @parameterized.parameters(_config_params())
-  def test_training_step(self, system, optimizer, complex_, states):
+  def test_training_step(self, system, optimizer, complex_, states, laplacian):
     if system in ('H', 'Li'):
       cfg = atom.get_config()
       cfg.system.atom = system
@@ -90,6 +100,7 @@ class QmcTest(parameterized.TestCase):
     cfg.pretrain.iterations = 10
     cfg.mcmc.burn_in = 10
     cfg.optim.optimizer = optimizer
+    cfg.optim.laplacian = laplacian
     cfg.optim.iterations = 3
     cfg.debug.check_nan = True
     cfg.observables.s2 = True

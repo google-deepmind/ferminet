@@ -24,6 +24,7 @@ REQUIRED_PACKAGES = [
     'attrs',
     'chex',
     'h5py',
+    'folx @ git+https://github.com/microsoft/folx',
     'jax',
     'jaxlib',
     # TODO(b/230487443) - use released version of kfac.
@@ -49,7 +50,8 @@ def ferminet_test_suite():
 setup(
     name='ferminet',
     version='0.2',
-    description='A library to train networks to represent ground state wavefunctions of fermionic systems',
+    description=('A library to train networks to represent ground '
+                 'state wavefunctions of fermionic systems'),
     url='https://github.com/deepmind/ferminet',
     author='DeepMind',
     author_email='no-reply@google.com',

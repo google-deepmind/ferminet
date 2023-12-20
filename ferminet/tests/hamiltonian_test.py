@@ -14,6 +14,8 @@
 
 """Tests for ferminet.hamiltonian."""
 
+import itertools
+
 from absl.testing import absltest
 from absl.testing import parameterized
 from ferminet import base_config
@@ -59,7 +61,8 @@ def kinetic_from_hessian_log(log_f):
 
 class HamiltonianTest(parameterized.TestCase):
 
-  def test_local_kinetic_energy(self):
+  @parameterized.parameters(['default', 'folx'])
+  def test_local_kinetic_energy(self, laplacian):
 
     dummy_params = {}
     xs = np.random.normal(size=(3,))
@@ -68,7 +71,8 @@ class HamiltonianTest(parameterized.TestCase):
     charges = 2 * np.ones(shape=(1,))
     expected_kinetic_energy = -(1 - 2 / np.abs(np.linalg.norm(xs))) / 2
 
-    kinetic = hamiltonian.local_kinetic_energy(h_atom_log_psi_signed)
+    kinetic = hamiltonian.local_kinetic_energy(h_atom_log_psi_signed,
+                                               laplacian_method=laplacian)
     kinetic_energy = kinetic(
         dummy_params,
         networks.FermiNetData(
@@ -152,7 +156,8 @@ class HamiltonianTest(parameterized.TestCase):
 
 class LaplacianTest(parameterized.TestCase):
 
-  def test_laplacian(self):
+  @parameterized.parameters(['default', 'folx'])
+  def test_laplacian(self, laplacian):
 
     xs = np.random.uniform(size=(100, 3))
     spins = np.ones(shape=(1,))
@@ -163,7 +168,8 @@ class LaplacianTest(parameterized.TestCase):
     )
     dummy_params = {}
     t_l_fn = jax.vmap(
-        hamiltonian.local_kinetic_energy(h_atom_log_psi_signed),
+        hamiltonian.local_kinetic_energy(h_atom_log_psi_signed,
+                                         laplacian_method=laplacian),
         in_axes=(
             None,
             networks.FermiNetData(
@@ -178,8 +184,10 @@ class LaplacianTest(parameterized.TestCase):
     )(dummy_params, xs, spins, atoms, charges)
     np.testing.assert_allclose(t_l, hess_t, rtol=1E-5)
 
-  @parameterized.parameters([True, False])
-  def test_fermi_net_laplacian(self, full_det):
+  @parameterized.parameters(
+      itertools.product([True, False], ['default', 'folx'])
+  )
+  def test_fermi_net_laplacian(self, full_det, laplacian):
     natoms = 2
     np.random.seed(12)
     atoms = np.random.uniform(low=-5.0, high=5.0, size=(natoms, 3))
@@ -209,7 +217,8 @@ class LaplacianTest(parameterized.TestCase):
     spins = np.sign(np.random.normal(scale=1, size=(batch, sum(nspins))))
     t_l_fn = jax.jit(
         jax.vmap(
-            hamiltonian.local_kinetic_energy(network.apply),
+            hamiltonian.local_kinetic_energy(network.apply,
+                                             laplacian_method=laplacian),
             in_axes=(
                 None,
                 networks.FermiNetData(

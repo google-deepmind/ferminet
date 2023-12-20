@@ -20,6 +20,7 @@ import chex
 from ferminet import networks
 from ferminet import pseudopotential as pp
 from ferminet.utils import utils
+import folx
 import jax
 from jax import lax
 import jax.numpy as jnp
@@ -80,6 +81,7 @@ def local_kinetic_energy(
     f: networks.FermiNetLike,
     use_scan: bool = False,
     complex_output: bool = False,
+    laplacian_method: str = 'default',
 ) -> KineticEnergy:
   r"""Creates a function to for the local kinetic energy, -1/2 \nabla^2 ln|f|.
 
@@ -88,6 +90,9 @@ def local_kinetic_energy(
       (sign or phase, log magnitude) tuple.
     use_scan: Whether to use a `lax.scan` for computing the laplacian.
     complex_output: If true, the output of f is complex-valued.
+    laplacian_method: Laplacian calculation method. One of:
+      'default': take jvp(grad), looping over inputs
+      'folx': use Microsoft's implementation of forward laplacian
 
   Returns:
     Callable which evaluates the local kinetic energy,
@@ -97,51 +102,77 @@ def local_kinetic_energy(
   phase_f = utils.select_output(f, 0)
   logabs_f = utils.select_output(f, 1)
 
-  def _lapl_over_f(params, data):
-    n = data.positions.shape[0]
-    eye = jnp.eye(n)
-    grad_f = jax.grad(logabs_f, argnums=1)
-    def grad_f_closure(x):
-      return grad_f(params, x, data.spins, data.atoms, data.charges)
+  if laplacian_method == 'default':
 
-    primal, dgrad_f = jax.linearize(grad_f_closure, data.positions)
+    def _lapl_over_f(params, data):
+      n = data.positions.shape[0]
+      eye = jnp.eye(n)
+      grad_f = jax.grad(logabs_f, argnums=1)
+      def grad_f_closure(x):
+        return grad_f(params, x, data.spins, data.atoms, data.charges)
 
+      primal, dgrad_f = jax.linearize(grad_f_closure, data.positions)
+
+      if complex_output:
+        grad_phase = jax.grad(phase_f, argnums=1)
+        def grad_phase_closure(x):
+          return grad_phase(params, x, data.spins, data.atoms, data.charges)
+        phase_primal, dgrad_phase = jax.linearize(
+            grad_phase_closure, data.positions)
+        hessian_diagonal = (
+            lambda i: dgrad_f(eye[i])[i] + 1.j * dgrad_phase(eye[i])[i]
+        )
+      else:
+        hessian_diagonal = lambda i: dgrad_f(eye[i])[i]
+
+      if use_scan:
+        _, diagonal = lax.scan(
+            lambda i, _: (i + 1, hessian_diagonal(i)), 0, None, length=n)
+        result = -0.5 * jnp.sum(diagonal)
+      else:
+        result = -0.5 * lax.fori_loop(
+            0, n, lambda i, val: val + hessian_diagonal(i), 0.0)
+      result -= 0.5 * jnp.sum(primal ** 2)
+      if complex_output:
+        result += 0.5 * jnp.sum(phase_primal ** 2)
+        result -= 1.j * jnp.sum(primal * phase_primal)
+      return result
+
+  elif laplacian_method == 'folx':
     if complex_output:
-      grad_phase = jax.grad(phase_f, argnums=1)
-      def grad_phase_closure(x):
-        return grad_phase(params, x, data.spins, data.atoms, data.charges)
-      phase_primal, dgrad_phase = jax.linearize(
-          grad_phase_closure, data.positions)
-      hessian_diagonal = (
-          lambda i: dgrad_f(eye[i])[i] + 1.j * dgrad_phase(eye[i])[i]
-      )
+      raise NotImplementedError('Forward laplacian not yet supported for'
+                                'complex-valued outputs.')
     else:
-      hessian_diagonal = lambda i: dgrad_f(eye[i])[i]
-
-    if use_scan:
-      _, diagonal = lax.scan(
-          lambda i, _: (i + 1, hessian_diagonal(i)), 0, None, length=n)
-      result = -0.5 * jnp.sum(diagonal)
-    else:
-      result = -0.5 * lax.fori_loop(
-          0, n, lambda i, val: val + hessian_diagonal(i), 0.0)
-    result -= 0.5 * jnp.sum(primal ** 2)
-    if complex_output:
-      result += 0.5 * jnp.sum(phase_primal ** 2)
-      result -= 1.j * jnp.sum(primal * phase_primal)
-    return result
+      def _lapl_over_f(params, data):
+        f_closure = lambda x: logabs_f(params,
+                                       x,
+                                       data.spins,
+                                       data.atoms,
+                                       data.charges)
+        f_wrapped = folx.forward_laplacian(f_closure, sparsity_threshold=6)
+        output = f_wrapped(data.positions)
+        return - (output.laplacian +
+                  jnp.sum(output.jacobian.dense_array ** 2)) / 2
+  else:
+    raise NotImplementedError(f'Laplacian method {laplacian_method} '
+                              'not implemented.')
 
   return _lapl_over_f
 
 
-def excited_kinetic_energy_matrix(f: networks.FermiNetLike,
-                                  states: int) -> KineticEnergy:
+def excited_kinetic_energy_matrix(
+    f: networks.FermiNetLike,
+    states: int,
+    laplacian_method: str = 'default') -> KineticEnergy:
   """Creates a f'n which evaluates the matrix of local kinetic energies.
 
   Args:
     f: A network which returns a tuple of sign(psi) and log(|psi|) arrays, where
       each array contains one element per excited state.
     states: the number of excited states
+    laplacian_method: Laplacian calculation method. One of:
+      'default': take jvp(grad), looping over inputs
+      'folx': use Microsoft's implementation of forward laplacian
 
   Returns:
     A function which computes the matrices (psi) and (K psi), which are the
@@ -166,11 +197,24 @@ def excited_kinetic_energy_matrix(f: networks.FermiNetLike,
     """Return the kinetic energy (divided by psi) summed over excited states."""
     pos_ = jnp.reshape(data.positions, [states, -1])
     spins_ = jnp.reshape(data.spins, [states, -1])
-    vmap_f = jax.vmap(f, (None, 0, 0, None, None))
-    sign_mat, log_mat = vmap_f(params, pos_, spins_, data.atoms, data.charges)
-    vmap_lapl = jax.vmap(_lapl_all_states, (None, 0, 0, None, None))
-    lapl = vmap_lapl(params, pos_, spins_, data.atoms,
-                     data.charges)  # K psi_i(r_j) / psi_i(r_j)
+
+    if laplacian_method == 'default':
+      vmap_f = jax.vmap(f, (None, 0, 0, None, None))
+      sign_mat, log_mat = vmap_f(params, pos_, spins_, data.atoms, data.charges)
+      vmap_lapl = jax.vmap(_lapl_all_states, (None, 0, 0, None, None))
+      lapl = vmap_lapl(params, pos_, spins_, data.atoms,
+                       data.charges)  # K psi_i(r_j) / psi_i(r_j)
+    elif laplacian_method == 'folx':
+      # CAUTION!! Only the first array of spins is being passed!
+      f_closure = lambda x: f(params, x, spins_[0], data.atoms, data.charges)
+      f_wrapped = folx.forward_laplacian(f_closure, sparsity_threshold=6)
+      sign_mat, log_out = folx.batched_vmap(f_wrapped, 1)(pos_)
+      log_mat = log_out.x
+      lapl = -(log_out.laplacian +
+               jnp.sum(log_out.jacobian.dense_array ** 2, axis=-2)) / 2
+    else:
+      raise NotImplementedError(f'Laplacian method {laplacian_method} '
+                                'not implemented with excited states.')
 
     # subtract off largest value to avoid under/overflow
     psi_mat = sign_mat * jnp.exp(log_mat - jnp.max(log_mat))  # psi_i(r_j)
@@ -239,6 +283,7 @@ def local_energy(
     nspins: Sequence[int],
     use_scan: bool = False,
     complex_output: bool = False,
+    laplacian_method: str = 'default',
     states: int = 0,
     pp_type: str = 'ccecp',
     pp_symbols: Sequence[str] | None = None,
@@ -252,6 +297,9 @@ def local_energy(
     nspins: Number of particles of each spin.
     use_scan: Whether to use a `lax.scan` for computing the laplacian.
     complex_output: If true, the output of f is complex-valued.
+    laplacian_method: Laplacian calculation method. One of:
+      'default': take jvp(grad), looping over inputs
+      'folx': use Microsoft's implementation of forward laplacian
     states: Number of excited states to compute. If 0, compute ground state with
       default machinery. If 1, compute ground state with excited state machinery
     pp_type: type of pseudopotential to use. Only used if ecp_symbols is
@@ -270,11 +318,12 @@ def local_energy(
   del nspins
 
   if states:
-    ke = excited_kinetic_energy_matrix(f, states)
+    ke = excited_kinetic_energy_matrix(f, states, laplacian_method)
   else:
     ke = local_kinetic_energy(f,
                               use_scan=use_scan,
-                              complex_output=complex_output)
+                              complex_output=complex_output,
+                              laplacian_method=laplacian_method)
 
   if not pp_symbols:
     effective_charges = charges
