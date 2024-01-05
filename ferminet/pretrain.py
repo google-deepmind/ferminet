@@ -177,7 +177,7 @@ def make_pretrain_step(
         #result = jnp.mean(cnorm(target[:, None, ...], orbitals[0])).real
         
         standard = jnp.mean(cnorm(target[:, None, ...], orbitals[0])).real
-        sinloss = sindist2(target[:, None, ...], orbitals[0], p[:,None,...],orbital_wise=True)
+        sinloss = sindist2(target[:, None, ...], orbitals[0], p[:,None,None,None],orbital_wise=True)
 
         shown=sindist2(psi_target,psi,p,orbital_wise=False)
 
