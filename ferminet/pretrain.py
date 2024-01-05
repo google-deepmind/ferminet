@@ -142,7 +142,7 @@ def make_pretrain_step(
 
     cnorm = lambda x, y: (x - y) * jnp.conj(x - y)  # complex norm
 
-    odot = lambda x, y: jnp.sum(jnp.conj(x)*y, axis=-1)  # complex dot product
+    odot = lambda x, y: jnp.sum(jnp.conj(x)*y, axis=(0,-1))/y.shape[0]  # complex dot product
     sqoverlap=lambda x,y:jnp.abs(odot(x,y)**2) # squared overlap
     sqnorm=lambda x:odot(x,x).real # squared norm
     cos2 = lambda x, y: sqoverlap(x,y)/(sqnorm(x)*sqnorm(y))
@@ -165,7 +165,7 @@ def make_pretrain_step(
         #result = jnp.mean(cnorm(target[:, None, ...], orbitals[0])).real
         
         standard = jnp.mean(cnorm(target[:, None, ...], orbitals[0])).real
-        sinloss = jnp.mean(sindist2(target[:, None, ...], orbitals[0])).real
+        sinloss = sindist2(target[:, None, ...], orbitals[0]).real
         shown=sinloss
 
         if SI:
