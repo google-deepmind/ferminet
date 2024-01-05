@@ -117,6 +117,7 @@ def make_pretrain_step(
     batch_network: networks.LogFermiNetLike,
     optimizer_update: optax.TransformUpdateFn,
     full_det: bool = False,
+    SI: bool = False,
 ):
   """Creates function for performing one step of Hartre-Fock pretraining.
 
@@ -136,7 +137,7 @@ def make_pretrain_step(
     Callable for performing a single pretraining optimisation step.
   """
 
-  def pretrain_step(data, target, params, state, key, logprob, SI:bool=False):
+  def pretrain_step(data, target, params, state, key, logprob):
     """One iteration of pretraining to match HF."""
 
     cnorm = lambda x, y: (x - y) * jnp.conj(x - y)  # complex norm
