@@ -142,7 +142,7 @@ def make_pretrain_step(
 
     cnorm = lambda x, y: (x - y) * jnp.conj(x - y)  # complex norm
 
-    def sindist2(x, y, p, orbital_wise=False):
+    def sindist2(x, y, p=1, orbital_wise=False):
       if orbital_wise:
         xy=jnp.mean(jnp.conj(x)*y/p,axis=(0,-2))
         xx=jnp.mean(jnp.abs(jnp.conj(x)*x/p),axis=(0,-2))
@@ -177,9 +177,9 @@ def make_pretrain_step(
         #result = jnp.mean(cnorm(target[:, None, ...], orbitals[0])).real
         
         standard = jnp.mean(cnorm(target[:, None, ...], orbitals[0])).real
-        sinloss = sindist2(target[:, None, ...], orbitals[0], p[:,None,None,None],orbital_wise=True)
+        sinloss = sindist2(target[:, None, ...], orbitals[0], p[:,None,None,None])
 
-        shown=sindist2(psi_target,psi,p,orbital_wise=False)
+        shown=sindist2(psi_target,psi,p)
 
         if SI:
           trained=sinloss
