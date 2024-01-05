@@ -145,7 +145,7 @@ def make_pretrain_step(
     odot = lambda x, y: jnp.sum(jnp.conj(x)*y, axis=(0,-1))/y.shape[0]  # complex dot product
     sqoverlap=lambda x,y:jnp.abs(odot(x,y)**2) # squared overlap
     sqnorm=lambda x:odot(x,x).real # squared norm
-    cos2 = lambda x, y: sqoverlap(x,y)/(sqnorm(x)*sqnorm(y))
+    cos2 = lambda x, y: jnp.mean(sqoverlap(x,y)/(sqnorm(x)*sqnorm(y)))
     sindist2=lambda x,y: 1-cos2(x,y) # squared sin distance
 
     def loss_fn(
