@@ -180,7 +180,7 @@ def make_pretrain_step(
         #sinloss = sindist2(target[:, None, ...], orbitals[0], p[:,None,None,None])
         #shown=sindist2(psi_target,psi,p)
         sinloss = sindist2(target[:, None, ...], orbitals[0], orbital_wise=True)
-        shown=sindist2(psi_target,psi,p)
+        shown=sindist2(psi_target,psi)
 
         if SI:
           trained=sinloss
