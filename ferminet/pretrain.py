@@ -142,11 +142,18 @@ def make_pretrain_step(
 
     cnorm = lambda x, y: (x - y) * jnp.conj(x - y)  # complex norm
 
-    odot = lambda x, y: jnp.sum(jnp.conj(x)*y, axis=(0,-1))/y.shape[0]  # complex dot product
-    sqoverlap=lambda x,y:jnp.abs(odot(x,y)**2) # squared overlap
-    sqnorm=lambda x:odot(x,x).real # squared norm
-    cos2 = lambda x, y: jnp.mean(sqoverlap(x,y)/(sqnorm(x)*sqnorm(y)))
-    sindist2=lambda x,y: 1-cos2(x,y) # squared sin distance
+    def sindist2(x, y, p, orbital_wise=False):
+      if orbital_wise:
+        xy=jnp.mean(jnp.conj(x)*y/p,axis=(0,-2))
+        xx=jnp.mean(jnp.abs(jnp.conj(x)*x/p),axis=(0,-2))
+        yy=jnp.mean(jnp.abs(jnp.conj(y)*y/p),axis=(0,-2))
+      else:
+        xy=jnp.mean(jnp.conj(x)*y/p)
+        xx=jnp.mean(jnp.abs(jnp.conj(x)*x/p))
+        yy=jnp.mean(jnp.abs(jnp.conj(y)*y/p))
+      xy2=jnp.abs(jnp.conj(xy)*xy)
+      cos2=xy2/(xx*yy)
+      return jnp.mean(1-cos2).real
 
     def loss_fn(
         params: networks.ParamTree, data: networks.FermiNetData, target: ...
@@ -162,11 +169,17 @@ def make_pretrain_step(
             (jnp.concatenate((target[0], jnp.zeros((ndet, na, nb))), axis=-1),
              jnp.concatenate((jnp.zeros((ndet, nb, na)), target[1]), axis=-1)),
             axis=-2)
+        
+        psi=jnp.sum(jnp.linalg.det(orbitals[0]),axis=1)
+        psi_target=jnp.linalg.det(target)
+        p=jnp.abs(jnp.conj(psi_target)*psi_target)
+
         #result = jnp.mean(cnorm(target[:, None, ...], orbitals[0])).real
         
         standard = jnp.mean(cnorm(target[:, None, ...], orbitals[0])).real
-        sinloss = sindist2(target[:, None, ...], orbitals[0]).real
-        shown=sinloss
+        sinloss = sindist2(target[:, None, ...], orbitals[0], p[:,None,...],orbital_wise=True)
+
+        shown=sindist2(psi_target,psi,p,orbital_wise=False)
 
         if SI:
           trained=sinloss
