@@ -136,10 +136,17 @@ def make_pretrain_step(
     Callable for performing a single pretraining optimisation step.
   """
 
-  def pretrain_step(data, target, params, state, key, logprob):
+  def pretrain_step(data, target, params, state, key, logprob, SI:bool=False):
     """One iteration of pretraining to match HF."""
 
     cnorm = lambda x, y: (x - y) * jnp.conj(x - y)  # complex norm
+
+    odot = lambda x, y: jnp.sum(jnp.conj(x)*y, axis=-1)  # complex dot product
+    sqoverlap=lambda x,y:jnp.abs(odot(x,y)**2) # squared overlap
+    sqnorm=lambda x:odot(x,x).real # squared norm
+    cos2 = lambda x, y: sqoverlap(x,y)/(sqnorm(x)*sqnorm(y))
+    sindist2=lambda x,y: 1-cos2(x,y) # squared sin distance
+
     def loss_fn(
         params: networks.ParamTree, data: networks.FermiNetData, target: ...
     ):
@@ -154,7 +161,18 @@ def make_pretrain_step(
             (jnp.concatenate((target[0], jnp.zeros((ndet, na, nb))), axis=-1),
              jnp.concatenate((jnp.zeros((ndet, nb, na)), target[1]), axis=-1)),
             axis=-2)
-        result = jnp.mean(cnorm(target[:, None, ...], orbitals[0])).real
+        #result = jnp.mean(cnorm(target[:, None, ...], orbitals[0])).real
+        
+        standard = jnp.mean(cnorm(target[:, None, ...], orbitals[0])).real
+        sinloss = jnp.mean(sindist2(target[:, None, ...], orbitals[0])).real
+        shown=sinloss
+
+        if SI:
+          trained=sinloss
+        else:
+          trained=standard
+
+        result=jax.lax.stop_gradient(shown-trained)+trained
       else:
         result = jnp.array(
             [
@@ -191,6 +209,7 @@ def pretrain_hartree_fock(
     scf_approx: scf.Scf,
     iterations: int = 1000,
     logger: Optional[Callable[[int, float], None]] = None,
+    SI: bool=False
 ):
   """Performs training to match initialization as closely as possible to HF.
 
@@ -235,6 +254,7 @@ def pretrain_hartree_fock(
       batch_network,
       optimizer.update,
       full_det=network_options.full_det,
+      SI=SI
   )
   pretrain_step = constants.pmap(pretrain_step)
   pnetwork = constants.pmap(batch_network)

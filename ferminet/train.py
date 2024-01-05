@@ -539,6 +539,7 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
         electrons=cfg.system.electrons,
         scf_approx=hartree_fock,
         iterations=cfg.pretrain.iterations,
+        SI=cfg.pretrain.SI,
     )
 
   # Main training
