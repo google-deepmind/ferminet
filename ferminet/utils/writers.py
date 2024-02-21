@@ -15,10 +15,9 @@
 
 import contextlib
 import os
-from typing import Mapping, Optional, Sequence
+from typing import Optional, Sequence
 
 from absl import logging
-import tables
 
 
 class Writer(contextlib.AbstractContextManager):
@@ -78,70 +77,3 @@ class Writer(contextlib.AbstractContextManager):
 
   def __exit__(self, exc_type, exc_val, exc_tb):
     self._file.close()
-
-
-class H5Writer(contextlib.AbstractContextManager):
-  """Write data to HDF5 files."""
-
-  def __init__(self,
-               name: str,
-               schema: Mapping[str, Sequence[int]],
-               directory: str = '',
-               index_key: str = 't',
-               compression_level: int = 5):
-    """Initialise H5Writer.
-
-    Args:
-      name: file name for CSV.
-      schema: dict of keys, corresponding to each data item . All data is
-        assumed ot be 32-bit floats.
-      directory: directory path to write file to.
-      index_key: name of (integer) key used to index each entry.
-      compression_level: compression level (0-9) used to compress HDF5 file.
-    """
-    self._path = os.path.join(directory, name)
-    self._schema = schema
-    self._index_key = index_key
-    self._description = {}
-    self._file = None
-    self._complevel = compression_level
-
-  def __enter__(self):
-    if not self._schema:
-      return self
-    pos = 1
-    self._description[self._index_key] = tables.Int32Col(pos=pos)
-    for key, shape in self._schema.items():
-      pos += 1
-      self._description[key] = tables.Float32Col(pos=pos, shape=shape)
-    if not os.path.isdir(os.path.dirname(self._path)):
-      os.mkdir(os.path.dirname(self._path))
-    self._file = tables.open_file(
-        self._path,
-        mode='w',
-        title='Fermi Net Data',
-        filters=tables.Filters(complevel=self._complevel))
-    self._table = self._file.create_table(
-        where=self._file.root, name='data', description=self._description)
-    return self
-
-  def write(self, index: int, data):
-    """Write data to HDF5 file.
-
-    Args:
-      index: iteration index.
-      data: dict of arrays to write to file. Only elements with keys in the
-        schema are written.
-    """
-    if self._file:
-      h5_data = (index,)
-      for key in self._description:
-        if key != self._index_key:
-          h5_data += (data[key],)
-      self._table.append([h5_data])
-      self._table.flush()
-
-  def __exit__(self, exc_type, exc_val, exc_tb):
-    if self._file:
-      self._file.close()
-      self._file = None
