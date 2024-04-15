@@ -445,7 +445,7 @@ def make_fermi_net(
           jnp.reshape(orbital, (options.states, -1) + orbital.shape[1:])
           for orbital in orbitals
       ]
-      return batch_logdet_matmul(*orbitals)
+      return batch_logdet_matmul(orbitals)
     else:
       return network_blocks.logdet_matmul(orbitals)
 
