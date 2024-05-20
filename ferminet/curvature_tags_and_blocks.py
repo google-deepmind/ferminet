@@ -55,6 +55,7 @@ class RepeatedDenseBlock(kfac_jax.DenseTwoKroneckerFactored):
       estimation_data: Mapping[str, Sequence[Array]],
       ema_old: Numeric,
       ema_new: Numeric,
+      identity_weight: Numeric,
       batch_size: int,
   ) -> kfac_jax.TwoKroneckerFactored.State:
     estimation_data = dict(**estimation_data)
@@ -69,6 +70,7 @@ class RepeatedDenseBlock(kfac_jax.DenseTwoKroneckerFactored):
         estimation_data=estimation_data,
         ema_old=ema_old,
         ema_new=ema_new,
+        identity_weight=identity_weight,
         batch_size=batch_size,
     )
 
@@ -91,8 +93,11 @@ class QmcBlockedDense(kfac_jax.TwoKroneckerFactored):
       estimation_data: Mapping[str, Sequence[Array]],
       ema_old: Numeric,
       ema_new: Numeric,
+      identity_weight: Numeric,
       batch_size: int,
   ) -> kfac_jax.TwoKroneckerFactored.State:
+    del identity_weight
+
     x, = estimation_data["inputs"]
     dy, = estimation_data["outputs_tangent"]
     assert batch_size == x.shape[0]
