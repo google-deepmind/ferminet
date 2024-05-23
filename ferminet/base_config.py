@@ -77,6 +77,9 @@ def default() -> ml_collections.ConfigDict:
           # step and revert them if they become NaN after an update. Mainly
           # useful for excited states
           'reset_if_nan': False,
+          # If using Wasserstein QMC, this parameter controls the amount of
+          # "default" VMC gradient to mix in. Otherwise, it is ignored.
+          'vmc_weight': 0.0,
           # KFAC hyperparameters. See KFAC documentation for details.
           'kfac': {
               'invert_every': 1,

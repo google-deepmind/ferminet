@@ -273,6 +273,7 @@ def make_wqmc_loss(
     clip_from_median: bool = True,
     center_at_clipped_energy: bool = True,
     complex_output: bool = False,
+    vmc_weight: float = 0.0
 ) -> LossFn:
   """Creates the WQMC loss function, including custom gradients.
 
@@ -293,6 +294,8 @@ def make_wqmc_loss(
       passed back to the gradient around the clipped local energy, so the mean
       difference across the batch is guaranteed to be zero.
     complex_output: If true, the local energies will be complex valued.
+    vmc_weight: The weight of the contribution from the standard VMC energy
+      gradient.
 
   Returns:
     Callable with signature (params, data) and returns (loss, aux_data), where
@@ -401,8 +404,9 @@ def make_wqmc_loss(
     )
     log_q_tangent_out *= len(mask) / mask.sum()
 
-    _, psi_tangent = jax.jvp(batch_network, primals, tangents)
-    log_q_tangent_out += diff * psi_tangent
+    if vmc_weight > 1e-9:
+      _, psi_tangent = jax.jvp(batch_network, primals, tangents)
+      log_q_tangent_out += vmc_weight * diff * psi_tangent
     primals_out = loss, aux_data
     tangents_out = (log_q_tangent_out.mean(), aux_data)
     return primals_out, tangents_out

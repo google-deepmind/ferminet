@@ -718,6 +718,7 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
         clip_from_median=cfg.optim.clip_median,
         center_at_clipped_energy=cfg.optim.center_at_clip,
         complex_output=cfg.network.get('complex', False),
+        vmc_weight=cfg.optim.get('vmc_weight', 1.0)
     )
   else:
     raise ValueError(f'Not a recognized objective: {cfg.optim.objective}')
