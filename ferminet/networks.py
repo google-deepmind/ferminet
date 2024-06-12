@@ -1288,7 +1288,9 @@ def make_state_matrix(signed_network: FermiNetLike, n: int) -> FermiNetLike:
   return state_matrix
 
 
-def make_total_ansatz(signed_network: FermiNetLike, n: int) -> FermiNetLike:
+def make_total_ansatz(signed_network: FermiNetLike,
+                      n: int,
+                      complex_output: bool = False) -> FermiNetLike:
   """Construct a single-output ansatz which gives the meta-Slater determinant.
 
   Let signed_network(params, pos, spins, options) be a function which returns
@@ -1302,6 +1304,8 @@ def make_total_ansatz(signed_network: FermiNetLike, n: int) -> FermiNetLike:
   Args:
     signed_network: A function with the same calling convention as the FermiNet.
     n: the number of excited states, needed to know how to shape the determinant
+    complex_output: If true, the output of the network is complex, and the
+      individual states return phase angles rather than signs.
 
   Returns:
     A function with a single output which combines the individual excited states
@@ -1311,11 +1315,17 @@ def make_total_ansatz(signed_network: FermiNetLike, n: int) -> FermiNetLike:
 
   def total_ansatz(params, pos, spins, atoms, charges, **kwargs):
     """Evaluate meta_determinant for a given ansatz."""
-    sign_mat, log_mat = state_matrix(
+    sign_in, log_in = state_matrix(
         params, pos, spins, atoms=atoms, charges=charges, **kwargs)
 
-    logmax = jnp.max(log_mat)  # logsumexp trick
-    sign_out, log_out = jnp.linalg.slogdet(sign_mat * jnp.exp(log_mat - logmax))
+    logmax = jnp.max(log_in)  # logsumexp trick
+    if complex_output:
+      # sign_in is a phase angle rather than a sign for complex networks
+      mat_in = jnp.exp(log_in + 1.j * sign_in - logmax)
+      sign_out, log_out = jnp.linalg.slogdet(mat_in)
+      sign_out = jnp.angle(sign_out)
+    else:
+      sign_out, log_out = jnp.linalg.slogdet(sign_in * jnp.exp(log_in - logmax))
     log_out += n * logmax
     return sign_out, log_out
 

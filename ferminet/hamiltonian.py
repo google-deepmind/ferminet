@@ -139,20 +139,18 @@ def local_kinetic_energy(
       return result
 
   elif laplacian_method == 'folx':
-    if complex_output:
-      raise NotImplementedError('Forward laplacian not yet supported for'
-                                'complex-valued outputs.')
-    else:
-      def _lapl_over_f(params, data):
-        f_closure = lambda x: logabs_f(params,
-                                       x,
-                                       data.spins,
-                                       data.atoms,
-                                       data.charges)
-        f_wrapped = folx.forward_laplacian(f_closure, sparsity_threshold=6)
-        output = f_wrapped(data.positions)
-        return - (output.laplacian +
-                  jnp.sum(output.jacobian.dense_array ** 2)) / 2
+    def _lapl_over_f(params, data):
+      f_closure = lambda x: f(params, x, data.spins, data.atoms, data.charges)
+      f_wrapped = folx.forward_laplacian(f_closure, sparsity_threshold=6)
+      output = f_wrapped(data.positions)
+      result = - (output[1].laplacian +
+                  jnp.sum(output[1].jacobian.dense_array ** 2)) / 2
+      if complex_output:
+        result -= 0.5j * output[0].laplacian
+        result += 0.5 * jnp.sum(output[0].jacobian.dense_array ** 2)
+        result -= 1.j * jnp.sum(output[0].jacobian.dense_array *
+                                output[1].jacobian.dense_array)
+      return result
   else:
     raise NotImplementedError(f'Laplacian method {laplacian_method} '
                               'not implemented.')
@@ -163,6 +161,7 @@ def local_kinetic_energy(
 def excited_kinetic_energy_matrix(
     f: networks.FermiNetLike,
     states: int,
+    complex_output: bool = False,
     laplacian_method: str = 'default') -> KineticEnergy:
   """Creates a f'n which evaluates the matrix of local kinetic energies.
 
@@ -170,6 +169,7 @@ def excited_kinetic_energy_matrix(
     f: A network which returns a tuple of sign(psi) and log(|psi|) arrays, where
       each array contains one element per excited state.
     states: the number of excited states
+    complex_output: If true, the output of f is complex-valued.
     laplacian_method: Laplacian calculation method. One of:
       'default': take jvp(grad), looping over inputs
       'folx': use Microsoft's implementation of forward laplacian
@@ -188,10 +188,37 @@ def excited_kinetic_energy_matrix(
     grad_f_closure = lambda x: grad_f(params, x, spins, atoms, charges)
     primal, dgrad_f = jax.linearize(grad_f_closure, pos)
 
-    result = -0.5 * lax.fori_loop(
-        0, n, lambda i, val: val + dgrad_f(eye[i])[:, i], jnp.zeros(states))
+    if complex_output:
+      grad_phase = jax.jacrev(utils.select_output(f, 0), argnums=1)
+      def grad_phase_closure(x):
+        return grad_phase(params, x, spins, atoms, charges)
+      phase_primal, dgrad_phase = jax.linearize(grad_phase_closure, pos)
+      hessian_diagonal = (
+          lambda i: dgrad_f(eye[i])[:, i] + 1.j * dgrad_phase(eye[i])[:, i]
+      )
+    else:
+      phase_primal = 1.0
+      hessian_diagonal = lambda i: dgrad_f(eye[i])[:, i]
 
-    return result - 0.5 * jnp.sum(primal ** 2, axis=-1)
+    if complex_output:
+      if pos.dtype == jnp.float32:
+        dtype = jnp.complex64
+      elif pos.dtype == jnp.float64:
+        dtype = jnp.complex128
+      else:
+        raise ValueError(f'Unsupported dtype for input: {pos.dtype}')
+    else:
+      dtype = pos.dtype
+
+    result = -0.5 * lax.fori_loop(
+        0, n, lambda i, val: val + hessian_diagonal(i),
+        jnp.zeros(states, dtype=dtype))
+    result -= 0.5 * jnp.sum(primal ** 2, axis=-1)
+    if complex_output:
+      result += 0.5 * jnp.sum(phase_primal ** 2, axis=-1)
+      result -= 1.j * jnp.sum(primal * phase_primal, axis=-1)
+
+    return result
 
   def _lapl_over_f(params, data):
     """Return the kinetic energy (divided by psi) summed over excited states."""
@@ -208,16 +235,28 @@ def excited_kinetic_energy_matrix(
       # CAUTION!! Only the first array of spins is being passed!
       f_closure = lambda x: f(params, x, spins_[0], data.atoms, data.charges)
       f_wrapped = folx.forward_laplacian(f_closure, sparsity_threshold=6)
-      sign_mat, log_out = folx.batched_vmap(f_wrapped, 1)(pos_)
+      sign_out, log_out = folx.batched_vmap(f_wrapped, 1)(pos_)
       log_mat = log_out.x
       lapl = -(log_out.laplacian +
                jnp.sum(log_out.jacobian.dense_array ** 2, axis=-2)) / 2
+      if complex_output:
+        sign_mat = sign_out.x
+        lapl -= 0.5j * sign_out.laplacian
+        lapl += 0.5 * jnp.sum(sign_out.jacobian.dense_array ** 2, axis=-2)
+        lapl -= 1.j * jnp.sum(sign_out.jacobian.dense_array *
+                              log_out.jacobian.dense_array, axis=-2)
+      else:
+        sign_mat = sign_out
     else:
       raise NotImplementedError(f'Laplacian method {laplacian_method} '
                                 'not implemented with excited states.')
 
+    # psi_i(r_j)
     # subtract off largest value to avoid under/overflow
-    psi_mat = sign_mat * jnp.exp(log_mat - jnp.max(log_mat))  # psi_i(r_j)
+    if complex_output:
+      psi_mat = jnp.exp(log_mat + 1.j * sign_mat - jnp.max(log_mat))
+    else:
+      psi_mat = sign_mat * jnp.exp(log_mat - jnp.max(log_mat))
     kpsi_mat = lapl * psi_mat  # K psi_i(r_j)
     return psi_mat, kpsi_mat
 
@@ -312,13 +351,13 @@ def local_energy(
     energy of the wavefunction given the parameters params, RNG state key,
     and a single MCMC configuration in data.
   """
-  if complex_output and states > 1:
-    raise NotImplementedError(
-        'Excited states not implemented with complex output')
   del nspins
 
   if states:
-    ke = excited_kinetic_energy_matrix(f, states, laplacian_method)
+    ke = excited_kinetic_energy_matrix(f,
+                                       states,
+                                       complex_output,
+                                       laplacian_method)
   else:
     ke = local_kinetic_energy(f,
                               use_scan=use_scan,

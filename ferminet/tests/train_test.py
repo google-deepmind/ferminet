@@ -65,11 +65,12 @@ def _config_params():
         'states': 0,
         'laplacian': 'default',
     }
-  for states, laplacian in itertools.product((0, 2), ('default', 'folx')):
+  for states, laplacian, complex_ in itertools.product(
+      (0, 2), ('default', 'folx'), (True, False)):
     yield {
         'system': 'Li',
         'optimizer': 'kfac',
-        'complex_': False,
+        'complex_': complex_,
         'states': states,
         'laplacian': laplacian
     }

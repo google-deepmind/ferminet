@@ -459,6 +459,7 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
   else:
     envelope = envelopes.make_isotropic_envelope()
 
+  use_complex = cfg.network.get('complex', False)
   if cfg.network.network_type == 'ferminet':
     network = networks.make_fermi_net(
         nspins,
@@ -472,7 +473,7 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
         bias_orbitals=cfg.network.bias_orbitals,
         full_det=cfg.network.full_det,
         rescale_inputs=cfg.network.get('rescale_inputs', False),
-        complex_output=cfg.network.get('complex', False),
+        complex_output=use_complex,
         **cfg.network.ferminet,
     )
   elif cfg.network.network_type == 'psiformer':
@@ -487,7 +488,7 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
         jastrow=cfg.network.get('jastrow', 'default'),
         bias_orbitals=cfg.network.bias_orbitals,
         rescale_inputs=cfg.network.get('rescale_inputs', False),
-        complex_output=cfg.network.get('complex', False),
+        complex_output=use_complex,
         **cfg.network.psiformer,
     )
   key, subkey = jax.random.split(key)
@@ -498,7 +499,8 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
   if cfg.system.get('states', 0):
     logabs_network = utils.select_output(
         networks.make_total_ansatz(signed_network,
-                                   cfg.system.get('states', 0)), 1)
+                                   cfg.system.get('states', 0),
+                                   complex_output=use_complex), 1)
   else:
     logabs_network = lambda *args, **kwargs: signed_network(*args, **kwargs)[1]
   batch_network = jax.vmap(
@@ -508,12 +510,23 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
   # Exclusively when computing the gradient wrt the energy for complex
   # wavefunctions, it is necessary to have log(psi) rather than log(|psi|).
   # This is unused if the wavefunction is real-valued.
-  def log_network(*args, **kwargs):
-    if not cfg.network.get('complex', False):
-      raise ValueError('This function should never be used if the '
-                       'wavefunction is real-valued.')
-    phase, mag = signed_network(*args, **kwargs)
-    return mag + 1.j * phase
+  if cfg.system.get('states', 0):
+    def log_network(*args, **kwargs):
+      if not use_complex:
+        raise ValueError('This function should never be used if the '
+                         'wavefunction is real-valued.')
+      meta_net = networks.make_total_ansatz(signed_network,
+                                            cfg.system.get('states', 0),
+                                            complex_output=True)
+      phase, mag = meta_net(*args, **kwargs)
+      return mag + 1.j * phase
+  else:
+    def log_network(*args, **kwargs):
+      if not use_complex:
+        raise ValueError('This function should never be used if the '
+                         'wavefunction is real-valued.')
+      phase, mag = signed_network(*args, **kwargs)
+      return mag + 1.j * phase
 
   # Set up checkpointing and restore params/data if necessary
   # Mirror behaviour of checkpoints in TF FermiNet.
@@ -696,28 +709,28 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
         charges=charges,
         nspins=nspins,
         use_scan=False,
-        complex_output=cfg.network.get('complex', False),
+        complex_output=use_complex,
         laplacian_method=laplacian_method,
         states=cfg.system.get('states', 0),
         pp_type=cfg.system.get('pp', {'type': 'ccecp'}).get('type'),
         pp_symbols=pp_symbols if cfg.system.get('use_pp') else None)
   if cfg.optim.objective == 'vmc':
     evaluate_loss = qmc_loss_functions.make_loss(
-        log_network if cfg.network.get('complex', False) else logabs_network,
+        log_network if use_complex else logabs_network,
         local_energy,
         clip_local_energy=cfg.optim.clip_local_energy,
         clip_from_median=cfg.optim.clip_median,
         center_at_clipped_energy=cfg.optim.center_at_clip,
-        complex_output=cfg.network.get('complex', False),
+        complex_output=use_complex,
     )
   elif cfg.optim.objective == 'wqmc':
     evaluate_loss = qmc_loss_functions.make_wqmc_loss(
-        log_network if cfg.network.get('complex', False) else logabs_network,
+        log_network if use_complex else logabs_network,
         local_energy,
         clip_local_energy=cfg.optim.clip_local_energy,
         clip_from_median=cfg.optim.clip_median,
         center_at_clipped_energy=cfg.optim.center_at_clip,
-        complex_output=cfg.network.get('complex', False),
+        complex_output=use_complex,
         vmc_weight=cfg.optim.get('vmc_weight', 1.0)
     )
   else:
