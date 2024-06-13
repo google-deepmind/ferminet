@@ -424,7 +424,8 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
         nspins=nspins,
         restricted=False,
         basis=cfg.pretrain.basis,
-        states=cfg.system.states)
+        states=cfg.system.states,
+        excitation_type=cfg.pretrain.get('excitation_type', 'ordered'))
     # broadcast the result of PySCF from host 0 to all other hosts
     hartree_fock.mean_field.mo_coeff = multihost_utils.broadcast_one_to_all(
         hartree_fock.mean_field.mo_coeff

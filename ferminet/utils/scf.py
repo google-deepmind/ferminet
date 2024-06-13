@@ -32,6 +32,7 @@
 from typing import Optional, Sequence, Tuple, Union
 
 from absl import logging
+from ferminet.utils import elements
 from ferminet.utils import gto
 from ferminet.utils import system
 import jax.numpy as jnp
@@ -99,13 +100,18 @@ class Scf:
 
   def run(self,
           dm0: Optional[np.ndarray] = None,
-          excitations: int = 0):
+          excitations: int = 0,
+          excitation_type: str = 'ordered'):
     """Runs the Hartree-Fock calculation.
 
     Args:
       dm0: Optional density matrix to initialize the calculation.
       excitations: Stores a list of atomic orbitals to swap to construct excited
         states of the lowest energy.
+      excitation_type: The way to construct different states for excited state
+        pretraining. One of 'ordered' or 'random'. 'Ordered' tends to work
+        better, but 'random' is necessary for some systems, especially double
+        excitaitons.
 
     Returns:
       A pyscf scf object (i.e. pyscf.scf.rhf.RHF, pyscf.scf.uhf.UHF or
@@ -148,8 +154,30 @@ class Scf:
       # 1e solvers (e.g. uhf.HF1e) do not take any keyword arguments.
       self.mean_field.kernel()
     if excitations > 0:
-      self.excitations = get_excitations(
-          self.mean_field, n=excitations, preserve_spin=True)
+      if excitation_type == 'ordered':
+        self.excitations = get_ordered_excitations(
+            self.mean_field, n=excitations, preserve_spin=True)
+      elif excitation_type == 'random':
+        nelec = self._mol.nelec
+        ncore = 0  # number of core electrons (do not excite!)
+        for atom in self._mol.atom:
+          period = elements.SYMBOLS[atom[0]].period
+          if period > 1 and atom[0] not in self._mol.ecp:
+            ncore += elements.PERIODS[period-1][-1].atomic_number
+        ncore //= 2  # core electrons are symmetric between alpha and beta spin
+        assert excitations < np.prod([n-ncore+1 for n in nelec])
+        nbasis = self._mol.nao
+        self.excitations = [tuple(
+            [np.concatenate(
+                [np.concatenate([np.eye(ncore),
+                                 np.zeros((ncore, n-ncore))], axis=1),
+                 np.concatenate([np.zeros((n-ncore+1, ncore)),
+                                 np.random.randn(n-ncore+1, n-ncore) /
+                                 np.sqrt(n-ncore)], axis=1),
+                 np.zeros((nbasis-n-1, n))], axis=0) for n in nelec])
+                            for _ in range(excitations)]
+      else:
+        raise ValueError(f'Invalid excitation type: {excitation_type}')
     return self.mean_field
 
   @property
@@ -252,17 +280,25 @@ class Scf:
       for excitation in self.excitations:
         alpha_excited = alpha_spin.copy()
         beta_excited = beta_spin.copy()
-        for occ_index, unocc_index in excitation[2]:
-          spin_occ, i_occ = occ_index
-          spin_unocc, i_unocc = unocc_index
-          if spin_occ == 0:
-            alpha_excited = alpha_excited.at[..., i_occ].set(
-                mos[spin_unocc][..., :nspins[0], i_unocc])
-          elif spin_occ == 1:
-            beta_excited = beta_excited.at[..., i_occ].set(
-                mos[spin_unocc][..., nspins[0]:, i_unocc])
-          else:
-            raise ValueError(f'Invalid {spin_occ=}')
+        if isinstance(excitation[0], float):
+          # excitation_type == 'ordered'
+          for occ_index, unocc_index in excitation[2]:
+            spin_occ, i_occ = occ_index
+            spin_unocc, i_unocc = unocc_index
+            if spin_occ == 0:
+              alpha_excited = alpha_excited.at[..., i_occ].set(
+                  mos[spin_unocc][..., :nspins[0], i_unocc])
+            elif spin_occ == 1:
+              beta_excited = beta_excited.at[..., i_occ].set(
+                  mos[spin_unocc][..., nspins[0]:, i_unocc])
+            else:
+              raise ValueError(f'Invalid {spin_occ=}')
+        elif isinstance(excitation[0], NDArray):
+          # excitation_type == 'random'
+          alpha_excited = jnp.dot(mos[0][:, :nspins[0]], excitation[0])
+          beta_excited = jnp.dot(mos[1][:, nspins[0]:], excitation[1])
+        else:
+          raise ValueError(f'Unexpected excitation type: {type(excitation[0])}')
         alpha_spins.append(alpha_excited)
         beta_spins.append(beta_excited)
       alpha_spin = jnp.stack(alpha_spins, axis=-3)
@@ -299,7 +335,7 @@ def scf_unflatten(aux_data, children) -> Scf:
 jax.tree_util.register_pytree_node(Scf, scf_flatten, scf_unflatten)
 
 
-def get_excitations(
+def get_ordered_excitations(
     mean_field: ...,
     n: int = 10,
     preserve_spin: bool = False

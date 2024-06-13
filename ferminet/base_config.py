@@ -294,6 +294,11 @@ def default() -> ml_collections.ConfigDict:
           'method': 'hf',  # Currently only 'hf' is supported.
           'iterations': 1000,  # Only used if method is 'hf'.
           'basis': 'ccpvdz',  # Larger than STO-6G, but good for excited states
+          # The way to construct different states for excited state pretraining.
+          # One of 'ordered' or 'random'. 'Ordered' tends to work better, but
+          # 'random' is necessary for some systems, especially double
+          # excitations.
+          'excitation_type': 'ordered',
       },
   })
 

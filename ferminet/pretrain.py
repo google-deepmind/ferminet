@@ -36,7 +36,8 @@ def get_hf(molecule: Optional[Sequence[system.Atom]] = None,
            basis: Optional[str] = 'sto-3g',
            pyscf_mol: Optional[pyscf.gto.Mole] = None,
            restricted: Optional[bool] = False,
-           states: int = 0) -> scf.Scf:
+           states: int = 0,
+           excitation_type: str = 'ordered') -> scf.Scf:
   """Returns an Scf object with the Hartree-Fock solution to the system.
 
   Args:
@@ -50,13 +51,17 @@ def get_hf(molecule: Optional[Sequence[system.Atom]] = None,
     states: Number of excited states.  If nonzero, compute all single and double
       excitations of the Hartree-Fock solution and return coefficients for the
       lowest ones.
+    excitation_type: The way to construct different states for excited state
+      pretraining. One of 'ordered' or 'random'. 'Ordered' tends to work better,
+      but 'random' is necessary for some systems, especially double excitaitons.
   """
   if pyscf_mol:
     scf_approx = scf.Scf(pyscf_mol=pyscf_mol, restricted=restricted)
   else:
     scf_approx = scf.Scf(
         molecule, nelectrons=nspins, basis=basis, restricted=restricted)
-  scf_approx.run(excitations=max(states - 1, 0))
+  scf_approx.run(excitations=max(states - 1, 0),
+                 excitation_type=excitation_type)
   return scf_approx
 
 

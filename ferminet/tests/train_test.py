@@ -113,6 +113,24 @@ class QmcTest(parameterized.TestCase):
     # ensure they actually run without a top-level error.
     train.train(cfg)
 
+  def test_random_pretraining(self):
+    cfg = diatomic.get_config()
+    cfg.system.molecule_name = 'LiH'
+    cfg.network.ferminet.hidden_dims = ((16, 4),) * 2
+    cfg.network.determinants = 2
+    cfg.batch_size = 32
+    cfg.system.states = 2
+    cfg.pretrain.iterations = 10
+    cfg.pretrain.basis = 'ccpvdz'
+    cfg.pretrain.excitation_type = 'random'
+    cfg.mcmc.burn_in = 0
+    cfg.optim.iterations = 0
+    cfg.log.save_path = self.create_tempdir().full_path
+    cfg = base_config.resolve(cfg)
+    # Calculation is too small to test the results for accuracy. Test just to
+    # ensure they actually run without a top-level error.
+    train.train(cfg)
+
 
 MOL_STRINGS = [
     'H 0 0 -1; H 0 0 1',
