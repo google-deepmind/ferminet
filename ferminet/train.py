@@ -696,7 +696,7 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
         cfg.system.make_local_energy_fn.rsplit('.', maxsplit=1))
     local_energy_module = importlib.import_module(local_energy_module)
     make_local_energy = getattr(local_energy_module, local_energy_fn)  # type: hamiltonian.MakeLocalEnergy
-    local_energy = make_local_energy(
+    local_energy_fn = make_local_energy(
         f=signed_network,
         charges=charges,
         nspins=nspins,
@@ -705,7 +705,7 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
         **cfg.system.make_local_energy_kwargs)
   else:
     pp_symbols = cfg.system.get('pp', {'symbols': None}).get('symbols')
-    local_energy = hamiltonian.local_energy(
+    local_energy_fn = hamiltonian.local_energy(
         f=signed_network,
         charges=charges,
         nspins=nspins,
@@ -715,6 +715,29 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
         states=cfg.system.get('states', 0),
         pp_type=cfg.system.get('pp', {'type': 'ccecp'}).get('type'),
         pp_symbols=pp_symbols if cfg.system.get('use_pp') else None)
+
+  if cfg.optim.get('spin_energy', 0.0) > 0.0:
+    # Minimize <H + c * S^2> instead of just <H>
+    # Create a new local_energy function that takes the weighted sum of
+    # the local energy and the local spin magnitude.
+    local_s2_fn = observables.make_s2(
+        signed_network,
+        nspins=nspins,
+        states=cfg.system.states)
+    def local_energy_and_s2_fn(params, keys, data):
+      local_energy, aux_data = local_energy_fn(params, keys, data)
+      s2 = local_s2_fn(params, data, None)
+      weight = cfg.optim.get('spin_energy', 0.0)
+      if cfg.system.states:
+        aux_data = aux_data + weight * s2
+        local_energy_and_s2 = local_energy + weight * jnp.trace(s2)
+      else:
+        local_energy_and_s2 = local_energy + weight * s2
+      return local_energy_and_s2, aux_data
+    local_energy = local_energy_and_s2_fn
+  else:
+    local_energy = local_energy_fn
+
   if cfg.optim.objective == 'vmc':
     evaluate_loss = qmc_loss_functions.make_loss(
         log_network if use_complex else logabs_network,

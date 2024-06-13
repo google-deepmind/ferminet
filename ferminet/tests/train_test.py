@@ -113,6 +113,24 @@ class QmcTest(parameterized.TestCase):
     # ensure they actually run without a top-level error.
     train.train(cfg)
 
+  @parameterized.parameters([{'states': 0}, {'states': 3}])
+  def test_s2_energy(self, states):
+    cfg = diatomic.get_config()
+    cfg.system.molecule_name = 'LiH'
+    cfg.network.ferminet.hidden_dims = ((16, 4),) * 2
+    cfg.network.determinants = 2
+    cfg.batch_size = 32
+    cfg.system.states = states
+    cfg.pretrain.iterations = 10
+    cfg.mcmc.burn_in = 10
+    cfg.optim.iterations = 3
+    cfg.optim.spin_energy = 1.0
+    cfg.log.save_path = self.create_tempdir().full_path
+    cfg = base_config.resolve(cfg)
+    # Calculation is too small to test the results for accuracy. Test just to
+    # ensure they actually run without a top-level error.
+    train.train(cfg)
+
   def test_random_pretraining(self):
     cfg = diatomic.get_config()
     cfg.system.molecule_name = 'LiH'

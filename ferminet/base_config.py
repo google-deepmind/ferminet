@@ -80,6 +80,10 @@ def default() -> ml_collections.ConfigDict:
           # If using Wasserstein QMC, this parameter controls the amount of
           # "default" VMC gradient to mix in. Otherwise, it is ignored.
           'vmc_weight': 0.0,
+          # If nonzero, add a term to the Hamiltonian proportional to the spin
+          # magnitude. Useful for removing non-singlet states from excited
+          # state calculations.
+          'spin_energy': 0.0,
           # KFAC hyperparameters. See KFAC documentation for details.
           'kfac': {
               'invert_every': 1,
