@@ -64,7 +64,7 @@ def make_ewald_potential(
   ordinals = sorted(range(-truncation_limit, truncation_limit + 1), key=abs)
   ordinals = jnp.array(list(itertools.product(ordinals, repeat=3)))
   lat_vectors = jnp.einsum('kj,ij->ik', lattice, ordinals)
-  rec_vectors = jnp.einsum('kj,ij->ik', rec, ordinals[1:])
+  rec_vectors = jnp.einsum('jk,ij->ik', rec, ordinals[1:])
   rec_vec_square = jnp.einsum('ij,ij->i', rec_vectors, rec_vectors)
   lat_vec_norm = jnp.linalg.norm(lat_vectors[1:], axis=-1)
 
