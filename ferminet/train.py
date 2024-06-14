@@ -415,6 +415,19 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
     seed = int(multihost_utils.broadcast_one_to_all(seed)[0])
   key = jax.random.PRNGKey(seed)
 
+  # extract number of electrons of each spin around each atom removed because
+  # of pseudopotentials
+  if cfg.system.pyscf_mol:
+    cfg.system.pyscf_mol.build()
+    core_electrons = {
+        atom: ecp_table[0]
+        for atom, ecp_table in cfg.system.pyscf_mol._ecp.items()  # pylint: disable=protected-access
+    }
+    ecp = cfg.system.pyscf_mol.ecp
+  else:
+    ecp = {}
+    core_electrons = {}
+
   # Create parameters, network, and vmaped/pmaped derivations
 
   if cfg.pretrain.method == 'hf' and cfg.pretrain.iterations > 0:
@@ -424,6 +437,8 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
         nspins=nspins,
         restricted=False,
         basis=cfg.pretrain.basis,
+        ecp=ecp,
+        core_electrons=core_electrons,
         states=cfg.system.states,
         excitation_type=cfg.pretrain.get('excitation_type', 'ordered'))
     # broadcast the result of PySCF from host 0 to all other hosts
@@ -557,16 +572,6 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
     key, subkey = jax.random.split(key)
     # make sure data on each host is initialized differently
     subkey = jax.random.fold_in(subkey, jax.process_index())
-    # extract number of electrons of each spin around each atom removed because
-    # of pseudopotentials
-    if cfg.system.pyscf_mol:
-      cfg.system.pyscf_mol.build()
-      core_electrons = {
-          atom: ecp_table[0]
-          for atom, ecp_table in cfg.system.pyscf_mol._ecp.items()  # pylint: disable=protected-access
-      }
-    else:
-      core_electrons = {}
     # create electron state (position and spin)
     pos, spins = init_electrons(
         subkey,
@@ -672,6 +677,8 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
         electrons=cfg.system.electrons,
         scf_approx=hartree_fock,
         iterations=cfg.pretrain.iterations,
+        batch_size=device_batch_size,
+        scf_fraction=cfg.pretrain.get('scf_fraction', 0.0),
         states=cfg.system.states,
     )
 

@@ -25,6 +25,7 @@ from ferminet import base_config
 from ferminet import train
 from ferminet.configs import atom
 from ferminet.configs import diatomic
+import jax
 import pyscf
 
 FLAGS = flags.FLAGS
@@ -56,7 +57,15 @@ def _config_params():
              'optimizer': optimizer,
              'complex_': complex_,
              'states': states,
-             'laplacian': 'default'}
+             'laplacian': 'default',
+             'scf_fraction': 0.0}
+  for states, scf_fraction in itertools.product((0, 2), (0.0, 0.5, 1.0)):
+    yield {'system': 'LiH',
+           'optimizer': 'kfac',
+           'complex_': False,
+           'states': states,
+           'laplacian': 'default',
+           'scf_fraction': scf_fraction}
   for optimizer in ('kfac', 'adam', 'lamb', 'none'):
     yield {
         'system': 'H' if optimizer in ('kfac', 'adam') else 'Li',
@@ -64,6 +73,7 @@ def _config_params():
         'complex_': False,
         'states': 0,
         'laplacian': 'default',
+        'scf_fraction': 0.0
     }
   for states, laplacian, complex_ in itertools.product(
       (0, 2), ('default', 'folx'), (True, False)):
@@ -72,7 +82,8 @@ def _config_params():
         'optimizer': 'kfac',
         'complex_': complex_,
         'states': states,
-        'laplacian': laplacian
+        'laplacian': laplacian,
+        'scf_fraction': 0.0
     }
 
 
@@ -84,9 +95,13 @@ class QmcTest(parameterized.TestCase):
     # Test calculations are small enough to fit in RAM and we don't need
     # checkpoint files.
     pyscf.lib.param.TMPDIR = None
+    # Prevents issues related to the mcmc step in pretraining if multiple
+    # training runs are executed in the same session.
+    jax.clear_caches()
 
   @parameterized.parameters(_config_params())
-  def test_training_step(self, system, optimizer, complex_, states, laplacian):
+  def test_training_step(
+      self, system, optimizer, complex_, states, laplacian, scf_fraction):
     if system in ('H', 'Li'):
       cfg = atom.get_config()
       cfg.system.atom = system
@@ -99,6 +114,7 @@ class QmcTest(parameterized.TestCase):
     cfg.batch_size = 32
     cfg.system.states = states
     cfg.pretrain.iterations = 10
+    cfg.pretrain.scf_fraction = scf_fraction
     cfg.mcmc.burn_in = 10
     cfg.optim.optimizer = optimizer
     cfg.optim.laplacian = laplacian
@@ -231,7 +247,7 @@ class QmcPyscfMolTest(parameterized.TestCase):
     cfg.network.ferminet.hidden_dims = ((16, 4),) * 2
     cfg.network.determinants = 2
     cfg.batch_size = 32
-    cfg.pretrain.iterations = 0
+    cfg.pretrain.iterations = 10
     cfg.mcmc.burn_in = 0
     cfg.system.use_pp = True
     cfg.system.pp.symbols = ['Li']
