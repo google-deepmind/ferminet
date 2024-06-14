@@ -1486,9 +1486,13 @@ def make_fermi_net(
           jnp.reshape(orbital, (options.states, -1) + orbital.shape[1:])
           for orbital in orbitals
       ]
-      return batch_logdet_matmul(orbitals)
+      result = batch_logdet_matmul(orbitals)
     else:
-      return network_blocks.logdet_matmul(orbitals)
+      result = network_blocks.logdet_matmul(orbitals)
+    if 'state_scale' in params:
+      # only used at inference time for excited states
+      result = result[0], result[1] + params['state_scale']
+    return result
 
   return Network(
       options=options, init=init, apply=apply, orbitals=orbitals_apply

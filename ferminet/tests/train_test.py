@@ -149,6 +149,27 @@ class QmcTest(parameterized.TestCase):
     # ensure they actually run without a top-level error.
     train.train(cfg)
 
+  def test_inference_step(self):
+    cfg = diatomic.get_config()
+    cfg.system.molecule_name = 'LiH'
+    cfg.network.ferminet.hidden_dims = ((16, 4),) * 2
+    cfg.network.determinants = 2
+    cfg.batch_size = 32
+    cfg.system.states = 2
+    cfg.pretrain.iterations = 10
+    cfg.mcmc.burn_in = 10
+    cfg.optim.iterations = 3
+
+    cfg.log.save_path = self.create_tempdir().full_path
+    cfg.log.save_frequency = 0  # Save at every step.
+    cfg = base_config.resolve(cfg)
+    # Trivial training run
+    train.train(cfg)
+
+    # Update config and run inference
+    cfg.optim.optimizer = 'none'
+    cfg = base_config.resolve(cfg)
+    train.train(cfg)
 
 MOL_STRINGS = [
     'H 0 0 -1; H 0 0 1',

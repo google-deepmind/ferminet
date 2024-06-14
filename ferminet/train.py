@@ -870,6 +870,25 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
     logging.info('Setting initial iteration to 0.')
     t_init = 0
 
+    # Excited states inference only: rescale each state to be roughly
+    # comparable, to avoid large outlier values in the local energy matrix.
+    # This is not a factor in training, as the outliers are only off-diagonal.
+    # This only becomes a significant factor for systems with >25 electrons.
+    if cfg.system.states > 0 and 'state_scale' not in params:
+      state_matrix = utils.select_output(
+          networks.make_state_matrix(signed_network,
+                                     cfg.system.states), 1)
+      batch_state_matrix = jax.vmap(state_matrix, (None, 0, 0, 0, 0))
+      pmap_state_matrix = constants.pmap(batch_state_matrix)
+      log_psi_vals = pmap_state_matrix(
+          params, data.positions, data.spins, data.atoms, data.charges)
+      state_scale = np.mean(log_psi_vals, axis=[0, 1, 2])
+      state_scale = jax.experimental.multihost_utils.broadcast_one_to_all(
+          state_scale)
+      state_scale = np.tile(state_scale[None], [jax.local_device_count(), 1])
+      if isinstance(params, dict):  # Always true, but prevents type errors
+        params['state_scale'] = -state_scale
+
   if writer_manager is None:
     writer_manager = writers.Writer(
         name='train_stats',
