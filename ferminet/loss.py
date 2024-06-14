@@ -31,17 +31,23 @@ class AuxiliaryLossData:
   """Auxiliary data returned by total_energy.
 
   Attributes:
+    energy: mean energy over batch, and over all devices if inside a pmap.
     variance: mean variance over batch, and over all devices if inside a pmap.
     local_energy: local energy for each MCMC configuration.
     clipped_energy: local energy after clipping has been applied
     grad_local_energy: gradient of the local energy.
     local_energy_mat: for excited states, the local energy matrix.
+    s_ij: Matrix of overlaps between wavefunctions.
+    mean_s_ij: Mean value of the overlap between wavefunctions across walkers.
   """
+  energy: jax.Array  # for some losses, the energy and loss are not the same
   variance: jax.Array
   local_energy: jax.Array
   clipped_energy: jax.Array
-  grad_local_energy: jax.Array | None
-  local_energy_mat: jax.Array | None
+  grad_local_energy: jax.Array | None = None
+  local_energy_mat: jax.Array | None = None
+  s_ij: jax.Array | None = None
+  mean_s_ij: jax.Array | None = None
 
 
 class LossFn(Protocol):
@@ -105,7 +111,7 @@ def clip_local_values(
     device.
   """
 
-  batch_mean = lambda values: constants.pmean(jnp.mean(values))
+  batch_mean = lambda values: constants.pmean(jnp.mean(values, axis=0))
 
   def clip_at_total_variation(values, center, scale):
     tv = batch_mean(jnp.abs(values- center))
@@ -114,7 +120,13 @@ def clip_local_values(
   if clip_from_median:
     # More natural place to center the clipping, but expensive due to both
     # the median and all_gather (at least on multihost)
-    clip_center = jnp.median(constants.all_gather(local_values).real)
+    all_local_values = constants.all_gather(local_values).real
+    shape = all_local_values.shape
+    if all_local_values.ndim == 3:  # energy_and_overlap case
+      all_local_values = all_local_values.reshape([-1, shape[-1]])
+    else:
+      all_local_values = all_local_values.reshape([-1])
+    clip_center = jnp.median(all_local_values, axis=0)
   else:
     clip_center = mean_local_values
   # roughly, the total variation of the local energies
@@ -207,10 +219,10 @@ def make_loss(network: networks.LogFermiNetLike,
     loss_diff = e_l - loss
     variance = constants.pmean(jnp.mean(loss_diff * jnp.conj(loss_diff)))
     return loss, AuxiliaryLossData(
+        energy=loss,
         variance=variance.real,
         local_energy=e_l,
         clipped_energy=e_l,
-        grad_local_energy=None,
         local_energy_mat=e_l_mat,
     )
 
@@ -354,6 +366,7 @@ def make_wqmc_loss(
     grad_e_l = jax.grad(batch_local_energy_pos)(data.positions)
     grad_e_l = jnp.tanh(jax.lax.stop_gradient(grad_e_l))
     return loss, AuxiliaryLossData(
+        energy=loss,
         variance=variance.real,
         local_energy=e_l,
         clipped_energy=e_l,
@@ -412,3 +425,170 @@ def make_wqmc_loss(
     return primals_out, tangents_out
 
   return total_energy
+
+
+def make_energy_overlap_loss(network: networks.LogFermiNetLike,
+                             local_energy: hamiltonian.LocalEnergy,
+                             clip_local_energy: float = 0.0,
+                             clip_from_median: bool = True,
+                             center_at_clipped_energy: bool = True,
+                             overlap_penalty: float = 1.0,
+                             overlap_weight: Tuple[float, ...] = (1.0,),
+                             complex_output: bool = False) -> LossFn:
+  """Creates the loss function for the penalty method for excited states.
+
+  Args:
+    network: callable which evaluates the log of the magnitude of the
+      wavefunction (square root of the log probability distribution) at the
+      single MCMC configuration given the network parameters. For the overlap
+      loss, this returns an entire state matrix - all pairs of states and
+      walkers.
+    local_energy: callable which evaluates the local energy.
+    clip_local_energy: If greater than zero, clip local energies that are
+      outside [E_L - n D, E_L + n D], where E_L is the mean local energy, n is
+      this value and D the mean absolute deviation of the local energies from
+      the mean, to the boundaries. The clipped local energies are only used to
+      evaluate gradients.
+    clip_from_median: If true, center the clipping window at the median rather
+      than the mean. Potentially expensive in multi-host training, but more
+      accurate.
+    center_at_clipped_energy: If true, center the local energy differences
+      passed back to the gradient around the clipped local energy, so the mean
+      difference across the batch is guaranteed to be zero. Seems to
+      significantly improve performance with pseudopotentials.
+    overlap_penalty: The strength of the penalty term that controls the
+      tradeoff between minimizing the weighted energies and keeping the states
+      orthogonal.
+    overlap_weight: The weight to apply to each individual energy in the overall
+      optimization.
+    complex_output: If true, the network output is complex-valued.
+
+  Returns:
+    LossFn callable which evaluates the total energy of the system.
+  """
+
+  data_axes = networks.FermiNetData(positions=0, spins=0, atoms=0, charges=0)
+  batch_local_energy = jax.vmap(
+      local_energy, in_axes=(None, 0, data_axes), out_axes=(0, 0))
+  batch_network = jax.vmap(network, in_axes=(None, 0, 0, 0, 0), out_axes=0)
+  overlap_weight = jnp.array(overlap_weight)
+
+  # TODO(pfau): how much of this can be factored out with make_loss?
+  @jax.custom_jvp
+  def total_energy_and_overlap(
+      params: networks.ParamTree,
+      key: chex.PRNGKey,
+      data: networks.FermiNetData,
+  ) -> Tuple[jnp.ndarray, AuxiliaryLossData]:
+    """Evaluates the energy of the network for a batch of configurations."""
+
+    # Energy term. Largely similar to make_energy_loss, but simplified.
+    keys = jax.random.split(key, num=data.positions.shape[0])
+    e_l, _ = batch_local_energy(params, keys, data)
+    loss = constants.pmean(jnp.mean(e_l, axis=0))
+    loss_diff = e_l - loss
+    variance = constants.pmean(
+        jnp.mean(loss_diff * jnp.conj(loss_diff), axis=0))
+    weighted_energy = jnp.dot(loss, overlap_weight)
+
+    # Overlap matrix. To compute S_ij^2 = <psi_i psi_j>^2/<psi_i^2><psi_j^2>
+    # by Monte Carlo, you can split up the terms into a product of MC estimates
+    # E_{x_i ~ psi_i^2} [ psi_j(x_i) / psi_i(x_i) ] *
+    # E_{x_j ~ psi_j^2} [ psi_i(x_j) / psi_j(x_j) ]
+    # Since x_i and x_j are sampled independently, the product of empirical
+    # estimates is an unbiased estimate of the product of expectations.
+
+    # #TODO(pfau): Avoid the double call to batch_network here and in the jvp.
+    sign_psi, log_psi = batch_network(params,
+                                      data.positions,
+                                      data.spins,
+                                      data.atoms,
+                                      data.charges)
+    sign_psi_diag = jax.vmap(jnp.diag)(sign_psi)[..., None]
+    log_psi_diag = jax.vmap(jnp.diag)(log_psi)[..., None]
+    s_ij_local = sign_psi * sign_psi_diag * jnp.exp(log_psi - log_psi_diag)
+    s_ij = constants.pmean(jnp.mean(s_ij_local, axis=0))
+    total_overlap = jnp.sum(jnp.triu(s_ij * s_ij.T, 1))
+
+    return (weighted_energy + overlap_penalty * total_overlap,
+            AuxiliaryLossData(
+                energy=loss,
+                variance=variance.real,
+                local_energy=e_l,
+                clipped_energy=loss,
+                s_ij=s_ij_local,
+                mean_s_ij=s_ij,
+                local_energy_mat=e_l))
+
+  @total_energy_and_overlap.defjvp
+  def total_energy_and_overlap_jvp(primals, tangents):  # pylint: disable=unused-variable
+    """Custom Jacobian-vector product for unbiased local energy gradients."""
+    if complex_output:
+      raise NotImplementedError('Complex output is not supported with penalty '
+                                'method gradients for excited states.')
+
+    params, key, data = primals
+    batch_loss, aux_data = total_energy_and_overlap(params, key, data)
+    energy = aux_data.energy.real
+
+    if clip_local_energy > 0.0:
+      clipped_energy, energy_diff = clip_local_values(
+          aux_data.local_energy,
+          energy,
+          clip_local_energy,
+          clip_from_median,
+          center_at_clipped_energy)
+      aux_data.clipped_energy = jnp.dot(clipped_energy, overlap_weight)
+    else:
+      energy_diff = aux_data.local_energy - energy
+
+    # To take the gradient of the overlap squared between psi_i and psi_j, we
+    # can use a similar derivation to the gradient of the energy, which gives
+    # \nabla_i S_ij^2 =
+    # 2 E_{x_j ~ psi_j^2} [ psi_i(x_j) / psi_j(x_j) ] *
+    # E_{x_i ~ psi_i^2} [ (psi_j(x_i) / psi_i(x_i) - <psi_j(x_i) / psi_i(x_i)>)
+    #                     \nabla_i log psi_i(x_i) ]
+    # where \nabla_i means the gradient wrt the parameters of psi_i
+    # Again, because the two expectations are taken over independent samples,
+    # the product of empirical estimates will be unbiased.
+
+    if clip_local_energy > 0.0:
+      clipped_overlap, overlap_diff = clip_local_values(
+          aux_data.s_ij,
+          aux_data.mean_s_ij,
+          clip_local_energy,
+          clip_from_median,
+          center_at_clipped_energy)
+    else:
+      clipped_overlap = aux_data.s_ij
+      overlap_diff = clipped_overlap - aux_data.mean_s_ij
+
+    overlap_diff = 2 * jnp.sum(jnp.triu(
+        clipped_overlap * overlap_diff.transpose((0, 2, 1)), 1), axis=1)
+
+    # Due to the simultaneous requirements of KFAC (calling convention must be
+    # (params, rng, data)) and Laplacian calculation (only want to take
+    # Laplacian wrt electron positions) we need to change up the calling
+    # convention between total_energy and batch_network
+    data = primals[2]
+    data_tangents = tangents[2]
+    primals = (primals[0], data.positions, data.spins, data.atoms, data.charges)
+    tangents = (tangents[0], data_tangents.positions, data_tangents.spins,
+                data_tangents.atoms, data_tangents.charges)
+
+    psi_primal, psi_tangent = jax.jvp(batch_network, primals, tangents)
+    _, log_primal = psi_primal
+    _, log_tangent = psi_tangent
+    kfac_jax.register_normal_predictive_distribution(
+        jax.vmap(jnp.diag)(log_primal))
+    device_batch_size = jnp.shape(aux_data.local_energy)[0]
+    tangent_loss = energy_diff * overlap_weight + overlap_penalty * overlap_diff
+    tangents_out = (
+        jnp.sum(jax.vmap(jnp.diag)(log_tangent) * tangent_loss) /
+        device_batch_size,
+        aux_data)
+
+    primals_out = batch_loss.real, aux_data
+    return primals_out, tangents_out
+
+  return total_energy_and_overlap

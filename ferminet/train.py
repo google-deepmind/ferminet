@@ -513,10 +513,14 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
   signed_network = network.apply
   # Often just need log|psi(x)|.
   if cfg.system.get('states', 0):
-    logabs_network = utils.select_output(
-        networks.make_total_ansatz(signed_network,
-                                   cfg.system.get('states', 0),
-                                   complex_output=use_complex), 1)
+    if cfg.optim.objective == 'vmc_overlap':
+      logabs_network = networks.make_state_trace(signed_network,
+                                                 cfg.system.states)
+    else:
+      logabs_network = utils.select_output(
+          networks.make_total_ansatz(signed_network,
+                                     cfg.system.get('states', 0),
+                                     complex_output=use_complex), 1)
   else:
     logabs_network = lambda *args, **kwargs: signed_network(*args, **kwargs)[1]
   batch_network = jax.vmap(
@@ -527,15 +531,24 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
   # wavefunctions, it is necessary to have log(psi) rather than log(|psi|).
   # This is unused if the wavefunction is real-valued.
   if cfg.system.get('states', 0):
-    def log_network(*args, **kwargs):
-      if not use_complex:
-        raise ValueError('This function should never be used if the '
-                         'wavefunction is real-valued.')
-      meta_net = networks.make_total_ansatz(signed_network,
-                                            cfg.system.get('states', 0),
-                                            complex_output=True)
-      phase, mag = meta_net(*args, **kwargs)
-      return mag + 1.j * phase
+    if cfg.optim.objective == 'vmc_overlap':
+      # In the case of a penalty method, we actually need all outputs
+      # to compute the gradient
+      log_network_for_loss = networks.make_state_matrix(signed_network,
+                                                        cfg.system.states)
+      def log_network(*args, **kwargs):
+        phase, mag = log_network_for_loss(*args, **kwargs)
+        return mag + 1.j * phase
+    else:
+      def log_network(*args, **kwargs):
+        if not use_complex:
+          raise ValueError('This function should never be used if the '
+                           'wavefunction is real-valued.')
+        meta_net = networks.make_total_ansatz(signed_network,
+                                              cfg.system.get('states', 0),
+                                              complex_output=True)
+        phase, mag = meta_net(*args, **kwargs)
+        return mag + 1.j * phase
   else:
     def log_network(*args, **kwargs):
       if not use_complex:
@@ -699,6 +712,9 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
     if laplacian_method != 'default':
       raise NotImplementedError(f'Laplacian method {laplacian_method}'
                                 'not yet supported by custom local energy fns.')
+    if cfg.optim.objective == 'vmc_overlap':
+      raise NotImplementedError('Overlap penalty not yet supported for custom'
+                                'local energy fns.')
     local_energy_module, local_energy_fn = (
         cfg.system.make_local_energy_fn.rsplit('.', maxsplit=1))
     local_energy_module = importlib.import_module(local_energy_module)
@@ -720,6 +736,7 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
         complex_output=use_complex,
         laplacian_method=laplacian_method,
         states=cfg.system.get('states', 0),
+        state_specific=(cfg.optim.objective == 'vmc_overlap'),
         pp_type=cfg.system.get('pp', {'type': 'ccecp'}).get('type'),
         pp_symbols=pp_symbols if cfg.system.get('use_pp') else None)
 
@@ -764,6 +781,24 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
         complex_output=use_complex,
         vmc_weight=cfg.optim.get('vmc_weight', 1.0)
     )
+  elif cfg.optim.objective == 'vmc_overlap':
+    if not cfg.system.states:
+      raise ValueError('Overlap penalty only works with excited states')
+    if cfg.optim.overlap.weights is None:
+      overlap_weight = tuple([1./(1.+x) for x in range(cfg.system.states)])
+      overlap_weight = tuple([x/sum(overlap_weight) for x in overlap_weight])
+    else:
+      assert len(cfg.optim.overlap.weights) == cfg.system.states
+      overlap_weight = cfg.optim.overlap.weights
+    evaluate_loss = qmc_loss_functions.make_energy_overlap_loss(
+        log_network_for_loss,
+        local_energy,
+        clip_local_energy=cfg.optim.clip_local_energy,
+        clip_from_median=cfg.optim.clip_median,
+        center_at_clipped_energy=cfg.optim.center_at_clip,
+        overlap_penalty=cfg.optim.overlap.penalty,
+        overlap_weight=overlap_weight,
+        complex_output=cfg.network.get('complex', False))
   else:
     raise ValueError(f'Not a recognized objective: {cfg.optim.objective}')
 

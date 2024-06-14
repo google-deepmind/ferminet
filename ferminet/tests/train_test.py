@@ -187,6 +187,28 @@ class QmcTest(parameterized.TestCase):
     cfg = base_config.resolve(cfg)
     train.train(cfg)
 
+  def test_overlap_step(self):
+    cfg = diatomic.get_config()
+    cfg.system.molecule_name = 'LiH'
+    cfg.network.ferminet.hidden_dims = ((16, 4),) * 2
+    cfg.network.determinants = 2
+    cfg.batch_size = 32
+    cfg.system.states = 2
+    cfg.pretrain.iterations = 10
+    cfg.mcmc.burn_in = 10
+    cfg.optim.iterations = 3
+    cfg.optim.objective = 'vmc_overlap'
+    cfg.debug.check_nan = True
+    cfg.observables.s2 = True
+    cfg.observables.dipole = True
+    cfg.observables.density = True
+    cfg.log.save_path = self.create_tempdir().full_path
+    cfg = base_config.resolve(cfg)
+    # Calculation is too small to test the results for accuracy. Test just to
+    # ensure they actually run without a top-level error.
+    train.train(cfg)
+
+
 MOL_STRINGS = [
     'H 0 0 -1; H 0 0 1',
     'O 0 0 0; H  0 1 0; H 0 0 1',

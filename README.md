@@ -175,10 +175,18 @@ in the config file.
 
 ## Excited States
 
-Excited state properties of systems can be calculated using the [Natural Excited
-States for VMC (NES-VMC) algorithm](https://arxiv.org/abs/2308.16848).
+Excited state properties of systems can be calculated using either the
+[Natural Excited States for VMC (NES-VMC) algorithm](https://arxiv.org/abs/2308.16848)
+or an [ensemble penalty method](https://arxiv.org/abs/2312.00693).
 To enable the calculation of `k` states of a system, simply set
-`cfg.system.states=k` in the config file.
+`cfg.system.states=k` in the config file. By default, NES-VMC is used, but to
+enable the ensemble penalty method, add `cfg.optim.objective='vmc_overlap'` to
+the config. NES-VMC does not have any parameters to set, but the ensemble
+penalty method has a free choice of weights on the energies and overlap penalty,
+which can be set in `cfg.optim.overlap`. If the weights are not set for the
+energies in the config, they are automatically set to 1/k for state k. We have
+found that NES-VMC is generally more accurate than the ensemble penalty method,
+but include both for completeness.
 
 ## Output
 

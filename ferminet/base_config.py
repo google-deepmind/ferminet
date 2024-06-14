@@ -53,7 +53,11 @@ def default() -> ml_collections.ConfigDict:
       # importlib.import_module.
       'config_module': __name__,
       'optim': {
-          'objective': 'vmc',  # objective type. Either 'vmc' or 'wqmc'
+          # Objective type. One of:
+          # 'vmc': minimise <H> by standard VMC energy minimization
+          # 'wqmc': minimise <H> by Wasserstein QMC
+          # 'vmc_overlap': minimize \sum_i <H_i> + \lambda \sum_ij <psi_i psi_j>
+          'objective': 'vmc',
           'iterations': 1000000,  # number of iterations
           'optimizer': 'kfac',  # one of adam, kfac, lamb, none
           'laplacian': 'default',  # of of default or folx (for forward lapl)
@@ -84,6 +88,14 @@ def default() -> ml_collections.ConfigDict:
           # magnitude. Useful for removing non-singlet states from excited
           # state calculations.
           'spin_energy': 0.0,
+          # If 'objective' is 'vmc_overlap', these parameters control the
+          # penalty term.
+          'overlap': {
+              # Weights on each state. Generate automatically if none provided.
+              'weights': None,
+              # Strength of the penalty term
+              'penalty': 1.0,
+          },
           # KFAC hyperparameters. See KFAC documentation for details.
           'kfac': {
               'invert_every': 1,

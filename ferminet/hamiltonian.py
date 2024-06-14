@@ -324,6 +324,7 @@ def local_energy(
     complex_output: bool = False,
     laplacian_method: str = 'default',
     states: int = 0,
+    state_specific: bool = False,
     pp_type: str = 'ccecp',
     pp_symbols: Sequence[str] | None = None,
 ) -> LocalEnergy:
@@ -341,6 +342,9 @@ def local_energy(
       'folx': use Microsoft's implementation of forward laplacian
     states: Number of excited states to compute. If 0, compute ground state with
       default machinery. If 1, compute ground state with excited state machinery
+    state_specific: Only used for excited states (states > 0). If true, then
+      the local energy is computed separately for each output from the network,
+      instead of the local energy matrix being computed.
     pp_type: type of pseudopotential to use. Only used if ecp_symbols is
       provided.
     pp_symbols: sequence of element symbols for which the pseudopotential is
@@ -352,17 +356,6 @@ def local_energy(
     and a single MCMC configuration in data.
   """
   del nspins
-
-  if states:
-    ke = excited_kinetic_energy_matrix(f,
-                                       states,
-                                       complex_output,
-                                       laplacian_method)
-  else:
-    ke = local_kinetic_energy(f,
-                              use_scan=use_scan,
-                              complex_output=complex_output,
-                              laplacian_method=laplacian_method)
 
   if not pp_symbols:
     effective_charges = charges
@@ -416,14 +409,38 @@ def local_energy(
             pp_nonlocal, (None, None, None, data_vmap_dims, 0, 0))
         pot_spectrum += vmap_pp_nonloc(key, f, params, data_, ae, r_ae)
 
-      # Compute kinetic energy and matrix of states
-      psi_mat, kin_mat = ke(params, data)
-
       # Combine terms
-      hpsi_mat = kin_mat + psi_mat * pot_spectrum
-      energy_mat = jnp.linalg.solve(psi_mat, hpsi_mat)
-      total_energy = jnp.trace(energy_mat)
+      if state_specific:
+        # For simplicity, we will only implement a folx version of the kinetic
+        # energy calculation here.
+        # TODO(pfau): factor out code repeated here and in _lapl_over_f
+        pos_ = jnp.reshape(data.positions, [states, -1])
+        spins_ = jnp.reshape(data.spins, [states, -1])
+        f_closure = lambda x: f(params, x, spins_[0], data.atoms, data.charges)
+        f_wrapped = folx.forward_laplacian(f_closure, sparsity_threshold=6)
+        sign_out, log_out = folx.batched_vmap(f_wrapped, 1)(pos_)
+        kin = -(log_out.laplacian +
+                jnp.sum(log_out.jacobian.dense_array ** 2, axis=-2)) / 2
+        if complex_output:
+          kin -= 0.5j * sign_out.laplacian
+          kin += 0.5 * jnp.sum(sign_out.jacobian.dense_array ** 2, axis=-2)
+          kin -= 1.j * jnp.sum(sign_out.jacobian.dense_array *
+                               log_out.jacobian.dense_array, axis=-2)
+        total_energy = jnp.diag(kin) + pot_spectrum[:, 0]
+        energy_mat = None
+      else:
+        # Compute kinetic energy and matrix of states
+        ke = excited_kinetic_energy_matrix(
+            f, states, complex_output, laplacian_method)
+        psi_mat, kin_mat = ke(params, data)
+        hpsi_mat = kin_mat + psi_mat * pot_spectrum
+        energy_mat = jnp.linalg.solve(psi_mat, hpsi_mat)
+        total_energy = jnp.trace(energy_mat)
     else:
+      ke = local_kinetic_energy(f,
+                                use_scan=use_scan,
+                                complex_output=complex_output,
+                                laplacian_method=laplacian_method)
       ae, _, r_ae, r_ee = networks.construct_input_features(
           data.positions, data.atoms
       )

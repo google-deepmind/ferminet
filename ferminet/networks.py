@@ -14,7 +14,6 @@
 
 """Implementation of Fermionic Neural Network in JAX."""
 import enum
-import functools
 from typing import Any, Iterable, Mapping, MutableMapping, Optional, Sequence, Tuple, Union
 
 import attr
@@ -1268,7 +1267,7 @@ def make_state_matrix(signed_network: FermiNetLike, n: int) -> FermiNetLike:
     into a matrix of wavefunctions, one with the sign and one with the log.
   """
 
-  def state_matrix(params, pos, spins, atoms, charges, **kwargs):
+  def state_matrix(params, pos, spins, atoms, charges):
     """Evaluate state_matrix for a given ansatz."""
     # `pos` has shape (n*nelectron*ndim), but can be reshaped as
     # (n, nelectron, ndim), that is, the first dimension indexes which excited
@@ -1278,14 +1277,40 @@ def make_state_matrix(signed_network: FermiNetLike, n: int) -> FermiNetLike:
     # leading index of number of excited states, as the different states are
     # always evaluated at the same atomic geometry.
     pos_ = jnp.reshape(pos, [n, -1])
-    partial_network = functools.partial(
-        signed_network, atoms=atoms, charges=charges, **kwargs)
     spins_ = jnp.reshape(spins, [n, -1])
-    vmap_network = jax.vmap(partial_network, (None, 0, 0))
-    sign_mat, log_mat = vmap_network(params, pos_, spins_)
+    vmap_network = jax.vmap(signed_network, (None, 0, 0, None, None))
+    sign_mat, log_mat = vmap_network(params, pos_, spins_, atoms, charges)
     return sign_mat, log_mat
 
   return state_matrix
+
+
+def make_state_trace(signed_network: FermiNetLike, n: int) -> FermiNetLike:
+  """Construct a single-output f'n which gives the trace over the state matrix.
+
+  Returns the sum of the diagonal of the matrix of log|psi| values created by
+  make_state_matrix. That means for a set of inputs x_1, ..., x_n, instead of
+  returning the full matrix of psi_i(x_j), only return the sum of the diagonal
+  sum_i log(psi_i(x_i)), so one state per input. Used for MCMC sampling.
+
+  Args:
+    signed_network: A function with the same calling convention as the FermiNet.
+    n: the number of excited states, needed to know how to shape the determinant
+
+  Returns:
+    A function with a multiple outputs which takes a set of inputs and returns
+    one output per input.
+  """
+  state_matrix = make_state_matrix(signed_network, n)
+
+  def state_trace(params, pos, spins, atoms, charges, **kwargs):
+    """Evaluate trace of the state matrix for a given ansatz."""
+    _, log_in = state_matrix(
+        params, pos, spins, atoms=atoms, charges=charges, **kwargs)
+
+    return jnp.trace(log_in)
+
+  return state_trace
 
 
 def make_total_ansatz(signed_network: FermiNetLike,
