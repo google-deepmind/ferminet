@@ -156,6 +156,23 @@ parallelisation is essential. This is supported via JAX's
 [pmap](https://jax.readthedocs.io/en/latest/jax.html#parallelization-pmap).
 Multiple GPUs will be automatically detected and used if available.
 
+### Inference
+
+After training, it is useful to run calculations of the energy and other
+observables over many time steps with the parameters fixed to accumulate
+low-variance estimates of physical quantities. To do this, just re-run the same
+command used for training with the flag `--config.optim.optimizer 'none'`. Make
+sure that either the value of `cfg.log.save_path` is the same, or that the value
+of `cfg.log.restore_path` is set to the value of `cfg.log.save_path` from the
+original training run.
+
+It can also be useful to accumulate statistics about observables at inference
+time which were not included in the original training run. Spin magnitude,
+dipole moments and density matrices can be tracked by adding
+`--config.observables.s2`, `--config.observables.dipole` and
+`--config.observables.density` to the command line if they are not set to true
+in the config file.
+
 ## Excited States
 
 Excited state properties of systems can be calculated using the [Natural Excited
@@ -243,18 +260,14 @@ implementation:
 }
 ```
 
-The PsiFormer architecture is detailed in an ICLR 2023 paper, preprint
-reference:
+The PsiFormer architecture is detailed in an ICLR 2023 paper:
 
 ```
-@misc{vonglehn2022psiformer,
+@misc{vonglehn2023psiformer,
   title={A Self-Attention Ansatz for Ab-initio Quantum Chemistry},
   author={Ingrid von Glehn and James S Spencer and David Pfau},
-  year={2022},
-  eprint={2211.13672},
-  archivePrefix={arXiv},
-  primaryClass={physics.chem-ph},
-  url={https://arxiv.org/abs/2211.13672},
+  journal={ICLR},
+  year={2023},
 }
 ```
 
