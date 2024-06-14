@@ -262,13 +262,12 @@ def default() -> ml_collections.ConfigDict:
           },
           # Only used if network_type is 'psiformer'.
           'psiformer': {
-              # PsiFormer architecture: von Glehn, Spencer, Pfau,
-              # arXiv:2211.13672 (2022), accepted to ICLR 2023.
-              'num_layers': 2,
+              # PsiFormer architecture: von Glehn, Spencer, Pfau, ICLR 2023.
+              'num_layers': 4,
               'num_heads': 4,
               'heads_dim': 64,
               'mlp_hidden_dims': (256,),
-              'use_layer_norm': False,
+              'use_layer_norm': True,
           },
           # Config common to all architectures.
           'determinants': 16,  # Number of determinants.

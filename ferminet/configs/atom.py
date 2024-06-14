@@ -20,7 +20,7 @@ from ferminet.utils import system
 import ml_collections
 
 
-def _adjust_nuclear_charge(cfg):
+def adjust_nuclear_charge(cfg):
   """Sets the molecule, nuclear charge electrons for the atom.
 
   Note: function name predates this logic but is kept for compatibility with
@@ -70,6 +70,6 @@ def get_config():
   cfg.system.spin_polarisation = ml_collections.FieldReference(
       None, field_type=int)
   with cfg.ignore_type():
-    cfg.system.set_molecule = _adjust_nuclear_charge
+    cfg.system.set_molecule = adjust_nuclear_charge
     cfg.config_module = '.atom'
   return cfg

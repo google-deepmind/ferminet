@@ -186,7 +186,10 @@ penalty method has a free choice of weights on the energies and overlap penalty,
 which can be set in `cfg.optim.overlap`. If the weights are not set for the
 energies in the config, they are automatically set to 1/k for state k. We have
 found that NES-VMC is generally more accurate than the ensemble penalty method,
-but include both for completeness.
+but include both for completeness. Config files for all experiments from the
+paper which introduced NES-VMC can be found in the folder `configs/excited`, and
+all experiments can be tested (on smaller networks) by running
+`tests/excited_test.py`.
 
 ## Output
 
