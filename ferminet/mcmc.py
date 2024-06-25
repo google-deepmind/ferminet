@@ -244,7 +244,6 @@ def make_mcmc_step(batch_network,
   """
   inner_fun = mh_block_update if blocks > 1 else mh_update
 
-  @jax.jit
   def mcmc_step(params, data, key, width):
     """Performs a set of MCMC steps.
 

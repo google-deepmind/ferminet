@@ -25,7 +25,6 @@ from ferminet import base_config
 from ferminet import train
 from ferminet.configs import atom
 from ferminet.configs import diatomic
-import jax
 import pyscf
 
 FLAGS = flags.FLAGS
@@ -95,9 +94,6 @@ class QmcTest(parameterized.TestCase):
     # Test calculations are small enough to fit in RAM and we don't need
     # checkpoint files.
     pyscf.lib.param.TMPDIR = None
-    # Prevents issues related to the mcmc step in pretraining if multiple
-    # training runs are executed in the same session.
-    jax.clear_caches()
 
   @parameterized.parameters(_config_params())
   def test_training_step(
