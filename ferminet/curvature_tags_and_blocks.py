@@ -54,13 +54,13 @@ class RepeatedDenseBlock(kfac_jax.DenseTwoKroneckerFactored):
 
   def update_curvature_matrix_estimate(
       self,
-      state: kfac_jax.TwoKroneckerFactored.State,
+      state: kfac_jax.KroneckerFactored.State,
       estimation_data: kfac_jax.LayerVjpData[Array],
       ema_old: Numeric,
       ema_new: Numeric,
       identity_weight: Numeric,
       batch_size: int,
-  ) -> kfac_jax.TwoKroneckerFactored.State:
+  ) -> kfac_jax.KroneckerFactored.State:
     [x] = estimation_data.primals.inputs
     [dy] = estimation_data.tangents.outputs
     assert x.shape[0] == batch_size
@@ -88,7 +88,7 @@ class RepeatedDenseBlock(kfac_jax.DenseTwoKroneckerFactored):
     )
 
 
-class QmcBlockedDense(kfac_jax.TwoKroneckerFactored):
+class QmcBlockedDense(kfac_jax.KroneckerFactored):
   """A factor that is the Kronecker product of two matrices."""
 
   def input_size(self) -> int:
@@ -102,13 +102,13 @@ class QmcBlockedDense(kfac_jax.TwoKroneckerFactored):
 
   def update_curvature_matrix_estimate(
       self,
-      state: kfac_jax.TwoKroneckerFactored.State,
+      state: kfac_jax.KroneckerFactored.State,
       estimation_data: kfac_jax.LayerVjpData[Array],
       ema_old: Numeric,
       ema_new: Numeric,
       identity_weight: Numeric,
       batch_size: int,
-  ) -> kfac_jax.TwoKroneckerFactored.State:
+  ) -> kfac_jax.KroneckerFactored.State:
     del identity_weight
 
     [x] = estimation_data.primals.inputs
@@ -132,7 +132,7 @@ class QmcBlockedDense(kfac_jax.TwoKroneckerFactored):
       exact_powers_to_cache: Set[Scalar],
       approx_powers_to_cache: Set[Scalar],
       cache_eigenvalues: bool,
-  ) -> kfac_jax.TwoKroneckerFactored.State:
+  ) -> kfac_jax.KroneckerFactored.State:
     del rng, cache_eigenvalues
     k, m, j, n = self.parameters_shapes[0]
     cache = dict()
@@ -147,7 +147,7 @@ class QmcBlockedDense(kfac_jax.TwoKroneckerFactored):
           inputs_factor=jnp.zeros([j, k, k]),
           outputs_factor=jnp.zeros([j, m * n, m * n]),
       )
-    return kfac_jax.TwoKroneckerFactored.State(
+    return kfac_jax.KroneckerFactored.State(
         cache=cache,
         inputs_factor=
         kfac_jax.utils.WeightedMovingAverage.zeros_array((j, k, k)),
@@ -157,12 +157,12 @@ class QmcBlockedDense(kfac_jax.TwoKroneckerFactored):
 
   def _update_cache(
       self,
-      state: kfac_jax.TwoKroneckerFactored.State,
+      state: kfac_jax.KroneckerFactored.State,
       identity_weight: kfac_jax.utils.Numeric,
       exact_powers: set[kfac_jax.utils.Scalar],
       approx_powers: set[kfac_jax.utils.Scalar],
       eigenvalues: bool,
-  ) -> kfac_jax.TwoKroneckerFactored.State:
+  ) -> kfac_jax.KroneckerFactored.State:
     del eigenvalues
 
     if exact_powers:
@@ -186,7 +186,7 @@ class QmcBlockedDense(kfac_jax.TwoKroneckerFactored):
 
   def multiply_matpower(
       self,
-      state: kfac_jax.TwoKroneckerFactored.State,
+      state: kfac_jax.KroneckerFactored.State,
       vector: Sequence[Array],
       identity_weight: Numeric,
       power: Scalar,
