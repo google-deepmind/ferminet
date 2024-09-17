@@ -14,12 +14,14 @@
 
 """Helper functions to create the loss and custom gradient of the loss."""
 
+import functools
 from typing import Tuple
 
 import chex
 from ferminet import constants
 from ferminet import hamiltonian
 from ferminet import networks
+import folx
 import jax
 import jax.numpy as jnp
 import kfac_jax
@@ -153,7 +155,8 @@ def make_loss(network: networks.LogFermiNetLike,
               clip_local_energy: float = 0.0,
               clip_from_median: bool = True,
               center_at_clipped_energy: bool = True,
-              complex_output: bool = False) -> LossFn:
+              complex_output: bool = False,
+              max_vmap_batch_size: int = 0) -> LossFn:
   """Creates the loss function, including custom gradients.
 
   Args:
@@ -173,13 +176,17 @@ def make_loss(network: networks.LogFermiNetLike,
       passed back to the gradient around the clipped local energy, so the mean
       difference across the batch is guaranteed to be zero.
     complex_output: If true, the local energies will be complex valued.
+    max_vmap_batch_size: If 0, use standard vmap. If >0, use batched_vmap with
+      the given batch size.
 
   Returns:
     Callable with signature (params, data) and returns (loss, aux_data), where
     loss is the mean energy, and aux_data is an AuxiliaryLossDataobject. The
     loss is averaged over the batch and over all devices inside a pmap.
   """
-  batch_local_energy = jax.vmap(
+  vmap = jax.vmap if max_vmap_batch_size == 0 else functools.partial(
+      folx.batched_vmap, max_batch_size=max_vmap_batch_size)
+  batch_local_energy = vmap(
       local_energy,
       in_axes=(
           None,
@@ -188,7 +195,7 @@ def make_loss(network: networks.LogFermiNetLike,
       ),
       out_axes=(0, 0)
   )
-  batch_network = jax.vmap(network, in_axes=(None, 0, 0, 0, 0), out_axes=0)
+  batch_network = vmap(network, in_axes=(None, 0, 0, 0, 0), out_axes=0)
 
   @jax.custom_jvp
   def total_energy(
@@ -285,6 +292,7 @@ def make_wqmc_loss(
     clip_from_median: bool = True,
     center_at_clipped_energy: bool = True,
     complex_output: bool = False,
+    max_vmap_batch_size: int = 0,
     vmc_weight: float = 0.0
 ) -> LossFn:
   """Creates the WQMC loss function, including custom gradients.
@@ -306,6 +314,8 @@ def make_wqmc_loss(
       passed back to the gradient around the clipped local energy, so the mean
       difference across the batch is guaranteed to be zero.
     complex_output: If true, the local energies will be complex valued.
+    max_vmap_batch_size: If 0, use standard vmap. If >0, use batched_vmap with
+      the given batch size.
     vmc_weight: The weight of the contribution from the standard VMC energy
       gradient.
 
@@ -314,7 +324,9 @@ def make_wqmc_loss(
     loss is the mean energy, and aux_data is an AuxiliaryLossDataobject. The
     loss is averaged over the batch and over all devices inside a pmap.
   """
-  batch_local_energy = jax.vmap(
+  vmap = jax.vmap if max_vmap_batch_size == 0 else functools.partial(
+      folx.batched_vmap, max_batch_size=max_vmap_batch_size)
+  batch_local_energy = vmap(
       local_energy,
       in_axes=(
           None,
@@ -323,7 +335,7 @@ def make_wqmc_loss(
       ),
       out_axes=(0, 0)
   )
-  batch_network = jax.vmap(network, in_axes=(None, 0, 0, 0, 0), out_axes=0)
+  batch_network = vmap(network, in_axes=(None, 0, 0, 0, 0), out_axes=0)
 
   @jax.custom_jvp
   def total_energy(
@@ -434,7 +446,8 @@ def make_energy_overlap_loss(network: networks.LogFermiNetLike,
                              center_at_clipped_energy: bool = True,
                              overlap_penalty: float = 1.0,
                              overlap_weight: Tuple[float, ...] = (1.0,),
-                             complex_output: bool = False) -> LossFn:
+                             complex_output: bool = False,
+                             max_vmap_batch_size: int = 0) -> LossFn:
   """Creates the loss function for the penalty method for excited states.
 
   Args:
@@ -462,15 +475,19 @@ def make_energy_overlap_loss(network: networks.LogFermiNetLike,
     overlap_weight: The weight to apply to each individual energy in the overall
       optimization.
     complex_output: If true, the network output is complex-valued.
+    max_vmap_batch_size: If 0, use standard vmap. If >0, use batched_vmap with
+      the given batch size.
 
   Returns:
     LossFn callable which evaluates the total energy of the system.
   """
 
+  vmap = jax.vmap if max_vmap_batch_size == 0 else functools.partial(
+      folx.batched_vmap, max_batch_size=max_vmap_batch_size)
   data_axes = networks.FermiNetData(positions=0, spins=0, atoms=0, charges=0)
-  batch_local_energy = jax.vmap(
+  batch_local_energy = vmap(
       local_energy, in_axes=(None, 0, data_axes), out_axes=(0, 0))
-  batch_network = jax.vmap(network, in_axes=(None, 0, 0, 0, 0), out_axes=0)
+  batch_network = vmap(network, in_axes=(None, 0, 0, 0, 0), out_axes=0)
   overlap_weight = jnp.array(overlap_weight)
 
   # TODO(pfau): how much of this can be factored out with make_loss?
