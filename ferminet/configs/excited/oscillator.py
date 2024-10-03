@@ -16,7 +16,7 @@
 
 
 from ferminet import base_config
-from ferminet.jax.configs.excited import presets
+from ferminet.configs.excited import presets
 from ferminet.utils import system
 import ml_collections
 import pyscf

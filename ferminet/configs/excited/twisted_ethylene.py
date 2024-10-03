@@ -15,7 +15,7 @@
 """Config to reproduce Fig. 4 from Pfau et al. (2024)."""
 
 from ferminet import base_config
-from ferminet.jax.configs.excited import presets
+from ferminet.configs.excited import presets
 from ferminet.utils import system
 import ml_collections
 import numpy as np

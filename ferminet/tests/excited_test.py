@@ -23,13 +23,13 @@ from absl.testing import parameterized
 import chex
 from ferminet import base_config
 from ferminet import train
-from ferminet.jax.configs.excited import atoms
-from ferminet.jax.configs.excited import benzene
-from ferminet.jax.configs.excited import carbon_dimer
-from ferminet.jax.configs.excited import double_excitation
-from ferminet.jax.configs.excited import oscillator
-from ferminet.jax.configs.excited import presets
-from ferminet.jax.configs.excited import twisted_ethylene
+from ferminet.configs.excited import atoms
+from ferminet.configs.excited import benzene
+from ferminet.configs.excited import carbon_dimer
+from ferminet.configs.excited import double_excitation
+from ferminet.configs.excited import oscillator
+from ferminet.configs.excited import presets
+from ferminet.configs.excited import twisted_ethylene
 import jax
 
 import pyscf
