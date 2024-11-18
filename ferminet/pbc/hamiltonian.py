@@ -156,6 +156,7 @@ def local_energy(
     nspins: Sequence[int],
     use_scan: bool = False,
     complex_output: bool = False,
+    laplacian_method: str = 'default',
     states: int = 0,
     lattice: Optional[jnp.ndarray] = None,
     heg: bool = True,
@@ -188,8 +189,10 @@ def local_energy(
   if lattice is None:
     lattice = jnp.eye(3)
 
-  ke = hamiltonian.local_kinetic_energy(f, use_scan=use_scan,
-                                        complex_output=complex_output)
+  ke = hamiltonian.local_kinetic_energy(f,
+                                        use_scan=use_scan,
+                                        complex_output=complex_output,
+                                        laplacian_method=laplacian_method)
 
   def _e_l(
       params: networks.ParamTree, key: chex.PRNGKey, data: networks.FermiNetData
