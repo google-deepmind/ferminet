@@ -38,7 +38,13 @@ def register_qmc(y, x, w, **kwargs):
   return kfac_jax.register_dense(y, x, w, variant="qmc", **kwargs)
 
 
-_dense = kfac_jax.tag_graph_matcher._dense  # pylint: disable=protected-access
+_dense = functools.partial(
+    kfac_jax.tag_graph_matcher._dense,  # pylint: disable=protected-access
+    axes=1,
+    with_reshape=False,
+)
+
+
 _repeated_dense_parameter_extractor = functools.partial(
     kfac_jax.tag_graph_matcher._dense_parameter_extractor,  # pylint: disable=protected-access
     variant="repeated_dense",
