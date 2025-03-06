@@ -120,7 +120,7 @@ def save(save_path: str,
         t=t,
         data=dataclasses.asdict(data),
         params=params,
-        opt_state=opt_state,
+        opt_state=np.asarray(opt_state, dtype=object),
         mcmc_width=mcmc_width,
         density_state=(dataclasses.asdict(density_state)
                        if density_state else None))
