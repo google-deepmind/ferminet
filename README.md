@@ -34,7 +34,7 @@ https://storage.googleapis.com/jax-releases/jax_releases.html
 
 Note that the jaxlib version must correspond to the existing CUDA installation
 you wish to use. Please see the
-[JAX documentation](https://github.com/google/jax#installation) for more
+[JAX documentation](https://github.com/jax-ml/jax#installation) for more
 details.
 
 The tests are easiest run using pytest:

@@ -245,7 +245,7 @@ class LaplacianTest(parameterized.TestCase):
     else:
       # This needs a low tolerance because on fast math optimization in CPU can
       # substantially affect floating point expressions. See
-      # https://github.com/google/jax/issues/6566.
+      # https://github.com/jax-ml/jax/issues/6566.
       atol, rtol = 4.e-3, 4.e-3
     np.testing.assert_allclose(t_l, hess_t, atol=atol, rtol=rtol)
 
