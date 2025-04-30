@@ -953,7 +953,7 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
           state_scale)
       state_scale = np.tile(state_scale[None], [jax.local_device_count(), 1])
       if isinstance(params, dict):  # Always true, but prevents type errors
-        params['state_scale'] = -state_scale
+        params['state_scale'] = -state_scale  # pytype: disable=unsupported-operands
 
   if writer_manager is None:
     writer_manager = writers.Writer(
