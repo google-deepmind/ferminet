@@ -280,11 +280,15 @@ Natural excited states was introduced in this article, which is also the first
 paper from our group using pseudopotentials
 
 ```
-@article{pfau2023natural,
-  title={Natural Quantum Monte Carlo Computation of Excited States},
+@article{pfau2024excited,
+  title={Accurate computation of quantum excited states with neural networks},
   author={Pfau, David and Axelrod, Simon and Sutterud, Halvard and von Glehn, Ingrid and Spencer, James S},
-  journal={arXiv preprint arXiv:2308.16848},
-  year={2023}
+  journal={Science},
+  volume={385},
+  number={6711},
+  pages={eadn0137},
+  year={2024},
+  url={https://doi.org/10.1126/science.adn0137},
 }
 ```
 
