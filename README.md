@@ -56,6 +56,12 @@ calculation.
 ferminet --config ferminet/configs/atom.py --config.system.atom Li --config.batch_size 256 --config.pretrain.iterations 100
 ```
 
+or
+
+```shell
+python3 ferminet/main.py --config ferminet/configs/atom.py --config.system.atom Li --config.batch_size 256 --config.pretrain.iterations 100
+```
+
 will train FermiNet to find the ground-state wavefunction of the Li atom using a
 batch size of 1024 MCMC configurations ("walkers" in variational Monte Carlo
 language), and 100 iterations of pretraining (the default of 1000 is overkill

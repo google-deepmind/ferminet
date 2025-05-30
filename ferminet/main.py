@@ -35,5 +35,10 @@ def main(_):
   train.train(cfg)
 
 
+def main_wrapper():
+  # For calling from setuptools' console_script entry-point.
+  app.run(main)
+
+
 if __name__ == '__main__':
   app.run(main)

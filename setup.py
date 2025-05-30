@@ -49,13 +49,19 @@ def ferminet_test_suite():
 setup(
     name='ferminet',
     version='0.2',
-    description=('A library to train networks to represent ground '
-                 'state wavefunctions of fermionic systems'),
+    description=(
+        'A library to train networks to represent ground '
+        'state wavefunctions of fermionic systems'
+    ),
     url='https://github.com/deepmind/ferminet',
     author='DeepMind',
     author_email='no-reply@google.com',
     # Contained modules and scripts.
-    scripts=['bin/ferminet'],
+    entry_points={
+        'console_scripts': [
+            'ferminet = ferminet.main:main_wrapper',
+        ],
+    },
     packages=find_packages(),
     install_requires=REQUIRED_PACKAGES,
     extras_require={'testing': ['flake8', 'pylint', 'pytest', 'pytype']},
