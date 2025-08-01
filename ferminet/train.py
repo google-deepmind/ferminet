@@ -37,6 +37,7 @@ from ferminet.utils import statistics
 from ferminet.utils import system
 from ferminet.utils import utils
 from ferminet.utils import writers
+from ferminet.minsr import MinSR
 import jax
 from jax.experimental import multihost_utils
 import jax.numpy as jnp
@@ -255,6 +256,48 @@ def make_opt_update_step(evaluate_loss: qmc_loss_functions.LossFn,
   return opt_update
 
 
+def make_minsr_opt_update_step(evaluate_loss: qmc_loss_functions.LossFn,
+                         optimizer: MinSR) -> OptUpdate:
+  """Returns an OptUpdate function for performing a parameter update."""
+
+  # Differentiate wrt parameters (argument 0)
+  loss_and_grad = jax.value_and_grad(evaluate_loss, argnums=0, has_aux=True)
+
+  def opt_update( 
+      params: networks.ParamTree,
+      data: networks.FermiNetData,
+      opt_state: Optional[optax.OptState],
+      key: chex.PRNGKey,
+      flat_grads: networks.ParamTree
+  ) -> OptUpdateResults:
+    """Evaluates the loss and gradients and updates the parameters using optax."""
+    (loss, aux_data), grad = loss_and_grad(params, key, data)
+
+    #mean_grad = constants.pmean(grad)  # In case we want to centre the gradients
+
+    energies = aux_data.local_energy - aux_data.energy  # Centered local energies
+
+    grunter = flat_grads @ flat_grads.T / flat_grads.shape[0] + optimizer.damping * jnp.eye(flat_grads.shape[0])  # X^T X + \lambda I
+    
+    #grunter_inv = jnp.linalg.solve(grunter, jnp.eye(grunter.shape[0]))
+
+    L = jnp.linalg.cholesky(grunter)
+    grunter_inv = jax.scipy.linalg.cho_solve((L, True), jnp.eye(grunter.shape[0]))
+
+    grads = flat_grads.T @ grunter_inv * energies
+    grads = jnp.mean(grads, axis=1)
+    
+    flat_params, unravel_params = jax.flatten_util.ravel_pytree(params)
+    new_flat_params = flat_params - optimizer.lr * grads
+    
+    new_params = unravel_params(new_flat_params)
+    
+    return new_params, opt_state, loss, aux_data
+
+  return opt_update
+
+
+
 def make_loss_step(evaluate_loss: qmc_loss_functions.LossFn) -> OptUpdate:
   """Returns an OptUpdate function for evaluating the loss."""
 
@@ -384,6 +427,58 @@ def make_kfac_training_step(
     return data, new_params, new_state, stats['loss'], stats['aux'], pmove
 
   return step
+
+
+def make_minsr_training_step(
+    mcmc_step,
+    optimizer_step: OptUpdate,
+    reset_if_nan: bool = False,
+) -> Step:
+  """Factory to create traning step for non-KFAC optimizers.
+
+  Args:
+    mcmc_step: Callable which performs the set of MCMC steps. See make_mcmc_step
+      for creating the callable.
+    optimizer_step: OptUpdate callable which evaluates the forward and backward
+      passes and updates the parameters and optimizer state, as required.
+    reset_if_nan: If true, reset the params and opt state to the state at the
+      previous step when the loss is NaN
+
+  Returns:
+    step, a callable which performs a set of MCMC steps and then an optimization
+    update. See the Step protocol for details.
+  """
+  @functools.partial(constants.pmap, donate_argnums=(0, 1, 2))
+  def step(
+      data: networks.FermiNetData,
+      params: networks.ParamTree,
+      state: Optional[optax.OptState],
+      key: chex.PRNGKey,
+      mcmc_width: jnp.ndarray,
+  ) -> StepResults:
+    """A full update iteration (except for KFAC): MCMC steps + optimization."""
+    # MCMC loop
+    mcmc_key, loss_key = jax.random.split(key, num=2)
+    data, pmove, flat_grads = mcmc_step(
+      params, data, mcmc_key, mcmc_width, get_flat_grads=True)
+
+    # Optimization step
+    new_params, new_state, loss, aux_data = optimizer_step(params,
+                                                           data,
+                                                           state,
+                                                           loss_key,
+                                                           flat_grads)
+    if reset_if_nan:
+      new_params = jax.lax.cond(jnp.isnan(loss),
+                                lambda: params,
+                                lambda: new_params)
+      new_state = jax.lax.cond(jnp.isnan(loss),
+                               lambda: state,
+                               lambda: new_state)
+    return data, new_params, new_state, loss, aux_data, pmove
+
+  return step
+
 
 
 def train(cfg: ml_collections.ConfigDict, writer_manager=None):
@@ -872,6 +967,13 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
     sharded_key, subkeys = kfac_jax.utils.p_split(sharded_key)
     opt_state = optimizer.init(params, subkeys, data)
     opt_state = opt_state_ckpt or opt_state  # avoid overwriting ckpted state
+
+  elif cfg.optim.optimizer == 'minsr':
+    optimizer = MinSR(
+      lr=learning_rate_schedule,
+      damping=1e-4,
+      adaptive_step=False
+    )
   else:
     raise ValueError(f'Not a recognized optimizer: {cfg.optim.optimizer}')
 
@@ -893,6 +995,12 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
         mcmc_step=mcmc_step,
         damping=cfg.optim.kfac.damping,
         optimizer=optimizer,
+        reset_if_nan=cfg.optim.reset_if_nan)
+    
+  elif isinstance(optimizer, MinSR):
+    step = make_minsr_training_step(
+        mcmc_step=mcmc_step,
+        optimizer_step=make_minsr_opt_update_step(evaluate_loss, optimizer),
         reset_if_nan=cfg.optim.reset_if_nan)
   else:
     raise ValueError(f'Unknown optimizer: {optimizer}')

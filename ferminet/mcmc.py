@@ -244,7 +244,7 @@ def make_mcmc_step(batch_network,
   """
   inner_fun = mh_block_update if blocks > 1 else mh_update
 
-  def mcmc_step(params, data, key, width):
+  def mcmc_step(params, data, key, width, get_flat_grads=False):
     """Performs a set of MCMC steps.
 
     Args:
@@ -274,15 +274,34 @@ def make_mcmc_step(batch_network,
     logprob = 2.0 * batch_network(
         params, pos, data.spins, data.atoms, data.charges
     )
+
+    def single_logprob(params, pos, spin, atom, charge):
+        return 2.0 * batch_network(params, pos[None], spin[None], atom[None], charge[None])[0]
+
+    batched_grad_fn = jax.vmap(
+        jax.grad(single_logprob),
+        in_axes=(None, 0, 0, 0, 0)
+    )
+
+    grads = batched_grad_fn(params, pos, data.spins, data.atoms, data.charges)
+
+    leaves, _ = jax.tree_util.tree_flatten(grads)
+
+    flat_leaves = [leaf.reshape(batch_per_device, -1) for leaf in leaves]
+
+    flat_grads = jnp.concatenate(flat_leaves, axis=1)
+        
     new_data, key, _, num_accepts = lax.fori_loop(
         0, nsteps, step_fn, (data, key, logprob, 0.0)
     )
     pmove = jnp.sum(num_accepts) / (nsteps * batch_per_device)
     pmove = constants.pmean(pmove)
+
+    if get_flat_grads:
+      return new_data, pmove, flat_grads
     return new_data, pmove
 
   return mcmc_step
-
 
 def update_mcmc_width(
     t: int,
