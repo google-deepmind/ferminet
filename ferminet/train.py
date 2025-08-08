@@ -378,7 +378,7 @@ def make_kfac_training_step(
         damping=shared_damping,
     )
 
-    if reset_if_nan and jnp.isnan(stats['loss']):
+    if reset_if_nan and jnp.any(jnp.isnan(stats['loss'])):
       new_params = old_params
       new_state = old_state
     return data, new_params, new_state, stats['loss'], stats['aux'], pmove
