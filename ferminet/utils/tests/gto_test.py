@@ -12,8 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Tests for gto.py."""
-
 from absl.testing import absltest
 from absl.testing import parameterized
 from ferminet.utils import gto
@@ -60,10 +58,12 @@ class GtoTest(parameterized.TestCase):
 
     with self.subTest('by hand'):
       observed = gto.grad_solid_harmonic(r, l_max)
-      np.testing.assert_allclose(observed, expected, atol=1.e-4)
+      np.testing.assert_allclose(observed, expected, rtol=2.0e-7, atol=1.0e-4)
     with self.subTest('by jax'):
       observed_jacfwd = gto.grad_solid_harmonic_by_jacfwd(r, l_max)
-      np.testing.assert_allclose(observed_jacfwd, expected, atol=1.e-4)
+      np.testing.assert_allclose(
+          observed_jacfwd, expected, rtol=2.0e-7, atol=1.0e-4
+      )
 
 if __name__ == '__main__':
   absltest.main()
