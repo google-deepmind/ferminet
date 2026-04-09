@@ -360,9 +360,7 @@ jax.tree_util.register_pytree_node(Scf, scf_flatten, scf_unflatten)
 
 
 def get_ordered_excitations(
-    mean_field: ...,
-    n: int = 10,
-    preserve_spin: bool = False
+    mean_field, n: int = 10, preserve_spin: bool = False
 ) -> list[tuple[float, int, list[SpinOrbitalSwap]]]:
   """Compute energies of lowest n single/double excitations from HF result.
 
