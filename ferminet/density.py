@@ -123,7 +123,7 @@ def make_rprime_mcmc_step(
     nspins: Tuple[int, int],
     device_batch_size: int,
     scf_approx: scf.Scf,
-) ->...:
+):
   """Makes an MCMC step function for the r' electron positions.
 
   Args:

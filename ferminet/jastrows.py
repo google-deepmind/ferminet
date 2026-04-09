@@ -60,7 +60,7 @@ def _jastrow_ee(
   return jastrow_ee_anti + jastrow_ee_par
 
 
-def make_simple_ee_jastrow() -> ...:
+def make_simple_ee_jastrow():
   """Creates a Jastrow factor for electron-electron cusps."""
 
   def simple_ee_cusp_fun(
@@ -90,7 +90,7 @@ def make_simple_ee_jastrow() -> ...:
   return init, apply
 
 
-def get_jastrow(jastrow: JastrowType) -> ...:
+def get_jastrow(jastrow: JastrowType):
   jastrow_init, jastrow_apply = None, None
   if jastrow == JastrowType.SIMPLE_EE:
     jastrow_init, jastrow_apply = make_simple_ee_jastrow()

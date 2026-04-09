@@ -558,7 +558,7 @@ def construct_symmetric_features(
 
 def make_schnet_convolution(
     nspins: Tuple[int, int], separate_spin_channels: bool
-) -> ...:
+):
   """Returns init/apply pair for SchNet-style convolutions.
 
   See Gerard et al, arXiv:2205.09438.
@@ -634,7 +634,7 @@ def make_schnet_convolution(
   return init, apply
 
 
-def make_schnet_electron_nuclear_convolution() -> ...:
+def make_schnet_electron_nuclear_convolution():
   """Returns init/apply pair for SchNet-style convolutions for electrons-ions.
 
   See Gerard et al, arXiv:2205.09438.
@@ -1065,7 +1065,7 @@ def make_orbitals(
     charges: jnp.ndarray,
     options: BaseNetworkOptions,
     equivariant_layers: Tuple[InitLayersFn, ApplyLayersFn],
-) -> ...:
+):
   """Returns init, apply pair for orbitals.
 
   Args:

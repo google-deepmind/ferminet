@@ -345,7 +345,7 @@ def make_pp_potential(
     quad_degree: int = 4,
     ecp: str = 'ccecp',
     complex_output: bool = False,
-) -> ...:
+):
   """Constructs evaluation of potential due to pseudopotential."""
   ecp_nwchem_fmt = {
       elements.SYMBOLS[symb].atomic_number:

@@ -49,7 +49,7 @@ class PsiformerOptions(networks.BaseNetworkOptions):
   tf32: bool = False
 
 
-def make_layer_norm() ->...:
+def make_layer_norm():
   """Implementation of LayerNorm."""
 
   def init(param_shape: int) -> Mapping[str, jnp.ndarray]:
@@ -70,9 +70,9 @@ def make_layer_norm() ->...:
   return init, apply
 
 
-def make_multi_head_attention(num_heads: int,
-                              heads_dim: int,
-                              tf32: bool = False) ->...:
+def make_multi_head_attention(
+    num_heads: int, heads_dim: int, tf32: bool = False
+):
   """FermiNet-style version of MultiHeadAttention."""
   prec = jax.lax.DotAlgorithmPreset.TF32_TF32_F32 if tf32 else None
 
@@ -147,7 +147,7 @@ def make_multi_head_attention(num_heads: int,
   return init, apply
 
 
-def make_mlp() ->...:
+def make_mlp():
   """Construct MLP, with final linear projection to embedding size."""
 
   def init(key: chex.PRNGKey, mlp_hidden_dims: Tuple[int, ...],
@@ -175,12 +175,14 @@ def make_mlp() ->...:
   return init, apply
 
 
-def make_self_attention_block(num_layers: int,
-                              num_heads: int,
-                              heads_dim: int,
-                              mlp_hidden_dims: Tuple[int, ...],
-                              use_layer_norm: bool = False,
-                              tf32: bool = False) ->...:
+def make_self_attention_block(
+    num_layers: int,
+    num_heads: int,
+    heads_dim: int,
+    mlp_hidden_dims: Tuple[int, ...],
+    use_layer_norm: bool = False,
+    tf32: bool = False,
+):
   """Create a QKV self-attention block."""
   attention_init, attention_apply = make_multi_head_attention(
       num_heads, heads_dim, tf32)
