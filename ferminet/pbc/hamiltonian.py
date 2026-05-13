@@ -158,6 +158,9 @@ def local_energy(
     complex_output: bool = False,
     laplacian_method: str = 'default',
     states: int = 0,
+    state_specific: bool = False,
+    pp_type: str = 'ccecp',
+    pp_symbols: Sequence[str] | None = None,
     lattice: Optional[jnp.ndarray] = None,
     heg: bool = True,
     convergence_radius: int = 5,
@@ -188,6 +191,9 @@ def local_energy(
   """
   if states:
     raise NotImplementedError('Excited states not implemented with PBC.')
+  if pp_symbols:
+    raise NotImplementedError('Pseudopotentials not implemented with PBC.')
+  
   del nspins
   if lattice is None:
     lattice = jnp.eye(3)

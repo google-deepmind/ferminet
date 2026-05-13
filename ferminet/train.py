@@ -743,12 +743,6 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
   # Construct loss and optimizer
   laplacian_method = cfg.optim.get('laplacian', 'default')
   if cfg.system.make_local_energy_fn:
-    if laplacian_method != 'default':
-      raise NotImplementedError(f'Laplacian method {laplacian_method}'
-                                'not yet supported by custom local energy fns.')
-    if cfg.optim.objective == 'vmc_overlap':
-      raise NotImplementedError('Overlap penalty not yet supported for custom'
-                                'local energy fns.')
     local_energy_module, local_energy_fn = (
         cfg.system.make_local_energy_fn.rsplit('.', maxsplit=1))
     local_energy_module = importlib.import_module(local_energy_module)
@@ -758,7 +752,12 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
         charges=charges,
         nspins=nspins,
         use_scan=False,
+        complex_output=use_complex,
+        laplacian_method=laplacian_method,
         states=cfg.system.get('states', 0),
+        state_specific=(cfg.optim.objective == 'vmc_overlap'),
+        pp_type=cfg.system.get('pp', {'type': 'ccecp'}).get('type'),
+        pp_symbols=pp_symbols if cfg.system.get('use_pp') else None,
         **cfg.system.make_local_energy_kwargs)
   else:
     pp_symbols = cfg.system.get('pp', {'symbols': None}).get('symbols')
