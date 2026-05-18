@@ -158,6 +158,9 @@ def local_energy(
     complex_output: bool = False,
     laplacian_method: str = 'default',
     states: int = 0,
+    state_specific: bool = False,
+    pp_type: str = 'ccecp',
+    pp_symbols: Sequence[str] | None = None,
     lattice: Optional[jnp.ndarray] = None,
     heg: bool = True,
     convergence_radius: int = 5,
@@ -176,6 +179,10 @@ def local_energy(
       'folx': use Microsoft's implementation of forward laplacian
     states: Number of excited states to compute. Not implemented, only present
       for consistency of calling convention.
+    state_specific: Not implemented.
+    pp_type: type of pseudopotential to use. Not implemented.
+    pp_symbols: sequence of element symbols for which the pseudopotential is
+      used. Not implemented.
     lattice: Shape (ndim, ndim). Matrix of lattice vectors. Default: identity
       matrix.
     heg: bool. Flag to enable features specific to the electron gas.
@@ -186,9 +193,13 @@ def local_energy(
     energy of the wavefunction given the parameters params, RNG state key,
     and a single MCMC configuration in data.
   """
-  if states:
+  if states > 0 or state_specific:
     raise NotImplementedError('Excited states not implemented with PBC.')
+  if pp_symbols:
+    raise NotImplementedError('Pseudopotentials not implemented with PBC.')
+
   del nspins
+  del pp_type
   if lattice is None:
     lattice = jnp.eye(3)
 
