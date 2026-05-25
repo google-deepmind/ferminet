@@ -62,7 +62,8 @@ def make_pbc_feature_layer(
       lattice: Matrix whose columns are the primitive lattice vectors of the
         system, shape (ndim, ndim).
       include_r_ae: Flag to enable electron-atom distance features. Set to False
-        to avoid cusps with ghost atoms in, e.g., homogeneous electron gas.
+        to avoid cusps with ghost atoms in, e.g., homogeneous electron gas. If not 
+        needed, set cfg.network.make_feature_layer_kwargs['include_r_ae'] = False
   """
 
   del nspins

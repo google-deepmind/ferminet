@@ -25,6 +25,20 @@ import jax
 from jax import lax
 from jax import numpy as jnp
 import numpy as np
+from typing import Callable
+
+
+def map_to_simulation_cell(pos, lattice, rec, ndim):
+  """If working in PBC, map electrons back to the supercell
+  """
+  pos_ = jnp.reshape(pos, [-1, ndim])
+  phase = jnp.einsum('il,kl->ki', rec / (2 * jnp.pi), pos_)
+  phase_prim = phase % 1
+  prim = jnp.einsum('il,kl->ki', lattice, phase_prim)
+  return prim.flatten()
+
+batch_map_to_simulation_cell = jax.vmap(
+    map_to_simulation_cell, in_axes = (0, None, None, None))
 
 
 def _harmonic_mean(x, atoms):
@@ -78,6 +92,7 @@ def mh_accept(x1, x2, lp_1, lp_2, ratio, key, num_accepts):
 def mh_update(
     params: networks.ParamTree,
     f: networks.LogFermiNetLike,
+    _map: Callable,
     data: networks.FermiNetData,
     key: chex.PRNGKey,
     lp_1,
@@ -94,6 +109,8 @@ def mh_update(
     params: Wavefuncttion parameters.
     f: Callable with signature f(params, x) which returns the log of the
       wavefunction (i.e. the sqaure root of the log probability of x).
+    _map: If PBC, callable which maps electrons back to the simulation cell.
+      If OBC, identity function.
     data: Initial MCMC configurations (batched).
     key: RNG state.
     lp_1: log probability of f evaluated at x1 given parameters params.
@@ -120,6 +137,7 @@ def mh_update(
   x1 = data.positions
   if atoms is None:  # symmetric proposal, same stddev everywhere
     x2 = x1 + stddev * jax.random.normal(subkey, shape=x1.shape)  # proposal
+    x2 = _map(x2)
     lp_2 = 2.0 * f(
         params, x2, data.spins, data.atoms, data.charges
     )  # log prob of proposal
@@ -130,6 +148,7 @@ def mh_update(
     hmean1 = _harmonic_mean(x1, atoms)  # harmonic mean of distances to nuclei
 
     x2 = x1 + stddev * hmean1 * jax.random.normal(subkey, shape=x1.shape)
+    x2 = _map(x2)
     lp_2 = 2.0 * f(
         params, x2, data.spins, data.atoms, data.charges
     )  # log prob of proposal
@@ -150,6 +169,7 @@ def mh_update(
 def mh_block_update(
     params: networks.ParamTree,
     f: networks.LogFermiNetLike,
+    _map: Callable,
     data: networks.FermiNetData,
     key: chex.PRNGKey,
     lp_1,
@@ -166,6 +186,8 @@ def mh_block_update(
     params: Wavefuncttion parameters.
     f: Callable with LogFermiNetLike signature which returns the log of the
       wavefunction (i.e. the sqaure root of the log probability of x).
+    _map: If PBC, callable which maps electrons back to the simulation cell.
+      If OBC, identity function.
     data: Initial MCMC configuration (batched).
     key: RNG state.
     lp_1: log probability of f evaluated at x1 given parameters params.
@@ -199,6 +221,7 @@ def mh_block_update(
     x2 = x1.at[:, ii].add(
         stddev * jax.random.normal(subkey, shape=x1[:, ii].shape))
     x2 = jnp.reshape(x2, [batch_size, -1])
+    x2 = _map(x2)
     if pad > 0:
       x2 = x2[..., :-pad*ndim]
     # log prob of proposal
@@ -222,7 +245,8 @@ def make_mcmc_step(batch_network,
                    steps=10,
                    atoms=None,
                    ndim=3,
-                   blocks=1):
+                   blocks=1,
+                   lattice=None):
   """Creates the MCMC step function.
 
   Args:
@@ -238,11 +262,21 @@ def make_mcmc_step(batch_network,
     ndim: Dimensionality of the system (usually 3).
     blocks: Number of blocks to split the updates into. If 1, use all-electron
       moves.
+    lattice: If None, assume OBC. Otherwise matrix with supercell lattice 
+      vectors
 
   Returns:
     Callable which performs the set of MCMC steps.
   """
   inner_fun = mh_block_update if blocks > 1 else mh_update
+
+  # If PBC, map electrons back to the supercell
+  if lattice is not None:
+    rec = 2 * jnp.pi * jnp.linalg.inv(lattice)
+    _map = lambda p: batch_map_to_simulation_cell(p, lattice, rec, ndim)
+  else:
+    rec = None
+    _map = lambda p: p
 
   def mcmc_step(params, data, key, width):
     """Performs a set of MCMC steps.
@@ -263,6 +297,7 @@ def make_mcmc_step(batch_network,
       return inner_fun(
           params,
           batch_network,
+          _map,
           *x,
           stddev=width,
           atoms=atoms,

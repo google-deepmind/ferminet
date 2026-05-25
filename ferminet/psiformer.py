@@ -337,6 +337,7 @@ def make_fermi_net(
     charges: jnp.ndarray,
     *,
     ndim: int = 3,
+    lattice: Optional[jnp.ndarray] = None,
     determinants: int = 16,
     states: int = 0,
     envelope: Optional[envelopes.Envelope] = None,
@@ -361,6 +362,8 @@ def make_fermi_net(
     nspins: Tuple of the number of spin-up and spin-down electrons.
     charges: (natom) array of atom nuclear charges.
     ndim: Dimension of the system. Change only with caution.
+    lattice: If None, assume OBC. Otherwise matrix with supercell lattice 
+      vectors.
     determinants: Number of determinants.
     states: Number of outputs, one per excited (or ground) state. Ignored if 0.
     envelope: Envelope to use to impose orbitals go to zero at infinity.
@@ -401,6 +404,7 @@ def make_fermi_net(
 
   options = PsiformerOptions(
       ndim=ndim,
+      lattice=lattice,
       determinants=determinants,
       states=states,
       envelope=envelope,

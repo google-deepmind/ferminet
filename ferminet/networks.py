@@ -267,6 +267,8 @@ class BaseNetworkOptions:
   Attributes:
     ndim: dimension of system. Change only with caution.
     determinants: Number of determinants to use.
+    lattice: If None, assume OBC. Otherwise matrix with supercell lattice 
+      vectors.
     states: Number of outputs, one per excited (or ground) state. Ignored if 0.
     full_det: If true, evaluate determinants over all electrons. Otherwise,
       block-diagonalise determinants into spin channels.
@@ -281,6 +283,7 @@ class BaseNetworkOptions:
   """
 
   ndim: int = 3
+  lattice: Optional[jnp.ndarray] = None
   determinants: int = 16
   states: int = 0
   full_det: bool = True
@@ -1079,7 +1082,8 @@ def make_orbitals(
   equivariant_layers_init, equivariant_layers_apply = equivariant_layers
 
   # Optional Jastrow factor.
-  jastrow_init, jastrow_apply = jastrows.get_jastrow(options.jastrow)
+  jastrow_init, jastrow_apply = jastrows.get_jastrow(
+      options.jastrow, options.lattice, options.ndim)
 
   def init(key: chex.PRNGKey) -> ParamTree:
     """Returns initial random parameters for creating orbitals.
@@ -1235,7 +1239,7 @@ def make_orbitals(
     # Added pre-determinant for compatibility with pretraining.
     if jastrow_apply is not None:
       jastrow = jnp.exp(
-          jastrow_apply(r_ee, params['jastrow'], nspins) / sum(nspins)
+          jastrow_apply(ee, params['jastrow'], nspins) / sum(nspins)
       )
       orbitals = [orbital * jastrow for orbital in orbitals]
 
@@ -1365,6 +1369,7 @@ def make_fermi_net(
     charges: jnp.ndarray,
     *,
     ndim: int = 3,
+    lattice: Optional[jnp.ndarray] = None,
     determinants: int = 16,
     states: int = 0,
     envelope: Optional[envelopes.Envelope] = None,
@@ -1389,6 +1394,8 @@ def make_fermi_net(
     nspins: Tuple of the number of spin-up and spin-down electrons.
     charges: (natom) array of atom nuclear charges.
     ndim: dimension of system. Change only with caution.
+    lattice: If None, assume OBC. Otherwise matrix with supercell lattice 
+      vectors.
     determinants: Number of determinants to use.
     states: Number of outputs, one per excited (or ground) state. Ignored if 0.
     envelope: Envelope to use to impose orbitals go to zero at infinity.
@@ -1448,6 +1455,7 @@ def make_fermi_net(
 
   options = FermiNetOptions(
       ndim=ndim,
+      lattice=lattice,
       determinants=determinants,
       states=states,
       rescale_inputs=rescale_inputs,
