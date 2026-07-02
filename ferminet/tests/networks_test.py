@@ -111,14 +111,14 @@ class NetworksTest(parameterized.TestCase):
     params = network.init(subkey)
 
     # Randomize parameters of envelope
-    if isinstance(params['envelope'], list):
+    if isinstance(params['envelope'], list):  # pyrefly: ignore[bad-index]
       for i in range(len(params['envelope'])):
         if params['envelope'][i]:
           key, *subkeys = random.split(key, num=3)
-          params['envelope'][i]['sigma'] = random.normal(
-              subkeys[0], params['envelope'][i]['sigma'].shape)
-          params['envelope'][i]['pi'] = random.normal(
-              subkeys[1], params['envelope'][i]['pi'].shape)
+          params['envelope'][i]['sigma'] = random.normal(  # pyrefly: ignore[unsupported-operation]
+              subkeys[0], params['envelope'][i]['sigma'].shape)  # pyrefly: ignore[bad-index]
+          params['envelope'][i]['pi'] = random.normal(  # pyrefly: ignore[unsupported-operation]
+              subkeys[1], params['envelope'][i]['pi'].shape)  # pyrefly: ignore[bad-index]
     else:
       assert isinstance(params['envelope'], dict)
       key, *subkeys = random.split(key, num=3)
@@ -144,7 +144,7 @@ class NetworksTest(parameterized.TestCase):
     nelec = 6
     xs = np.random.normal(scale=3, size=(nelec, ndim)).astype(dtype)
     atoms = jnp.array([[0.2, 0.5, 0.3], [1.2, 0.3, 0.7]])
-    input_features = networks.construct_input_features(xs, atoms)
+    input_features = networks.construct_input_features(xs, atoms)  # pyrefly: ignore[bad-argument-type]
     d_input_features = jax.jacfwd(networks.construct_input_features)(
         xs, atoms, ndim=3)
     r_ee = input_features[-1][:, :, 0]
@@ -188,7 +188,7 @@ class NetworksTest(parameterized.TestCase):
       h_aux = None
     h_two = h_two + np.transpose(h_two, axes=(1, 0, 2))
     features = networks.construct_symmetric_features(
-        h_one, h_two, nspins, h_aux=h_aux
+        h_one, h_two, nspins, h_aux=h_aux  # pyrefly: ignore[bad-argument-type]
     )
     # Swap electrons
     swaps = np.arange(sum(nspins))
@@ -200,7 +200,7 @@ class NetworksTest(parameterized.TestCase):
     inverse_swaps = np.asarray(inverse_swaps)
     h_aux_swap = h_aux if h_aux is None else h_aux[swaps]
     features_swap = networks.construct_symmetric_features(
-        h_one[swaps], h_two[swaps][:, swaps], nspins, h_aux=h_aux_swap
+        h_one[swaps], h_two[swaps][:, swaps], nspins, h_aux=h_aux_swap  # pyrefly: ignore[bad-argument-type]
     )
     np.testing.assert_allclose(
         features, features_swap[inverse_swaps], atol=1E-5, rtol=1E-5)

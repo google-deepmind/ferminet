@@ -253,7 +253,7 @@ class QmcPyscfMolTest(parameterized.TestCase):
     cfg = base_config.default()
     mol = pyscf.gto.Mole()
     mol.atom = ['Li 0 0 0']
-    mol.basis = {'Li': cfg.system.pp.basis}
+    mol.basis = {'Li': cfg.system.pp.basis}  # pyrefly: ignore[bad-assignment]
     mol.ecp = {'Li': cfg.system.pp.type}
 
     mol.charge = 0

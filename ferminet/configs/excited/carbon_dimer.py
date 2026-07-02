@@ -26,8 +26,8 @@ def finalise(
   # Equilibrium bond length is 1.244 Angstrom
   bond_length = experiment_config.system.equilibrium_multiple * 1.244 * 1.88973
   experiment_config.system.molecule = [
-      system.Atom('C', coords=(0, 0, bond_length / 2)),
-      system.Atom('C', coords=(0, 0, -bond_length / 2))]
+      system.Atom('C', coords=(0, 0, bond_length / 2)),  # pyrefly: ignore[missing-argument]
+      system.Atom('C', coords=(0, 0, -bond_length / 2))]  # pyrefly: ignore[missing-argument]
   return experiment_config
 
 

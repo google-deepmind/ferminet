@@ -47,13 +47,13 @@ def _jastrow_ee(
 
   if r_ees_parallel.shape[0] > 0:
     jastrow_ee_par = jnp.sum(
-        jastrow_fun(r_ees_parallel, 0.25, params['ee_par'])
+        jastrow_fun(r_ees_parallel, 0.25, params['ee_par'])  # pyrefly: ignore[bad-argument-type, bad-index]
     )
   else:
     jastrow_ee_par = jnp.asarray(0.0)
 
   if r_ees[0][1].shape[0] > 0:
-    jastrow_ee_anti = jnp.sum(jastrow_fun(r_ees[0][1], 0.5, params['ee_anti']))
+    jastrow_ee_anti = jnp.sum(jastrow_fun(r_ees[0][1], 0.5, params['ee_anti']))  # pyrefly: ignore[bad-argument-type, bad-index]
   else:
     jastrow_ee_anti = jnp.asarray(0.0)
 

@@ -47,7 +47,7 @@ def exponentialy_weighted_stats(
       made.
   """
   if previous_stats is None:
-    return WeightedStats[T](mean=observation, variance=0.0 * observation)
+    return WeightedStats[T](mean=observation, variance=0.0 * observation)  # pyrefly: ignore[bad-argument-type]
   else:
     # See Incremental calculation of weighted mean and variance, Tony Finch,
     # https://fanf2.user.srcf.net/hermes/doc/antiforgery/stats.pdf

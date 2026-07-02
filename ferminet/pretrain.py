@@ -62,14 +62,14 @@ def get_hf(molecule: Sequence[system.Atom] | None = None,
   """
   if pyscf_mol:
     scf_approx = scf.Scf(pyscf_mol=pyscf_mol,
-                         restricted=restricted)
+                         restricted=restricted)  # pyrefly: ignore[bad-argument-type]
   else:
     scf_approx = scf.Scf(molecule,
                          nelectrons=nspins,
                          basis=basis,
                          ecp=ecp,
                          core_electrons=core_electrons,
-                         restricted=restricted)
+                         restricted=restricted)  # pyrefly: ignore[bad-argument-type]
   scf_approx.run(excitations=max(states - 1, 0),
                  excitation_type=excitation_type)
   return scf_approx
@@ -321,7 +321,7 @@ def pretrain_hartree_fock(
 
   pretrain_step = make_pretrain_step(
       batch_orbitals,
-      batch_network,
+      batch_network,  # pyrefly: ignore[bad-argument-type]
       optimizer.update,
       electrons=electrons,
       batch_size=batch_size,

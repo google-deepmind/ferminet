@@ -65,7 +65,7 @@ def finalise(
         # position of carbon atom
         coord0 = np.array([float(xx) for xx in geom[1].split()[1:]]) * 1.88973
         coords = (rot @ (coords - coord0)) + coord0
-    molecule.append(system.Atom(symbol=element,
+    molecule.append(system.Atom(symbol=element,  # pyrefly: ignore[missing-argument]
                                 coords=list(coords),
                                 units='bohr'))
 

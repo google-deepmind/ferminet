@@ -89,7 +89,7 @@ class Scf:
     else:
       # If not passed a pyscf molecule, create one
       if any(atom.atomic_number - atom.charge > 1.e-8
-             for atom in molecule):
+             for atom in molecule):  # pyrefly: ignore[not-iterable]
         logging.info(
             'Fractional nuclear charge detected. '
             'Running SCF on atoms with integer charge.'
@@ -98,20 +98,20 @@ class Scf:
       core_electrons = core_electrons or {}
 
       nuclear_charge = 0
-      for atom in molecule:
+      for atom in molecule:  # pyrefly: ignore[not-iterable]
         nuclear_charge += atom.atomic_number
         if atom.symbol in core_electrons:
           nuclear_charge -= core_electrons[atom.symbol]
-      charge = nuclear_charge - sum(nelectrons)
+      charge = nuclear_charge - sum(nelectrons)  # pyrefly: ignore[no-matching-overload]
       self._mol = pyscf.gto.Mole(
-          atom=[[atom.symbol, atom.coords] for atom in molecule],
+          atom=[[atom.symbol, atom.coords] for atom in molecule],  # pyrefly: ignore[not-iterable]
           unit='bohr')
-      self._mol.basis = basis
-      self._mol.spin = nelectrons[0] - nelectrons[1]
+      self._mol.basis = basis  # pyrefly: ignore[bad-assignment]
+      self._mol.spin = nelectrons[0] - nelectrons[1]  # pyrefly: ignore[unsupported-operation]
       self._mol.charge = charge
-      self._mol.ecp = ecp
+      self._mol.ecp = ecp  # pyrefly: ignore[bad-assignment]
       self._mol.build()
-      if self._mol.nelectron != sum(nelectrons):
+      if self._mol.nelectron != sum(nelectrons):  # pyrefly: ignore[no-matching-overload]
         raise RuntimeError('PySCF molecule not consistent with QMC molecule.')
       self._mol_jax = gto.Mol.from_pyscf_mol(self._mol)
     if restricted:
@@ -237,12 +237,12 @@ class Scf:
     if self._mol.cart:
       raise NotImplementedError(
           'Evaluation of molecular orbitals using cartesian GTOs.')
-    ao_values = self._mol_jax.eval_gto(positions)
+    ao_values = self._mol_jax.eval_gto(positions)  # pyrefly: ignore[bad-argument-type]
     mo_values = tuple(jnp.matmul(ao_values, coeff) for coeff in coeffs)
     if self.restricted:
       # duplicate for beta electrons.
       mo_values *= 2
-    return mo_values
+    return mo_values  # pyrefly: ignore[bad-return]
 
   def eval_orbitals(self,
                     pos: NDArray,

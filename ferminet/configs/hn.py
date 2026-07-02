@@ -24,7 +24,7 @@ def _set_geometry(cfg: ml_collections.ConfigDict) -> ml_collections.ConfigDict:
   start = -(cfg.system.bond_length * (cfg.system.natoms - 1)) / 2
   atom_position = lambda i: (start + i * cfg.system.bond_length, 0, 0)
   cfg.system.molecule = [
-      system.Atom(symbol='H', coords=atom_position(i), units=cfg.system.units)
+      system.Atom(symbol='H', coords=atom_position(i), units=cfg.system.units)  # pyrefly: ignore[missing-argument]
       for i in range(cfg.system.natoms)
   ]
   nalpha = cfg.system.natoms // 2

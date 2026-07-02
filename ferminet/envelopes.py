@@ -121,7 +121,7 @@ def make_isotropic_envelope() -> Envelope:
     del ae, r_ee  # unused
     return jnp.sum(jnp.exp(-r_ae * sigma) * pi, axis=1)
 
-  return Envelope(EnvelopeType.PRE_DETERMINANT, init, apply)
+  return Envelope(EnvelopeType.PRE_DETERMINANT, init, apply)  # pyrefly: ignore[bad-argument-type]
 
 
 def make_bottleneck_envelope(nenv: int = 16) -> Envelope:
@@ -162,7 +162,7 @@ def make_bottleneck_envelope(nenv: int = 16) -> Envelope:
     del ae, r_ee  # unused
     return jnp.sum(jnp.exp(-r_ae * sigma) * pi, axis=1) @ w
 
-  return Envelope(EnvelopeType.PRE_DETERMINANT, init, apply)
+  return Envelope(EnvelopeType.PRE_DETERMINANT, init, apply)  # pyrefly: ignore[bad-argument-type]
 
 
 def make_diagonal_envelope() -> Envelope:
@@ -186,7 +186,7 @@ def make_diagonal_envelope() -> Envelope:
     r_ae_sigma = jnp.linalg.norm(ae[..., None] * sigma, axis=2)
     return jnp.sum(jnp.exp(-r_ae_sigma) * pi, axis=1)
 
-  return Envelope(EnvelopeType.PRE_DETERMINANT, init, apply)
+  return Envelope(EnvelopeType.PRE_DETERMINANT, init, apply)  # pyrefly: ignore[bad-argument-type]
 
 
 def make_full_envelope() -> Envelope:
@@ -214,7 +214,7 @@ def make_full_envelope() -> Envelope:
     r_ae_sigma = jnp.linalg.norm(ae_sigma, axis=2)
     return jnp.sum(jnp.exp(-r_ae_sigma) * pi, axis=1)
 
-  return Envelope(EnvelopeType.PRE_DETERMINANT, init, apply)
+  return Envelope(EnvelopeType.PRE_DETERMINANT, init, apply)  # pyrefly: ignore[bad-argument-type]
 
 
 def make_null_envelope() -> Envelope:
@@ -231,7 +231,7 @@ def make_null_envelope() -> Envelope:
     del ae, r_ae, r_ee
     return jnp.ones(shape=(1,))
 
-  return Envelope(EnvelopeType.PRE_DETERMINANT, init, apply)
+  return Envelope(EnvelopeType.PRE_DETERMINANT, init, apply)  # pyrefly: ignore[bad-argument-type]
 
 
 def make_sto_envelope() -> Envelope:
@@ -259,7 +259,7 @@ def make_sto_envelope() -> Envelope:
     out = jnp.sum(exp_r_ae * pi, axis=1)
     return out
 
-  return Envelope(EnvelopeType.PRE_ORBITAL, init, apply)
+  return Envelope(EnvelopeType.PRE_ORBITAL, init, apply)  # pyrefly: ignore[bad-argument-type]
 
 
 def make_sto_poly_envelope() -> Envelope:
@@ -289,7 +289,7 @@ def make_sto_poly_envelope() -> Envelope:
     out = jnp.sum(exp_r_ae * jnp.sum(poly_r_ae * pi, axis=3), axis=1)
     return out
 
-  return Envelope(EnvelopeType.PRE_ORBITAL, init, apply)
+  return Envelope(EnvelopeType.PRE_ORBITAL, init, apply)  # pyrefly: ignore[bad-argument-type]
 
 
 def get_envelope(

@@ -68,7 +68,7 @@ def molecule(cfg):
   pos = (cfg.system.bond_length * cfg.system.bond_length_multiple) / 2
   atom_coords = ((-pos, 0., 0.), (pos, 0., 0.))
   cfg.system.molecule = [
-      system.Atom(symbol=atom, coords=coord, units=cfg.system.units)
+      system.Atom(symbol=atom, coords=coord, units=cfg.system.units)  # pyrefly: ignore[missing-argument]
       for atom, coord in zip((atom1, atom2), atom_coords)
   ]
 

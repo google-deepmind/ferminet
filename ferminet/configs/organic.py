@@ -115,7 +115,7 @@ def organic_molecule(cfg):
     raise ValueError(f'Unrecognized molecule: {cfg.system.molecule_name}')
   molecule = []
   for element, coords in systems[cfg.system.molecule_name]:
-    molecule.append(system.Atom(symbol=element, coords=coords, units=units))
+    molecule.append(system.Atom(symbol=element, coords=coords, units=units))  # pyrefly: ignore[missing-argument]
   cfg.system.molecule = molecule
   return cfg
 

@@ -71,7 +71,7 @@ class HamiltonianTest(parameterized.TestCase):
     charges = 2 * np.ones(shape=(1,))
     expected_kinetic_energy = -(1 - 2 / np.abs(np.linalg.norm(xs))) / 2
 
-    kinetic = hamiltonian.local_kinetic_energy(h_atom_log_psi_signed,
+    kinetic = hamiltonian.local_kinetic_energy(h_atom_log_psi_signed,  # pyrefly: ignore[bad-argument-type]
                                                laplacian_method=laplacian)
     kinetic_energy = kinetic(
         dummy_params,
@@ -126,7 +126,7 @@ class HamiltonianTest(parameterized.TestCase):
     charges = np.ones(shape=(1,))
     dummy_params = {}
     local_energy = hamiltonian.local_energy(
-        h_atom_log_psi_signed, charges, nspins=(1, 0), use_scan=False
+        h_atom_log_psi_signed, charges, nspins=(1, 0), use_scan=False  # pyrefly: ignore[bad-argument-type]
     )
 
     xs = np.random.normal(size=(100, 3))
@@ -168,7 +168,7 @@ class LaplacianTest(parameterized.TestCase):
     )
     dummy_params = {}
     t_l_fn = jax.vmap(
-        hamiltonian.local_kinetic_energy(h_atom_log_psi_signed,
+        hamiltonian.local_kinetic_energy(h_atom_log_psi_signed,  # pyrefly: ignore[bad-argument-type]
                                          laplacian_method=laplacian),
         in_axes=(
             None,
@@ -205,7 +205,7 @@ class LaplacianTest(parameterized.TestCase):
     )
     network = networks.make_fermi_net(
         nspins,
-        charges,
+        charges,  # pyrefly: ignore[bad-argument-type]
         full_det=full_det,
         feature_layer=feature_layer,
         **cfg.network.ferminet

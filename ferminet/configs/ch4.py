@@ -24,11 +24,11 @@ def get_config() -> ml_collections.ConfigDict:
   cfg = base_config.default()
   # geometry in bohr.
   cfg.system.molecule = [
-      system.Atom(symbol='C', coords=(0.0, 0.0, 0.0)),
-      system.Atom(symbol='H', coords=(1.18886, 1.18886, 1.18886)),
-      system.Atom(symbol='H', coords=(-1.18886, -1.18886, 1.18886)),
-      system.Atom(symbol='H', coords=(1.18886, -1.18886, -1.18886)),
-      system.Atom(symbol='H', coords=(-1.18886, 1.18886, -1.18886)),
+      system.Atom(symbol='C', coords=(0.0, 0.0, 0.0)),  # pyrefly: ignore[missing-argument]
+      system.Atom(symbol='H', coords=(1.18886, 1.18886, 1.18886)),  # pyrefly: ignore[missing-argument]
+      system.Atom(symbol='H', coords=(-1.18886, -1.18886, 1.18886)),  # pyrefly: ignore[missing-argument]
+      system.Atom(symbol='H', coords=(1.18886, -1.18886, -1.18886)),  # pyrefly: ignore[missing-argument]
+      system.Atom(symbol='H', coords=(-1.18886, 1.18886, -1.18886)),  # pyrefly: ignore[missing-argument]
   ]
   cfg.system.electrons = (5, 5)
   return cfg

@@ -78,7 +78,7 @@ def finalise(
   for atom in geom:
     element, x, y, z = atom.split()
     coords = [float(xx) for xx in (x, y, z)]
-    molecule.append(system.Atom(symbol=element,
+    molecule.append(system.Atom(symbol=element,  # pyrefly: ignore[missing-argument]
                                 coords=coords,
                                 units=units))
 

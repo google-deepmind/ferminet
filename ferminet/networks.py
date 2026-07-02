@@ -290,7 +290,7 @@ class BaseNetworkOptions:
       default=attr.Factory(
           envelopes.make_isotropic_envelope,
           takes_self=False))
-  feature_layer: FeatureLayer = None
+  feature_layer: FeatureLayer = None  # pyrefly: ignore[bad-assignment]
   jastrow: jastrows.JastrowType = jastrows.JastrowType.NONE
   complex_output: bool = False
 
@@ -505,7 +505,7 @@ def make_ferminet_features(
     ae_features = jnp.reshape(ae_features, [jnp.shape(ae_features)[0], -1])
     return ae_features, ee_features
 
-  return FeatureLayer(init=init, apply=apply)
+  return FeatureLayer(init=init, apply=apply)  # pyrefly: ignore[bad-argument-type]
 
 
 ## Network layers: permutation-equivariance ##
@@ -617,10 +617,10 @@ def make_schnet_convolution(
     # separately. We follow the latter always.
     # These changes are in keeping with the spirit of FermiNet and SchNet
     # convolutions, if not the detail provided by Gerard et al.
-    h_one_embedding = network_blocks.linear_layer(h_one, params['single'])
+    h_one_embedding = network_blocks.linear_layer(h_one, params['single'])  # pyrefly: ignore[bad-argument-type, bad-index]
     h_two_embeddings = [
-        network_blocks.linear_layer(h_two_channel, layer_param)
-        for h_two_channel, layer_param in zip(h_two, params['double'])
+        network_blocks.linear_layer(h_two_channel, layer_param)  # pyrefly: ignore[bad-argument-type]
+        for h_two_channel, layer_param in zip(h_two, params['double'])  # pyrefly: ignore[bad-index]
     ]
     if separate_spin_channels:
       # h_two is a tuple of parallel spin pairs and anti-parallel spin pairs.
@@ -903,7 +903,7 @@ def make_fermi_net_layers(
     if options.schnet_electron_electron_convolutions:
       # SchNet-style embedding: convolve embeddings of one- and two-electron
       # streams.
-      h_two_embedding = schnet_electron_apply(params['schnet'], h_one, h_two)
+      h_two_embedding = schnet_electron_apply(params['schnet'], h_one, h_two)  # pyrefly: ignore[bad-index]
     elif options.separate_spin_channels:
       # FermiNet embedding from separate spin channels for parallel and
       # anti-parallel pairs of spins. Need to reshape and combine spin channels.
@@ -941,7 +941,7 @@ def make_fermi_net_layers(
 
     # Execute next layer.
     h_one_next = jnp.tanh(
-        network_blocks.linear_layer(h_one_in, **params['single'])
+        network_blocks.linear_layer(h_one_in, **params['single'])  # pyrefly: ignore[bad-unpacking, missing-argument]
     )
     h_one = residual(h_one, h_one_next)
     # Only perform the auxiliary streams if parameters are present (ie not the
@@ -954,13 +954,13 @@ def make_fermi_net_layers(
         # same length as h_two.
         params_double = [params['double']]
       h_two_next = [
-          jnp.tanh(network_blocks.linear_layer(prev, **param))
+          jnp.tanh(network_blocks.linear_layer(prev, **param))  # pyrefly: ignore[bad-unpacking, missing-argument]
           for prev, param in zip(h_two, params_double)
       ]
       h_two = tuple(residual(prev, new) for prev, new in zip(h_two, h_two_next))
     if h_elec_ion is not None and 'electron_ion' in params:
-      h_elec_ion = network_blocks.linear_layer(
-          h_elec_ion, **params['electron_ion']
+      h_elec_ion = network_blocks.linear_layer(  # pyrefly: ignore[missing-argument]
+          h_elec_ion, **params['electron_ion']  # pyrefly: ignore[bad-unpacking]
       )
 
     return h_one, h_two, h_elec_ion
@@ -1030,14 +1030,14 @@ def make_fermi_net_layers(
       h_one, h_two, h_elec_ion = apply_layer(
           params['streams'][i],
           h_one,
-          h_two,
+          h_two,  # pyrefly: ignore[bad-argument-type]
           h_elec_ion,
           nuclear_embedding,
       )
 
     if options.use_last_layer:
       last_layer = params['streams'][-1]
-      h_two_embedding = electron_electron_convolution(last_layer, h_one, h_two)
+      h_two_embedding = electron_electron_convolution(last_layer, h_one, h_two)  # pyrefly: ignore[bad-argument-type]
       if options.schnet_electron_nuclear_convolutions:
         h_aux = schnet_electron_nuclear_apply(
             last_layer['schnet_nuclear'], h_elec_ion, nuclear_embedding
@@ -1054,7 +1054,7 @@ def make_fermi_net_layers(
 
     return h_to_orbitals
 
-  return init, apply
+  return init, apply  # pyrefly: ignore[bad-return]
 
 
 ## Network layers: orbitals ##
@@ -1282,7 +1282,7 @@ def make_state_matrix(signed_network: FermiNetLike, n: int) -> FermiNetLike:
     sign_mat, log_mat = vmap_network(params, pos_, spins_, atoms, charges)
     return sign_mat, log_mat
 
-  return state_matrix
+  return state_matrix  # pyrefly: ignore[bad-return]
 
 
 def make_state_trace(signed_network: FermiNetLike, n: int) -> FermiNetLike:
@@ -1310,7 +1310,7 @@ def make_state_trace(signed_network: FermiNetLike, n: int) -> FermiNetLike:
 
     return jnp.trace(log_in)
 
-  return state_trace
+  return state_trace  # pyrefly: ignore[bad-return]
 
 
 def make_total_ansatz(signed_network: FermiNetLike,
@@ -1354,7 +1354,7 @@ def make_total_ansatz(signed_network: FermiNetLike,
     log_out += n * logmax
     return sign_out, log_out
 
-  return total_ansatz
+  return total_ansatz  # pyrefly: ignore[bad-return]
 
 
 ## FermiNet ##
@@ -1520,5 +1520,5 @@ def make_fermi_net(
     return result
 
   return Network(
-      options=options, init=init, apply=apply, orbitals=orbitals_apply
+      options=options, init=init, apply=apply, orbitals=orbitals_apply  # pyrefly: ignore[bad-argument-type]
   )

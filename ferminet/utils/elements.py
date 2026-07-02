@@ -137,16 +137,16 @@ _ELEMENTS = (
     Element(symbol='Ar', atomic_number=18, period=3),
     Element(symbol='K', atomic_number=19, period=4),
     Element(symbol='Ca', atomic_number=20, period=4),
-    Element(symbol='Sc', atomic_number=21, period=4, spin=1),
-    Element(symbol='Ti', atomic_number=22, period=4, spin=2),
-    Element(symbol='V', atomic_number=23, period=4, spin=3),
-    Element(symbol='Cr', atomic_number=24, period=4, spin=6),
-    Element(symbol='Mn', atomic_number=25, period=4, spin=5),
-    Element(symbol='Fe', atomic_number=26, period=4, spin=4),
-    Element(symbol='Co', atomic_number=27, period=4, spin=3),
-    Element(symbol='Ni', atomic_number=28, period=4, spin=2),
-    Element(symbol='Cu', atomic_number=29, period=4, spin=1),
-    Element(symbol='Zn', atomic_number=30, period=4, spin=0),
+    Element(symbol='Sc', atomic_number=21, period=4, spin=1),  # pyrefly: ignore[unexpected-keyword]
+    Element(symbol='Ti', atomic_number=22, period=4, spin=2),  # pyrefly: ignore[unexpected-keyword]
+    Element(symbol='V', atomic_number=23, period=4, spin=3),  # pyrefly: ignore[unexpected-keyword]
+    Element(symbol='Cr', atomic_number=24, period=4, spin=6),  # pyrefly: ignore[unexpected-keyword]
+    Element(symbol='Mn', atomic_number=25, period=4, spin=5),  # pyrefly: ignore[unexpected-keyword]
+    Element(symbol='Fe', atomic_number=26, period=4, spin=4),  # pyrefly: ignore[unexpected-keyword]
+    Element(symbol='Co', atomic_number=27, period=4, spin=3),  # pyrefly: ignore[unexpected-keyword]
+    Element(symbol='Ni', atomic_number=28, period=4, spin=2),  # pyrefly: ignore[unexpected-keyword]
+    Element(symbol='Cu', atomic_number=29, period=4, spin=1),  # pyrefly: ignore[unexpected-keyword]
+    Element(symbol='Zn', atomic_number=30, period=4, spin=0),  # pyrefly: ignore[unexpected-keyword]
     Element(symbol='Ga', atomic_number=31, period=4),
     Element(symbol='Ge', atomic_number=32, period=4),
     Element(symbol='As', atomic_number=33, period=4),
@@ -155,16 +155,16 @@ _ELEMENTS = (
     Element(symbol='Kr', atomic_number=36, period=4),
     Element(symbol='Rb', atomic_number=37, period=5),
     Element(symbol='Sr', atomic_number=38, period=5),
-    Element(symbol='Y', atomic_number=39, period=5, spin=1),
-    Element(symbol='Zr', atomic_number=40, period=5, spin=2),
-    Element(symbol='Nb', atomic_number=41, period=5, spin=5),
-    Element(symbol='Mo', atomic_number=42, period=5, spin=6),
-    Element(symbol='Tc', atomic_number=43, period=5, spin=5),
-    Element(symbol='Ru', atomic_number=44, period=5, spin=4),
-    Element(symbol='Rh', atomic_number=45, period=5, spin=3),
-    Element(symbol='Pd', atomic_number=46, period=5, spin=0),
-    Element(symbol='Ag', atomic_number=47, period=5, spin=1),
-    Element(symbol='Cd', atomic_number=48, period=5, spin=0),
+    Element(symbol='Y', atomic_number=39, period=5, spin=1),  # pyrefly: ignore[unexpected-keyword]
+    Element(symbol='Zr', atomic_number=40, period=5, spin=2),  # pyrefly: ignore[unexpected-keyword]
+    Element(symbol='Nb', atomic_number=41, period=5, spin=5),  # pyrefly: ignore[unexpected-keyword]
+    Element(symbol='Mo', atomic_number=42, period=5, spin=6),  # pyrefly: ignore[unexpected-keyword]
+    Element(symbol='Tc', atomic_number=43, period=5, spin=5),  # pyrefly: ignore[unexpected-keyword]
+    Element(symbol='Ru', atomic_number=44, period=5, spin=4),  # pyrefly: ignore[unexpected-keyword]
+    Element(symbol='Rh', atomic_number=45, period=5, spin=3),  # pyrefly: ignore[unexpected-keyword]
+    Element(symbol='Pd', atomic_number=46, period=5, spin=0),  # pyrefly: ignore[unexpected-keyword]
+    Element(symbol='Ag', atomic_number=47, period=5, spin=1),  # pyrefly: ignore[unexpected-keyword]
+    Element(symbol='Cd', atomic_number=48, period=5, spin=0),  # pyrefly: ignore[unexpected-keyword]
     Element(symbol='In', atomic_number=49, period=5),
     Element(symbol='Sn', atomic_number=50, period=5),
     Element(symbol='Sb', atomic_number=51, period=5),

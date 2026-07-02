@@ -36,12 +36,12 @@ def _adjust_nuclear_charge(cfg):
   if cfg.system.molecule:
     atom = cfg.system.molecule[0]
   else:
-    atom = system.Atom(symbol=cfg.system.atom, coords=(0, 0, 0))
+    atom = system.Atom(symbol=cfg.system.atom, coords=(0, 0, 0))  # pyrefly: ignore[missing-argument]
 
   if abs(cfg.system.delta_charge) > 1.e-8:
     nuclear_charge = atom.charge + cfg.system.delta_charge
     cfg.system.molecule = [
-        system.Atom(atom.symbol, atom.coords, nuclear_charge)
+        system.Atom(atom.symbol, atom.coords, nuclear_charge)  # pyrefly: ignore[missing-argument]
     ]
   else:
     cfg.system.molecule = [atom]

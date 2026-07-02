@@ -118,11 +118,11 @@ def save(save_path: str,
     np.savez(
         f,
         t=t,
-        data=dataclasses.asdict(data),
+        data=dataclasses.asdict(data),  # pyrefly: ignore[bad-argument-type]
         params=params,
         opt_state=np.asarray(opt_state, dtype=object),
         mcmc_width=mcmc_width,
-        density_state=(dataclasses.asdict(density_state)
+        density_state=(dataclasses.asdict(density_state)  # pyrefly: ignore[bad-argument-type]
                        if density_state else None))
   return ckpt_filename
 

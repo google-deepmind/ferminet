@@ -77,7 +77,7 @@ def finalise(
   for atom in geom:
     element, x, y, z = atom.split()
     coords = [float(xx) for xx in (x, y, z)]
-    molecule.append(system.Atom(symbol=element, coords=coords, units='bohr'))
+    molecule.append(system.Atom(symbol=element, coords=coords, units='bohr'))  # pyrefly: ignore[missing-argument]
 
   if not experiment_config.system.electrons:  # Don't override if already set
     nelectrons = int(sum(atom.charge for atom in molecule))
@@ -91,7 +91,7 @@ def finalise(
   mol.atom = [[atom.symbol, atom.coords] for atom in molecule]
 
   atoms = list(set([atom.symbol for atom in molecule]))
-  mol.basis = {
+  mol.basis = {  # pyrefly: ignore[bad-assignment]
       atom:
       experiment_config.system.ecp_basis if atom in pseudo_atoms else 'cc-pvdz'
       for atom in atoms

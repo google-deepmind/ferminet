@@ -32,16 +32,16 @@ NumericalLike = TypeVar('NumericalLike', float, np.ndarray)
 
 
 def bohr2angstrom(x_b: NumericalLike) -> NumericalLike:
-  return x_b * ANGSTROM_BOHR
+  return x_b * ANGSTROM_BOHR  # pyrefly: ignore[bad-return]
 
 
 def angstrom2bohr(x_a: NumericalLike) -> NumericalLike:
-  return x_a * BOHR_ANGSTROM
+  return x_a * BOHR_ANGSTROM  # pyrefly: ignore[bad-return]
 
 
 def hartree2kcal(x_b: NumericalLike) -> NumericalLike:
-  return x_b * KCAL_HARTREE
+  return x_b * KCAL_HARTREE  # pyrefly: ignore[bad-return]
 
 
 def kcal2hartree(x_a: NumericalLike) -> NumericalLike:
-  return x_a * HARTREE_KCAL
+  return x_a * HARTREE_KCAL  # pyrefly: ignore[bad-return]

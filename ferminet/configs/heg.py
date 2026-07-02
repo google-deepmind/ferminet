@@ -35,7 +35,7 @@ def get_config():
   cfg.system.electrons = (7, 7)
   # A ghost atom at the origin defines one-electron coordinate system.
   # Element 'X' is a dummy nucleus with zero charge
-  cfg.system.molecule = [system.Atom("X", (0., 0., 0.))]
+  cfg.system.molecule = [system.Atom("X", (0., 0., 0.))]  # pyrefly: ignore[missing-argument]
   # Pretraining is not currently implemented for systems in PBC
   cfg.pretrain.method = None
 

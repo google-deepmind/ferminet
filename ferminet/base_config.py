@@ -346,10 +346,10 @@ def resolve(cfg):
   """
   if 'set_molecule' in cfg.system and callable(cfg.system.set_molecule):
     cfg = cfg.system.set_molecule(cfg)
-    with cfg.ignore_type():
+    with cfg.ignore_type():  # pyrefly: ignore[missing-attribute]
       # Replace the function with its name so we know how the molecule was set
       # This makes the ConfigDict object serialisable.
-      if callable(cfg.system.set_molecule):
-        cfg.system.set_molecule = cfg.system.set_molecule.__name__
+      if callable(cfg.system.set_molecule):  # pyrefly: ignore[missing-attribute]
+        cfg.system.set_molecule = cfg.system.set_molecule.__name__  # pyrefly: ignore[missing-attribute]
   cfg = cfg.copy_and_resolve_references()
   return cfg

@@ -76,9 +76,9 @@ def make_pbc_feature_layer(
 
   def init() -> Tuple[Tuple[int, int], networks.Param]:
     if include_r_ae:
-      return (natoms * (2 * ndim + 1), 2 * ndim + 1), {}
+      return (natoms * (2 * ndim + 1), 2 * ndim + 1), {}  # pyrefly: ignore[unsupported-operation]
     else:
-      return (natoms * (2 * ndim), 2 * ndim + 1), {}
+      return (natoms * (2 * ndim), 2 * ndim + 1), {}  # pyrefly: ignore[unsupported-operation]
 
   def apply(ae, r_ae, ee, r_ee) -> Tuple[jnp.ndarray, jnp.ndarray]:
     # One e features in phase coordinates, (s_ae)_i = k_i . ae
@@ -107,4 +107,4 @@ def make_pbc_feature_layer(
     ee_features = jnp.concatenate((r_ee[..., None], ee), axis=2)
     return ae_features, ee_features
 
-  return networks.FeatureLayer(init=init, apply=apply)
+  return networks.FeatureLayer(init=init, apply=apply)  # pyrefly: ignore[bad-argument-type]

@@ -330,9 +330,9 @@ class Mol:
           for m in ms:
             construction_spec['angular_index'].append((l, m, atom_id))
           cshell_id += 1
-    construction_spec['atom_centres'] = np.array(list(zip(*self.atom_list))[1])
+    construction_spec['atom_centres'] = np.array(list(zip(*self.atom_list))[1])  # pyrefly: ignore[unsupported-operation]
     for k, v in construction_spec.items():
-      construction_spec[k] = np.array(v)
+      construction_spec[k] = np.array(v)  # pyrefly: ignore[unsupported-operation]
     return construction_spec
 
   def eval_gto(self, coords: jnp.ndarray) -> jnp.ndarray:

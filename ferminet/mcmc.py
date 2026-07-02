@@ -143,7 +143,7 @@ def mh_update(
     x2 = jnp.reshape(x2, [n, -1])
   x_new, key, lp_new, num_accepts = mh_accept(
       x1, x2, lp_1, lp_2, ratio, key, num_accepts)
-  new_data = networks.FermiNetData(**(dict(data) | {'positions': x_new}))
+  new_data = networks.FermiNetData(**(dict(data) | {'positions': x_new}))  # pyrefly: ignore[no-matching-overload]
   return new_data, key, lp_new, num_accepts
 
 
@@ -213,7 +213,7 @@ def mh_block_update(
     x1 = x1[..., :-pad*ndim]
   x_new, key, lp_new, num_accepts = mh_accept(
       x1, x2, lp_1, lp_2, ratio, key, num_accepts)
-  new_data = networks.FermiNetData(**(dict(data) | {'positions': x_new}))
+  new_data = networks.FermiNetData(**(dict(data) | {'positions': x_new}))  # pyrefly: ignore[no-matching-overload]
   return new_data, key, lp_new, num_accepts
 
 

@@ -73,7 +73,7 @@ def make_multiwave_envelope(kpoints: jnp.ndarray) -> envelopes.Envelope:
     env = waves @ (sigma**2.0)
     return jnp.sum(env, axis=1)
 
-  return envelopes.Envelope(envelopes.EnvelopeType.PRE_DETERMINANT, init, apply)
+  return envelopes.Envelope(envelopes.EnvelopeType.PRE_DETERMINANT, init, apply)  # pyrefly: ignore[bad-argument-type]
 
 
 def make_kpoints(

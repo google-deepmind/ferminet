@@ -28,7 +28,7 @@ def _set_geometry(cfg: ml_collections.ConfigDict) -> ml_collections.ConfigDict:
   y = cfg.system.radius * np.sin(t)
   quadrants = itertools.product((1, -1), (1, -1))
   cfg.system.molecule = [
-      system.Atom(
+      system.Atom(  # pyrefly: ignore[missing-argument]
           symbol='H', coords=(i * x, j * y, 0.0), units=cfg.system.units)
       for i, j in quadrants
   ]

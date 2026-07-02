@@ -248,8 +248,8 @@ def make_opt_update_step(evaluate_loss: qmc_loss_functions.LossFn,
     """Evaluates the loss and gradients and updates the parameters using optax."""
     (loss, aux_data), grad = loss_and_grad(params, key, data)
     grad = constants.pmean(grad)
-    updates, opt_state = optimizer.update(grad, opt_state, params)
-    params = optax.apply_updates(params, updates)
+    updates, opt_state = optimizer.update(grad, opt_state, params)  # pyrefly: ignore[bad-argument-type]
+    params = optax.apply_updates(params, updates)  # pyrefly: ignore[bad-assignment]
     return params, opt_state, loss, aux_data
 
   return opt_update
@@ -306,7 +306,7 @@ def make_training_step(
     # Optimization step
     new_params, new_state, loss, aux_data = optimizer_step(params,
                                                            data,
-                                                           state,
+                                                           state,  # pyrefly: ignore[bad-argument-type]
                                                            loss_key)
     if reset_if_nan:
       new_params = jax.lax.cond(jnp.isnan(loss),
@@ -315,7 +315,7 @@ def make_training_step(
       new_state = jax.lax.cond(jnp.isnan(loss),
                                lambda: state,
                                lambda: new_state)
-    return data, new_params, new_state, loss, aux_data, pmove
+    return data, new_params, new_state, loss, aux_data, pmove  # pyrefly: ignore[bad-return]
 
   return step
 
@@ -372,7 +372,7 @@ def make_kfac_training_step(
       old_state = copy_tree(state)
 
     # Optimization step
-    new_params, new_state, stats = optimizer.step(
+    new_params, new_state, stats = optimizer.step(  # pyrefly: ignore[bad-unpacking]
         params=params,
         state=state,
         rng=loss_keys,
@@ -382,11 +382,11 @@ def make_kfac_training_step(
     )
 
     if reset_if_nan and jnp.any(jnp.isnan(stats['loss'])):
-      new_params = old_params
-      new_state = old_state
-    return data, new_params, new_state, stats['loss'], stats['aux'], pmove
+      new_params = old_params  # pyrefly: ignore[unbound-name]
+      new_state = old_state  # pyrefly: ignore[unbound-name]
+    return data, new_params, new_state, stats['loss'], stats['aux'], pmove  # pyrefly: ignore[bad-return]
 
-  return step
+  return step  # pyrefly: ignore[bad-return]
 
 
 def train(cfg: ml_collections.ConfigDict, writer_manager=None):
@@ -536,7 +536,7 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
         **cfg.network.psiformer,
     )
   key, subkey = jax.random.split(key)
-  params = network.init(subkey)
+  params = network.init(subkey)  # pyrefly: ignore[unbound-name]
   params = kfac_jax.utils.replicate_all_local_devices(
       params, axis_name=constants.PMAP_AXIS_NAME
   )
@@ -706,7 +706,7 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
       and cfg.pretrain.method == 'hf'
       and cfg.pretrain.iterations > 0
   ):
-    pretrain_spins = spins[0, 0]
+    pretrain_spins = spins[0, 0]  # pyrefly: ignore[unbound-name]
     batch_orbitals = jax.vmap(
         network.orbitals, in_axes=(None, 0, 0, 0, 0), out_axes=0
     )
@@ -722,7 +722,7 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
         network_options=network.options,
         sharded_key=subkeys,
         electrons=cfg.system.electrons,
-        scf_approx=hartree_fock,
+        scf_approx=hartree_fock,  # pyrefly: ignore[unbound-name]
         iterations=cfg.pretrain.iterations,
         batch_size=device_batch_size,
         scf_fraction=cfg.pretrain.get('scf_fraction', 0.0),
@@ -791,8 +791,8 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
 
   if cfg.optim.objective == 'vmc':
     evaluate_loss = qmc_loss_functions.make_loss(
-        log_network if use_complex else logabs_network,
-        local_energy,
+        log_network if use_complex else logabs_network,  # pyrefly: ignore[bad-argument-type]
+        local_energy,  # pyrefly: ignore[bad-argument-type]
         clip_local_energy=cfg.optim.clip_local_energy,
         clip_from_median=cfg.optim.clip_median,
         center_at_clipped_energy=cfg.optim.center_at_clip,
@@ -801,8 +801,8 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
     )
   elif cfg.optim.objective == 'wqmc':
     evaluate_loss = qmc_loss_functions.make_wqmc_loss(
-        log_network if use_complex else logabs_network,
-        local_energy,
+        log_network if use_complex else logabs_network,  # pyrefly: ignore[bad-argument-type]
+        local_energy,  # pyrefly: ignore[bad-argument-type]
         clip_local_energy=cfg.optim.clip_local_energy,
         clip_from_median=cfg.optim.clip_median,
         center_at_clipped_energy=cfg.optim.center_at_clip,
@@ -820,8 +820,8 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
       assert len(cfg.optim.overlap.weights) == cfg.system.states
       overlap_weight = cfg.optim.overlap.weights
     evaluate_loss = qmc_loss_functions.make_energy_overlap_loss(
-        log_network_for_loss,
-        local_energy,
+        log_network_for_loss,  # pyrefly: ignore[bad-argument-type, unbound-name]
+        local_energy,  # pyrefly: ignore[bad-argument-type]
         clip_local_energy=cfg.optim.clip_local_energy,
         clip_from_median=cfg.optim.clip_median,
         center_at_clipped_energy=cfg.optim.center_at_clip,
@@ -843,14 +843,14 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
   elif cfg.optim.optimizer == 'adam':
     optimizer = optax.chain(
         optax.scale_by_adam(**cfg.optim.adam),
-        optax.scale_by_schedule(learning_rate_schedule),
+        optax.scale_by_schedule(learning_rate_schedule),  # pyrefly: ignore[bad-argument-type]
         optax.scale(-1.))
   elif cfg.optim.optimizer == 'lamb':
     optimizer = optax.chain(
         optax.clip_by_global_norm(1.0),
         optax.scale_by_adam(eps=1e-7),
         optax.scale_by_trust_ratio(),
-        optax.scale_by_schedule(learning_rate_schedule),
+        optax.scale_by_schedule(learning_rate_schedule),  # pyrefly: ignore[bad-argument-type]
         optax.scale(-1))
   elif cfg.optim.optimizer == 'kfac':
     # Differentiate wrt parameters (argument 0)
@@ -861,7 +861,7 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
         norm_constraint=cfg.optim.kfac.norm_constraint,
         value_func_has_aux=True,
         value_func_has_rng=True,
-        learning_rate_schedule=learning_rate_schedule,
+        learning_rate_schedule=learning_rate_schedule,  # pyrefly: ignore[bad-argument-type]
         curvature_ema=cfg.optim.kfac.cov_ema_decay,
         inverse_update_period=cfg.optim.kfac.invert_every,
         min_damping=cfg.optim.kfac.min_damping,
@@ -922,7 +922,7 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
       data, params, *_ = burn_in_step(
           data,
           params,
-          state=None,
+          state=None,  # pyrefly: ignore[bad-argument-type]
           key=subkeys,
           mcmc_width=mcmc_width)
     logging.info('Completed burn-in MCMC steps')
@@ -977,7 +977,7 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
       data, params, opt_state, loss, aux_data, pmove = step(
           data,
           params,
-          opt_state,
+          opt_state,  # pyrefly: ignore[bad-argument-type, unbound-name]
           subkeys,
           mcmc_width)
 
@@ -997,7 +997,7 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
       }
       if cfg.observables.density:
         sharded_key, subkeys = kfac_jax.utils.p_split(sharded_key)
-        observable_states['density'] = density_update(
+        observable_states['density'] = density_update(  # pyrefly: ignore[unbound-name]
             subkeys, params, data, observable_states['density'])
 
       # Update MCMC move width
@@ -1007,7 +1007,7 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
       if cfg.debug.check_nan:
         tree = {'params': params, 'loss': loss}
         if cfg.optim.optimizer != 'none':
-          tree['optim'] = opt_state
+          tree['optim'] = opt_state  # pyrefly: ignore[bad-assignment]
         try:
           chex.assert_tree_all_finite(tree)
           num_resets = 0  # Reset counter if check passes
@@ -1051,14 +1051,14 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
       # Log data about observables too big to fit in a CSV
       if cfg.system.states:
         energy_matrix = aux_data.local_energy_mat
-        energy_matrix = np.nanmean(np.nanmean(energy_matrix, axis=0), axis=0)
-        np.save(energy_matrix_file, energy_matrix)
+        energy_matrix = np.nanmean(np.nanmean(energy_matrix, axis=0), axis=0)  # pyrefly: ignore[no-matching-overload]
+        np.save(energy_matrix_file, energy_matrix)  # pyrefly: ignore[unbound-name]
         if cfg.observables.s2:
-          np.save(s2_matrix_file, observable_data['s2'])
+          np.save(s2_matrix_file, observable_data['s2'])  # pyrefly: ignore[unbound-name]
         if cfg.observables.dipole:
-          np.save(dipole_matrix_file, observable_data['dipole'])
+          np.save(dipole_matrix_file, observable_data['dipole'])  # pyrefly: ignore[unbound-name]
       if cfg.observables.density:
-        np.save(density_matrix_file, observable_data['density'])
+        np.save(density_matrix_file, observable_data['density'])  # pyrefly: ignore[unbound-name]
 
       # Checkpointing
       if time.time() - time_of_last_ckpt > cfg.log.save_frequency * 60:
@@ -1068,10 +1068,10 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
 
     # Shut down logging at end
     if cfg.system.states:
-      energy_matrix_file.close()
+      energy_matrix_file.close()  # pyrefly: ignore[unbound-name]
       if cfg.observables.s2:
-        s2_matrix_file.close()
+        s2_matrix_file.close()  # pyrefly: ignore[unbound-name]
       if cfg.observables.dipole:
-        dipole_matrix_file.close()
+        dipole_matrix_file.close()  # pyrefly: ignore[unbound-name]
     if cfg.observables.density:
-      density_matrix_file.close()
+      density_matrix_file.close()  # pyrefly: ignore[unbound-name]

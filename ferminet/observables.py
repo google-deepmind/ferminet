@@ -165,7 +165,7 @@ def make_s2(
         # evaluate the matrices A_ij = O \psi_i(x_j) and B_ij = \psi_i(x_j) and
         # return E[A @ B^-1], analogous to how the matrix of local energies is
         # computed.
-        s2 = s2 * psi  # promote s2 from a scalar to a matrix
+        s2 = s2 * psi  # promote s2 from a scalar to a matrix  # pyrefly: ignore[unbound-name]
         xa, xb = jnp.split(
             jnp.reshape(data.positions, (states, sum(nspins), -1)),
             nspins[:1], axis=-2)
@@ -220,11 +220,11 @@ def make_s2(
       def _outer(ia, s2):
         return jax.lax.fori_loop(0, ia, _inner, (ia, s2))[1]
 
-      s2 = jax.lax.fori_loop(0, n, _outer, s2)
+      s2 = jax.lax.fori_loop(0, n, _outer, s2)  # pyrefly: ignore[unbound-name]
 
     return s2
 
-  return s2_estimator
+  return s2_estimator  # pyrefly: ignore[bad-return]
 
 
 def make_dipole(
@@ -269,7 +269,7 @@ def make_dipole(
 
     return moment
 
-  return dipole_estimator
+  return dipole_estimator  # pyrefly: ignore[bad-return]
 
 
 def make_density_matrix(
@@ -386,10 +386,10 @@ def make_density_matrix(
                                                   rprime_pmove,
                                                   state.pmove)
     return DensityState(t=state.t+1,
-                        positions=rprime_data.positions,
-                        probabilities=rprime_probs,
-                        move_width=move_width,
-                        pmove=pmoves,
+                        positions=rprime_data.positions,  # pyrefly: ignore[unbound-name]
+                        probabilities=rprime_probs,  # pyrefly: ignore[unbound-name]
+                        move_width=move_width,  # pyrefly: ignore[unbound-name]
+                        pmove=pmoves,  # pyrefly: ignore[unbound-name]
                         mo_coeff=state.mo_coeff)
 
   def density_estimator(
@@ -410,4 +410,4 @@ def make_density_matrix(
         state.probabilities,
         scf_approx)
 
-  return density_state, density_update, density_estimator
+  return density_state, density_update, density_estimator  # pyrefly: ignore[bad-return]

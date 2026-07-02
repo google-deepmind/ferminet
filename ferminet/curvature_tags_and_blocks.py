@@ -106,7 +106,7 @@ class QmcBlockedDense(kfac_jax.KroneckerFactored):
   def fixed_scale(self) -> Numeric:
     return float(self.parameters_shapes[0][1])
 
-  def update_curvature_matrix_estimate(
+  def update_curvature_matrix_estimate(  # pyrefly: ignore[bad-override]
       self,
       state: kfac_jax.KroneckerFactored.State,
       estimation_data: kfac_jax.LayerVjpData[Array],
@@ -127,8 +127,8 @@ class QmcBlockedDense(kfac_jax.KroneckerFactored):
     dy = jnp.reshape(dy, dy.shape[:-2] + (-1,))
     outputs_cov = jnp.einsum("bijk,bijl->jkl", dy, dy) / normalizer
 
-    state.inputs_factor.update(inputs_cov, ema_old, ema_new)
-    state.outputs_factor.update(outputs_cov, ema_old, ema_new)
+    state.inputs_factor.update(inputs_cov, ema_old, ema_new)  # pyrefly: ignore[missing-attribute]
+    state.outputs_factor.update(outputs_cov, ema_old, ema_new)  # pyrefly: ignore[missing-attribute]
 
     return state
 
@@ -154,10 +154,10 @@ class QmcBlockedDense(kfac_jax.KroneckerFactored):
           outputs_factor=jnp.zeros([j, m * n, m * n]),
       )
     return kfac_jax.KroneckerFactored.State(
-        cache=cache,
-        inputs_factor=
+        cache=cache,  # pyrefly: ignore[unexpected-keyword]
+        inputs_factor=  # pyrefly: ignore[unexpected-keyword]
         kfac_jax.utils.WeightedMovingAverage.zeros_array((j, k, k)),
-        outputs_factor=kfac_jax.utils.WeightedMovingAverage.zeros_array(
+        outputs_factor=kfac_jax.utils.WeightedMovingAverage.zeros_array(  # pyrefly: ignore[unexpected-keyword]
             (j, m * n, m * n)),
     )
 
@@ -178,14 +178,14 @@ class QmcBlockedDense(kfac_jax.KroneckerFactored):
       if power != -1:
         raise NotImplementedError(f"Approximations for power {power} is not "
                                   f"yet implemented.")
-      cache = state.cache[str(power)]
+      cache = state.cache[str(power)]  # pyrefly: ignore[unsupported-operation]
       pi_adjusted_inverse = jax.vmap(
           kfac_jax.utils.pi_adjusted_kronecker_inverse,
           (0, None), (0, 0)
       )
       cache["inputs_factor"], cache["outputs_factor"] = pi_adjusted_inverse(
-          state.inputs_factor.value,
-          state.outputs_factor.value,
+          state.inputs_factor.value,  # pyrefly: ignore[missing-attribute]
+          state.outputs_factor.value,  # pyrefly: ignore[missing-attribute]
           damping=identity_weight,
       )
     return state
@@ -206,8 +206,8 @@ class QmcBlockedDense(kfac_jax.KroneckerFactored):
     if power == 1:
       # jk(mn)
       v = jnp.transpose(v, [2, 0, 1, 3]).reshape([j, k, m * n])
-      v = vmap_matmul(state.inputs_factor.value, v)
-      v = vmap_matmul(v, state.outputs_factor.value)
+      v = vmap_matmul(state.inputs_factor.value, v)  # pyrefly: ignore[missing-attribute]
+      v = vmap_matmul(v, state.outputs_factor.value)  # pyrefly: ignore[missing-attribute]
       # kmjn
       v = jnp.transpose(v.reshape([j, k, m, n]), [1, 2, 0, 3])
       v = v + identity_weight * w
@@ -222,8 +222,8 @@ class QmcBlockedDense(kfac_jax.KroneckerFactored):
       else:
         # jk(mn)
         v = jnp.transpose(v, [2, 0, 1, 3]).reshape([j, k, m * n])
-        v = vmap_matmul(state.cache[str(power)]["inputs_factor"], v)
-        v = vmap_matmul(v, state.cache[str(power)]["outputs_factor"])
+        v = vmap_matmul(state.cache[str(power)]["inputs_factor"], v)  # pyrefly: ignore[unsupported-operation]
+        v = vmap_matmul(v, state.cache[str(power)]["outputs_factor"])  # pyrefly: ignore[unsupported-operation]
         # kmjn
         v = jnp.transpose(v.reshape([j, k, m, n]), [1, 2, 0, 3])
     # kmjn
@@ -242,7 +242,7 @@ repeated_dense1_with_bias_pattern = kfac_jax.tag_graph_matcher.GraphPattern(
     tag_primitive=kfac_jax.layers_and_loss_tags.layer_tag,
     compute_func=_repeated_dense1,
     parameters_extractor_func=_repeated_dense_parameter_extractor,
-    example_args=[np.zeros([9, 11, 13]), [np.zeros([13, 7]), np.zeros([7])]],
+    example_args=[np.zeros([9, 11, 13]), [np.zeros([13, 7]), np.zeros([7])]],  # pyrefly: ignore[bad-argument-type]
 )
 
 repeated_dense1_no_bias_pattern = kfac_jax.tag_graph_matcher.GraphPattern(
@@ -250,7 +250,7 @@ repeated_dense1_no_bias_pattern = kfac_jax.tag_graph_matcher.GraphPattern(
     tag_primitive=kfac_jax.layers_and_loss_tags.layer_tag,
     compute_func=_repeated_dense1_no_b,
     parameters_extractor_func=_repeated_dense_parameter_extractor,
-    example_args=[np.zeros([9, 11, 13]), [np.zeros([13, 7])]],
+    example_args=[np.zeros([9, 11, 13]), [np.zeros([13, 7])]],  # pyrefly: ignore[bad-argument-type]
 )
 
 repeated_dense2_with_bias_pattern = kfac_jax.tag_graph_matcher.GraphPattern(
@@ -258,7 +258,7 @@ repeated_dense2_with_bias_pattern = kfac_jax.tag_graph_matcher.GraphPattern(
     tag_primitive=kfac_jax.layers_and_loss_tags.layer_tag,
     compute_func=_repeated_dense2,
     parameters_extractor_func=_repeated_dense_parameter_extractor,
-    example_args=[np.zeros([8, 9, 11, 13]), [np.zeros([13, 7]), np.zeros([7])]],
+    example_args=[np.zeros([8, 9, 11, 13]), [np.zeros([13, 7]), np.zeros([7])]],  # pyrefly: ignore[bad-argument-type]
 )
 
 repeated_dense2_no_bias_pattern = kfac_jax.tag_graph_matcher.GraphPattern(
@@ -266,7 +266,7 @@ repeated_dense2_no_bias_pattern = kfac_jax.tag_graph_matcher.GraphPattern(
     tag_primitive=kfac_jax.layers_and_loss_tags.layer_tag,
     compute_func=_repeated_dense2_no_b,
     parameters_extractor_func=_repeated_dense_parameter_extractor,
-    example_args=[np.zeros([8, 9, 11, 13]), [np.zeros([13, 7])]],
+    example_args=[np.zeros([8, 9, 11, 13]), [np.zeros([13, 7])]],  # pyrefly: ignore[bad-argument-type]
 )
 
 GRAPH_PATTERNS = (

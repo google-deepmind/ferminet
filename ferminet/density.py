@@ -113,7 +113,7 @@ def make_effective_batch_network(
     half_log_prob = 1 / 2 * jnp.log(jnp.abs(prob))
     return half_log_prob
 
-  return eff_batch_network
+  return eff_batch_network  # pyrefly: ignore[bad-return]
 
 
 def make_rprime_mcmc_step(
@@ -268,7 +268,7 @@ def get_rho(
     r1 = pos[..., dim*i:dim*(i+1)].reshape(-1, dim)
     phi_i, _ = _eval_mos(pos=r1, scf_approx=scf_approx, nspins=nspins)
     if use_excited:
-      phi_i = phi_i.reshape(-1, nstates, phi_i.shape[-1])
+      phi_i = phi_i.reshape(-1, nstates, phi_i.shape[-1])  # pyrefly: ignore[unbound-name]
 
       # subtract off log probs *before* computing log_max for stability
       numer_logs -= jnp.expand_dims(jnp.log(probs), -1)

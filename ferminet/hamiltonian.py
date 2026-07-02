@@ -134,7 +134,7 @@ def local_kinetic_energy(
             0, n, lambda i, val: val + hessian_diagonal(i), 0.0)
       result -= 0.5 * jnp.sum(primal ** 2)
       if complex_output:
-        result += 0.5 * jnp.sum(phase_primal ** 2)
+        result += 0.5 * jnp.sum(phase_primal ** 2)  # pyrefly: ignore[unbound-name]
         result -= 1.j * jnp.sum(primal * phase_primal)
       return result
 

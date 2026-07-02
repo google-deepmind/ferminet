@@ -41,7 +41,7 @@ def finalise(
   for atom in _GEOM:
     element, x, y, z = atom.split()
     coords = [float(xx) for xx in (x, y, z)]
-    molecule.append(system.Atom(symbol=element, coords=coords, units='bohr'))
+    molecule.append(system.Atom(symbol=element, coords=coords, units='bohr'))  # pyrefly: ignore[missing-argument]
 
   if not experiment_config.system.electrons:  # Don't override if already set
     nelectrons = int(sum(atom.charge for atom in molecule))

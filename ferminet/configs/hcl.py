@@ -38,7 +38,7 @@ def finalize(cfg):
 
   atoms = list(set([atom.symbol for atom in cfg.system.molecule]))
   pseudo_atoms = cfg.system.pp.symbols if cfg.system.use_pp else []
-  mol.basis = {
+  mol.basis = {  # pyrefly: ignore[bad-assignment]
       atom:
       cfg.system.pp.basis if atom in pseudo_atoms else 'cc-pvdz'
       for atom in atoms
@@ -62,8 +62,8 @@ def get_config():
   """Returns config for running generic atoms with qmc."""
   cfg = base_config.default()
   cfg.system.molecule = [
-      system.Atom(symbol='H', coords=(0.0, 0.0, 0.0), units='angstrom'),
-      system.Atom(symbol='Cl', coords=(0.0, 0.0, 1.2799799), units='angstrom'),
+      system.Atom(symbol='H', coords=(0.0, 0.0, 0.0), units='angstrom'),  # pyrefly: ignore[missing-argument]
+      system.Atom(symbol='Cl', coords=(0.0, 0.0, 1.2799799), units='angstrom'),  # pyrefly: ignore[missing-argument]
   ]
   cfg.system.electrons = (9, 9)  # Core electrons are removed automatically
   cfg.system.use_pp = True  # Enable pseudopotentials

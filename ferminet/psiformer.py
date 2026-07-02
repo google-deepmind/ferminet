@@ -64,8 +64,8 @@ def make_layer_norm():
     mean = jnp.mean(inputs, axis=axis, keepdims=True)
     variance = jnp.var(inputs, axis=axis, keepdims=True)
     eps = 1e-5
-    inv = params['scale'] * jax.lax.rsqrt(variance + eps)
-    return inv * (inputs - mean) + params['offset']
+    inv = params['scale'] * jax.lax.rsqrt(variance + eps)  # pyrefly: ignore[bad-index, unsupported-operation]
+    return inv * (inputs - mean) + params['offset']  # pyrefly: ignore[bad-index, unsupported-operation]
 
   return init, apply
 
@@ -124,9 +124,9 @@ def make_multi_head_attention(
 
     # Projections for q, k, v.
     # Output shape: [..., index_dim, num_heads, heads_dim].
-    q = linear_projection(query, params['q_w'])
-    k = linear_projection(key, params['k_w'])
-    v = linear_projection(value, params['v_w'])
+    q = linear_projection(query, params['q_w'])  # pyrefly: ignore[bad-argument-type, bad-index]
+    k = linear_projection(key, params['k_w'])  # pyrefly: ignore[bad-argument-type, bad-index]
+    v = linear_projection(value, params['v_w'])  # pyrefly: ignore[bad-argument-type, bad-index]
 
     attn_logits = jnp.einsum('...thd,...Thd->...htT', q, k, precision=prec)
     scale = 1. / np.sqrt(heads_dim)
@@ -142,7 +142,7 @@ def make_multi_head_attention(
 
     # Apply a final projection to get the final embeddings.
     # Output shape: [..., q_index_dim, output_channels]
-    return network_blocks.linear_layer(attn, params['attn_output'])
+    return network_blocks.linear_layer(attn, params['attn_output'])  # pyrefly: ignore[bad-argument-type, bad-index]
 
   return init, apply
 
@@ -215,21 +215,21 @@ def make_self_attention_block(
   def apply(params: networks.ParamTree, qkv: jnp.ndarray) -> jnp.ndarray:
     x = qkv
     for layer in range(num_layers):
-      attn_output = attention_apply(params['attention'][layer], x, x, x)
+      attn_output = attention_apply(params['attention'][layer], x, x, x)  # pyrefly: ignore[bad-index]
 
       # Residual + optional LayerNorm.
       x = x + attn_output
       if use_layer_norm:
-        x = layer_norm_apply(params['ln'][layer][0], x)
+        x = layer_norm_apply(params['ln'][layer][0], x)  # pyrefly: ignore[bad-index]
 
       # MLP
-      assert isinstance(params['mlp'][layer], (tuple, list))
-      mlp_output = mlp_apply(params['mlp'][layer], x)
+      assert isinstance(params['mlp'][layer], (tuple, list))  # pyrefly: ignore[bad-index]
+      mlp_output = mlp_apply(params['mlp'][layer], x)  # pyrefly: ignore[bad-index]
 
       # Residual + optional LayerNorm.
       x = x + mlp_output
       if use_layer_norm:
-        x = layer_norm_apply(params['ln'][layer][1], x)
+        x = layer_norm_apply(params['ln'][layer][1], x)  # pyrefly: ignore[bad-index]
 
     return x
 
@@ -329,7 +329,7 @@ def make_psiformer_layers(
 
     return self_attn_apply(params, x)
 
-  return init, apply
+  return init, apply  # pyrefly: ignore[bad-return]
 
 
 def make_fermi_net(
@@ -390,7 +390,7 @@ def make_fermi_net(
   if not feature_layer:
     natoms = charges.shape[0]
     feature_layer = networks.make_ferminet_features(
-        natoms, nspins, ndim=ndim, rescale_inputs=rescale_inputs
+        natoms, nspins, ndim=ndim, rescale_inputs=rescale_inputs  # pyrefly: ignore[bad-argument-type]
     )
 
   if isinstance(jastrow, str):
@@ -421,7 +421,7 @@ def make_fermi_net(
   psiformer_layers = make_psiformer_layers(nspins, charges.shape[0], options)
 
   orbitals_init, orbitals_apply = networks.make_orbitals(
-      nspins=nspins,
+      nspins=nspins,  # pyrefly: ignore[bad-argument-type]
       charges=charges,
       options=options,
       equivariant_layers=psiformer_layers,
@@ -468,6 +468,6 @@ def make_fermi_net(
   return networks.Network(
       options=options,
       init=network_init,
-      apply=network_apply,
+      apply=network_apply,  # pyrefly: ignore[bad-argument-type]
       orbitals=orbitals_apply,
   )
