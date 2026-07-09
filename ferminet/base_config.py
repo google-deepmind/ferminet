@@ -144,6 +144,10 @@ def default() -> ml_collections.ConfigDict:
       },
       'system': {
           'type': SystemType.MOLECULE.value,
+          'potential': 'coulomb',  # One of 'coulomb' or 'harm'
+          'omega': 1.0,  # Harmonic oscillator frequency
+          'interacting': True,  # Whether electrons interact
+          'scale_alpha': 1.0,  # Scale factor for electron-electron interaction
           # Specify the system.
           # 1. Specify the system by setting variables below.
           # list of system.Atom objects with element type and position.

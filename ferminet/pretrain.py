@@ -31,6 +31,81 @@ import optax
 import pyscf
 
 
+import math
+
+class HarmonicOscillatorExact:
+  """Exact orbitals for a 3D isotropic harmonic oscillator."""
+  
+  def __init__(self, omega: float):
+    self.omega = omega
+
+  def eval_orbitals(self, pos: Union[np.ndarray, jnp.ndarray], nspins: Tuple[int, int]) -> Tuple[jnp.ndarray, jnp.ndarray]:
+    """Evaluates harmonic oscillator orbitals at a set of positions."""
+    if not isinstance(pos, jnp.ndarray) and not isinstance(pos, np.ndarray):
+      pos = jnp.asarray(pos)
+      
+    leading_dims = pos.shape[:-1]
+    pos = jnp.reshape(pos, leading_dims + (sum(nspins), 3))
+    
+    n_orbs = max(nspins)
+    
+    orbitals = []
+    for n in range(10):
+      for nx in range(n + 1):
+        for ny in range(n - nx + 1):
+          nz = n - nx - ny
+          orbitals.append((nx, ny, nz))
+          if len(orbitals) >= n_orbs:
+            break
+        if len(orbitals) >= n_orbs:
+            break
+      if len(orbitals) >= n_orbs:
+          break
+          
+    def hermite(n, x):
+      if n == 0: return jnp.ones_like(x)
+      if n == 1: return 2.0 * x
+      if n == 2: return 4.0 * x**2 - 2.0
+      if n == 3: return 8.0 * x**3 - 12.0 * x
+      if n == 4: return 16.0 * x**4 - 48.0 * x**2 + 12.0
+      if n == 5: return 32.0 * x**5 - 160.0 * x**3 + 120.0 * x
+      raise NotImplementedError(f"Hermite polynomial of order {n} not implemented.")
+      
+    def eval_orb(nx, ny, nz, r):
+        x, y, z = r[..., 0], r[..., 1], r[..., 2]
+        sq_omega = jnp.sqrt(self.omega)
+        hx = hermite(nx, sq_omega * x)
+        hy = hermite(ny, sq_omega * y)
+        hz = hermite(nz, sq_omega * z)
+        
+        norm_x = 1.0 / jnp.sqrt(2**nx * math.factorial(nx))
+        norm_y = 1.0 / jnp.sqrt(2**ny * math.factorial(ny))
+        norm_z = 1.0 / jnp.sqrt(2**nz * math.factorial(nz))
+        
+        gaussian = jnp.exp(-0.5 * self.omega * (x**2 + y**2 + z**2))
+        return norm_x * norm_y * norm_z * (self.omega / jnp.pi)**0.75 * hx * hy * hz * gaussian
+
+    evals = [eval_orb(nx, ny, nz, pos) for nx, ny, nz in orbitals]
+    evals = jnp.stack(evals, axis=-1)
+    
+    alpha_spin = evals[..., :nspins[0], :nspins[0]]
+    beta_spin = evals[..., nspins[0]:, :nspins[1]]
+    
+    return alpha_spin, beta_spin
+
+  def eval_slater(self,
+                  pos: Union[jnp.ndarray, np.ndarray],
+                  nspins: Tuple[int, int]) -> Tuple[np.ndarray, np.ndarray]:
+    """Evaluates the Slater determinant."""
+    matrices = self.eval_orbitals(pos, nspins)
+    slogdets = [jnp.linalg.slogdet(elem) for elem in matrices]
+    sign_alpha, sign_beta = [elem[0] for elem in slogdets]
+    log_abs_wf_alpha, log_abs_wf_beta = [elem[1] for elem in slogdets]
+    log_abs_slater_determinant = log_abs_wf_alpha + log_abs_wf_beta
+    sign = sign_alpha * sign_beta
+    return sign, log_abs_slater_determinant
+
+
 def get_hf(molecule: Sequence[system.Atom] | None = None,
            nspins: Tuple[int, int] | None = None,
            basis: str | None = 'sto-3g',
@@ -39,7 +114,9 @@ def get_hf(molecule: Sequence[system.Atom] | None = None,
            pyscf_mol: pyscf.gto.Mole | None = None,
            restricted: bool | None = False,
            states: int = 0,
-           excitation_type: str = 'ordered') -> scf.Scf:
+           excitation_type: str = 'ordered',
+           potential_type: str = 'coulomb',
+           omega: float = 1.0) -> Union[scf.Scf, HarmonicOscillatorExact]:
   """Returns an Scf object with the Hartree-Fock solution to the system.
 
   Args:
@@ -59,7 +136,12 @@ def get_hf(molecule: Sequence[system.Atom] | None = None,
     excitation_type: The way to construct different states for excited state
       pretraining. One of 'ordered' or 'random'. 'Ordered' tends to work better,
       but 'random' is necessary for some systems, especially double excitaitons.
+    potential_type: The type of potential ('coulomb' or 'harm').
+    omega: The harmonic oscillator frequency (only used if potential_type is 'harm').
   """
+  if potential_type == 'harm':
+    return HarmonicOscillatorExact(omega)
+    
   if pyscf_mol:
     scf_approx = scf.Scf(pyscf_mol=pyscf_mol,
                          restricted=restricted)

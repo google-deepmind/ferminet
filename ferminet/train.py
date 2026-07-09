@@ -468,11 +468,14 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
         ecp=ecp,
         core_electrons=core_electrons,
         states=cfg.system.states,
-        excitation_type=cfg.pretrain.get('excitation_type', 'ordered'))
+        excitation_type=cfg.pretrain.get('excitation_type', 'ordered'),
+        potential_type=cfg.system.get('potential', 'coulomb'),
+        omega=cfg.system.get('omega', 1.0))
     # broadcast the result of PySCF from host 0 to all other hosts
-    hartree_fock.mean_field.mo_coeff = multihost_utils.broadcast_one_to_all(
-        hartree_fock.mean_field.mo_coeff
-    )
+    if cfg.system.get('potential', 'coulomb') != 'harm':
+      hartree_fock.mean_field.mo_coeff = multihost_utils.broadcast_one_to_all(
+          hartree_fock.mean_field.mo_coeff
+      )
 
   if cfg.network.make_feature_layer_fn:
     feature_layer_module, feature_layer_fn = (
@@ -501,7 +504,10 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
     make_envelope = getattr(envelope_module, envelope_fn)
     envelope = make_envelope(**cfg.network.make_envelope_kwargs)  # type: envelopes.Envelope
   else:
-    envelope = envelopes.make_isotropic_envelope()
+    if cfg.system.get('potential', 'coulomb') == 'harm':
+      envelope = envelopes.make_gaussian_envelope(omega=cfg.system.get('omega', 1.0))
+    else:
+      envelope = envelopes.make_isotropic_envelope()
 
   use_complex = cfg.network.get('complex', False)
   if cfg.network.network_type == 'ferminet':
@@ -615,13 +621,16 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
     key, subkey = jax.random.split(key)
     # make sure data on each host is initialized differently
     subkey = jax.random.fold_in(subkey, jax.process_index())
+    init_width = cfg.mcmc.init_width
+    if cfg.system.get('potential', 'coulomb') == 'harm':
+      init_width /= np.sqrt(cfg.system.get('omega', 1.0))
     # create electron state (position and spin)
     pos, spins = init_electrons(
         subkey,
         cfg.system.molecule,
         cfg.system.electrons,
         batch_size=total_host_batch_size,
-        init_width=cfg.mcmc.init_width,
+        init_width=init_width,
         core_electrons=core_electrons,
     )
     # For excited states, each device has a batch of walkers, where each walker
@@ -764,6 +773,9 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
       state_specific=(cfg.optim.objective == 'vmc_overlap'),
       pp_type=cfg.system.get('pp', {'type': 'ccecp'}).get('type'),
       pp_symbols=pp_symbols if cfg.system.get('use_pp') else None,
+      potential_type=cfg.system.get('potential', 'coulomb'),
+      omega=cfg.system.get('omega', 1.0),
+      scale_alpha=cfg.system.get('scale_alpha', 1.0) if cfg.system.get('interacting', True) else 0.0,
       **cfg.system.make_local_energy_kwargs,
   )
 
@@ -907,8 +919,11 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
   if mcmc_width_ckpt is not None:
     mcmc_width = kfac_jax.utils.replicate_all_local_devices(mcmc_width_ckpt[0])
   else:
+    move_width = cfg.mcmc.move_width
+    if cfg.system.get('potential', 'coulomb') == 'harm':
+      move_width /= np.sqrt(cfg.system.get('omega', 1.0))
     mcmc_width = kfac_jax.utils.replicate_all_local_devices(
-        jnp.asarray(cfg.mcmc.move_width))
+        jnp.asarray(move_width))
   pmoves = np.zeros(cfg.mcmc.adapt_frequency)
 
   if t_init == 0:
