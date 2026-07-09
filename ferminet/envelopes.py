@@ -41,6 +41,7 @@ class EnvelopeLabel(enum.Enum):
   NULL = enum.auto()
   STO = enum.auto()
   STO_POLY = enum.auto()
+  GAUSSIAN = enum.auto()
 
 
 class EnvelopeInit(Protocol):
@@ -120,6 +121,36 @@ def make_isotropic_envelope() -> Envelope:
     """Computes an isotropic exponentially-decaying multiplicative envelope."""
     del ae, r_ee  # unused
     return jnp.sum(jnp.exp(-r_ae * sigma) * pi, axis=1)
+
+  return Envelope(EnvelopeType.PRE_DETERMINANT, init, apply)
+
+
+def make_gaussian_envelope(**kwargs) -> Envelope:
+  """Creates an isotropic Gaussian exponentially decaying multiplicative envelope."""
+  omega = kwargs.get('omega', 1.0)
+
+  def init(
+      natom: int, output_dims: Sequence[int], ndim: int = 3
+  ) -> Sequence[Mapping[str, jnp.ndarray]]:
+    del ndim  # unused
+    params = []
+    # Ground state gaussian orbital: (omega/pi)^0.75 * exp(-0.5 * omega * r^2)
+    # Our envelope is pi * exp(-(r * sigma)^2)
+    # So sigma = sqrt(omega / 2) and pi = (omega/pi)^0.75
+    pi_init = (omega / jnp.pi)**0.75
+    sigma_init = jnp.sqrt(omega / 2.0)
+    for output_dim in output_dims:
+      params.append({
+          'pi': jnp.ones(shape=(natom, output_dim)) * pi_init,
+          'sigma': jnp.ones(shape=(natom, output_dim)) * sigma_init
+      })
+    return params
+
+  def apply(*, ae: jnp.ndarray, r_ae: jnp.ndarray, r_ee: jnp.ndarray,
+            pi: jnp.ndarray, sigma: jnp.ndarray) -> jnp.ndarray:
+    """Computes an isotropic Gaussian exponentially-decaying multiplicative envelope."""
+    del ae, r_ee  # unused
+    return jnp.sum(jnp.exp(-(r_ae * sigma)**2) * pi, axis=1)
 
   return Envelope(EnvelopeType.PRE_DETERMINANT, init, apply)
 
@@ -314,5 +345,6 @@ def get_envelope(
       EnvelopeLabel.DIAGONAL: make_diagonal_envelope,
       EnvelopeLabel.FULL: make_full_envelope,
       EnvelopeLabel.NULL: make_null_envelope,
+      EnvelopeLabel.GAUSSIAN: make_gaussian_envelope,
   }
   return envelope_builders[envelope_label](**kwargs)
