@@ -116,9 +116,9 @@ class NetworksTest(parameterized.TestCase):
         if params['envelope'][i]:
           key, *subkeys = random.split(key, num=3)
           params['envelope'][i]['sigma'] = random.normal(  # pyrefly: ignore[unsupported-operation]
-              subkeys[0], params['envelope'][i]['sigma'].shape)  # pyrefly: ignore[bad-index]
+              subkeys[0], params['envelope'][i]['sigma'].shape)  # pyrefly: ignore[bad-index, missing-attribute]
           params['envelope'][i]['pi'] = random.normal(  # pyrefly: ignore[unsupported-operation]
-              subkeys[1], params['envelope'][i]['pi'].shape)  # pyrefly: ignore[bad-index]
+              subkeys[1], params['envelope'][i]['pi'].shape)  # pyrefly: ignore[bad-index, missing-attribute]
     else:
       assert isinstance(params['envelope'], dict)
       key, *subkeys = random.split(key, num=3)
