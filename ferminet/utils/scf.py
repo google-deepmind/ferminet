@@ -328,7 +328,7 @@ class Scf:
     log_abs_wf_alpha, log_abs_wf_beta = [elem[1] for elem in slogdets]
     log_abs_slater_determinant = log_abs_wf_alpha + log_abs_wf_beta
     sign = sign_alpha * sign_beta
-    return sign, log_abs_slater_determinant
+    return sign, log_abs_slater_determinant  # pyrefly: ignore[bad-return]
 
 
 # pylint: disable=protected-access
