@@ -31,4 +31,4 @@ psum = functools.partial(kfac_jax.utils.psum_if_pmap, axis_name=PMAP_AXIS_NAME)
 pmean = functools.partial(
     kfac_jax.utils.pmean_if_pmap, axis_name=PMAP_AXIS_NAME)
 all_gather = functools.partial(kfac_jax.utils.wrap_if_pmap(jax.lax.all_gather),
-                               axis_name=PMAP_AXIS_NAME)
+                               axis_name=PMAP_AXIS_NAME)  # pyrefly: ignore[unexpected-keyword]

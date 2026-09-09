@@ -571,17 +571,17 @@ def make_energy_overlap_loss(network: networks.LogFermiNetLike,
 
     if clip_local_energy > 0.0:
       clipped_overlap, overlap_diff = clip_local_values(
-          aux_data.s_ij,
-          aux_data.mean_s_ij,
+          aux_data.s_ij,  # pyrefly: ignore[bad-argument-type]
+          aux_data.mean_s_ij,  # pyrefly: ignore[bad-argument-type]
           clip_local_energy,
           clip_from_median,
           center_at_clipped_energy)
     else:
       clipped_overlap = aux_data.s_ij
-      overlap_diff = clipped_overlap - aux_data.mean_s_ij
+      overlap_diff = clipped_overlap - aux_data.mean_s_ij  # pyrefly: ignore[unsupported-operation]
 
     overlap_diff = 2 * jnp.sum(jnp.triu(
-        clipped_overlap * overlap_diff.transpose((0, 2, 1)), 1), axis=1)
+        clipped_overlap * overlap_diff.transpose((0, 2, 1)), 1), axis=1)  # pyrefly: ignore[unsupported-operation]
 
     # Due to the simultaneous requirements of KFAC (calling convention must be
     # (params, rng, data)) and Laplacian calculation (only want to take

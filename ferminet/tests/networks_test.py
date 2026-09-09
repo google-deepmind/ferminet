@@ -123,9 +123,9 @@ class NetworksTest(parameterized.TestCase):
       assert isinstance(params['envelope'], dict)
       key, *subkeys = random.split(key, num=3)
       params['envelope']['sigma'] = random.normal(
-          subkeys[0], params['envelope']['sigma'].shape)
+          subkeys[0], params['envelope']['sigma'].shape)  # pyrefly: ignore[missing-attribute]
       params['envelope']['pi'] = random.normal(
-          subkeys[1], params['envelope']['pi'].shape
+          subkeys[1], params['envelope']['pi'].shape  # pyrefly: ignore[missing-attribute]
       )
 
     out1 = network.apply(params, pos1, spins1, atoms, charges)
