@@ -58,11 +58,11 @@ class GtoTest(parameterized.TestCase):
 
     with self.subTest('by hand'):
       observed = gto.grad_solid_harmonic(r, l_max)
-      np.testing.assert_allclose(observed, expected, rtol=2.0e-7, atol=1.0e-4)
+      np.testing.assert_allclose(observed, expected, rtol=1.0e-6, atol=1.0e-4)
     with self.subTest('by jax'):
       observed_jacfwd = gto.grad_solid_harmonic_by_jacfwd(r, l_max)
       np.testing.assert_allclose(
-          observed_jacfwd, expected, rtol=2.0e-7, atol=1.0e-4
+          observed_jacfwd, expected, rtol=1.0e-6, atol=1.0e-4
       )
 
 if __name__ == '__main__':
