@@ -15,7 +15,7 @@
 """Multiplicative Jastrow factors."""
 
 import enum
-from typing import Any, Callable, Iterable, Mapping, Union, Optional
+from typing import Any, Callable, Iterable, Mapping, Union
 
 import jax.numpy as jnp
 
@@ -27,6 +27,12 @@ class JastrowType(enum.Enum):
 
   NONE = enum.auto()
   SIMPLE_EE = enum.auto()
+
+
+def safe_norm(ee: jnp.ndarray):
+  n = ee.shape[0]
+  return (
+      jnp.linalg.norm(ee + jnp.eye(n)[..., None], axis=-1) * (1.0 - jnp.eye(n)))
 
 
 def make_periodic_r_ee(lattice: jnp.ndarray):
@@ -93,14 +99,14 @@ def _jastrow_ee(
   return jastrow_ee_anti + jastrow_ee_par
 
 
-def make_simple_ee_jastrow(lattice: Optional[jnp.ndarray] = None, ndim: int = 3):
+def make_simple_ee_jastrow(lattice: jnp.ndarray | None = None, ndim: int = 3):
   """Creates a Jastrow factor for electron-electron cusps."""
 
   # If working in PBC, use periodic distance for the Jastrow
   if lattice is not None:
     norm = make_periodic_r_ee(lattice)
   else:
-    norm = lambda x: jnp.linalg.norm(x, axis = -1, keepdims = True)
+    norm = safe_norm
 
   def simple_ee_cusp_fun(
       r: jnp.ndarray, cusp: float, alpha: jnp.ndarray
@@ -132,7 +138,7 @@ def make_simple_ee_jastrow(lattice: Optional[jnp.ndarray] = None, ndim: int = 3)
 
 def get_jastrow(
     jastrow: JastrowType, 
-    lattice: Optional[jnp.ndarray] = None, 
+    lattice: jnp.ndarray | None = None, 
     ndim: int = 3):
   jastrow_init, jastrow_apply = None, None
   if jastrow == JastrowType.SIMPLE_EE:

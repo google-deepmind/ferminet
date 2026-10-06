@@ -46,7 +46,6 @@ def get_config():
   cfg.system.molecule = [system.Atom('X', (0, 0, 0))]
 
   cfg.system.lattice = _sc_lattice_vecs(rs, sum(cfg.system.electrons), cfg.system.ndim)
-  cfg.system.make_local_energy_kwargs['heg'] = True
   cfg.network.make_feature_layer_kwargs['include_r_ae'] = False
 
   # Pretraining is not currently implemented for systems in PBC

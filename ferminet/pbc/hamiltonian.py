@@ -19,13 +19,12 @@ Spencer, J.S. and Foulkes, W.M.C., 2022. Discovering Quantum Phase Transitions
 with Fermionic Neural Networks. arXiv preprint arXiv:2202.05183.
 """
 
-from typing import Callable, Optional, Sequence, Tuple
+from typing import Callable, Sequence, Tuple
 
 import chex
 from ferminet import hamiltonian
 from ferminet import networks
-from ferminet.pbc.ewald2d import make_ewald_potential as ewald2d
-from ferminet.pbc.ewald3d import make_ewald_potential as ewald3d
+from ferminet.pbc.ewald import make_ewald_potential
 import jax.numpy as jnp
 
 
@@ -41,8 +40,7 @@ def local_energy(
     state_specific: bool = False,
     pp_type: str = 'ccecp',
     pp_symbols: Sequence[str] | None = None,
-    lattice: Optional[jnp.ndarray] = None,
-    heg: bool = False,
+    lattice: jnp.ndarray | None = None,
     convergence_radius: int = 5,
 ) -> hamiltonian.LocalEnergy:
   """Creates the local energy function in periodic boundary conditions.
@@ -66,9 +64,6 @@ def local_energy(
       used. Not implemented.
     lattice: Shape (ndim, ndim). Matrix of lattice vectors. Default: identity
       matrix.
-    heg: bool. Flag to enable features specific to the electron gas.
-      This is False by default, if needed, set 
-      cfg.system.make_local_energy_kwargs['heg'] = True
     convergence_radius: int. Radius of cluster summed over by Ewald sums.
 
   Returns:
@@ -89,16 +84,9 @@ def local_energy(
                                         complex_output=complex_output,
                                         laplacian_method=laplacian_method)
   
-  if ndim == 3:
-    make_potential_energy = ewald3d
-  elif ndim == 2:
-    make_potential_energy = ewald2d
-  else:
-    raise NotImplementedError(f"Ewald sum for ndim = {ndim} not implemented")
-
   def _e_l(
       params: networks.ParamTree, key: chex.PRNGKey, data: networks.FermiNetData
-  ) -> Tuple[jnp.ndarray, Optional[jnp.ndarray]]:
+  ) -> Tuple[jnp.ndarray, jnp.ndarray | None]:
     """Returns the total energy.
 
     Args:
@@ -107,8 +95,8 @@ def local_energy(
       data: MCMC configuration.
     """
     del key  # unused
-    potential_energy = make_potential_energy(
-        lattice, data.atoms, charges, convergence_radius, heg
+    potential_energy = make_ewald_potential(
+        lattice, data.atoms, charges, convergence_radius, ndim
     )
     ae, ee, _, _ = networks.construct_input_features(
         data.positions, data.atoms, ndim)
