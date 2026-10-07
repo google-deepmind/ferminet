@@ -33,6 +33,9 @@ from ferminet import networks
 from ferminet import observables
 from ferminet import pretrain
 from ferminet import psiformer
+from ferminet.pbc import hamiltonian as pbc_hamiltonian
+from ferminet.pbc import feature_layer as pbc_feature_layer
+from ferminet.pbc import envelopes as pbc_envelopes
 from ferminet.utils import statistics
 from ferminet.utils import system
 from ferminet.utils import utils
@@ -481,18 +484,18 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
     make_feature_layer: networks.MakeFeatureLayer = getattr(
         feature_layer_module, feature_layer_fn
     )
-    feature_layer = make_feature_layer(
-        natoms=charges.shape[0],
-        nspins=cfg.system.electrons,
-        ndim=cfg.system.ndim,
-        **cfg.network.make_feature_layer_kwargs)
+  elif cfg.system.lattice is not None:
+    make_feature_layer = pbc_feature_layer.make_pbc_feature_layer
+    cfg.network.make_feature_layer_kwargs['lattice'] = cfg.system.lattice
   else:
-    feature_layer = networks.make_ferminet_features(
-        natoms=charges.shape[0],
-        nspins=cfg.system.electrons,
-        ndim=cfg.system.ndim,
-        rescale_inputs=cfg.network.get('rescale_inputs', False),
-    )
+    make_feature_layer = networks.make_ferminet_features
+  feature_layer = make_feature_layer(
+      natoms=charges.shape[0],
+      nspins=cfg.system.electrons,
+      ndim=cfg.system.ndim,
+      rescale_inputs=cfg.network.get('rescale_inputs', False),
+      **cfg.network.make_feature_layer_kwargs
+  )
 
   if cfg.network.make_envelope_fn:
     envelope_module, envelope_fn = (
@@ -500,6 +503,10 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
     envelope_module = importlib.import_module(envelope_module)
     make_envelope = getattr(envelope_module, envelope_fn)
     envelope = make_envelope(**cfg.network.make_envelope_kwargs)  # type: envelopes.Envelope
+  elif cfg.system.lattice is not None:
+    kpoints = pbc_envelopes.make_kpoints(
+        cfg.system.lattice, cfg.system.electrons, cfg.system.ndim)
+    envelope = pbc_envelopes.make_multiwave_envelope(kpoints)
   else:
     envelope = envelopes.make_isotropic_envelope()
 
@@ -509,6 +516,7 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
         nspins,
         charges,
         ndim=cfg.system.ndim,
+        lattice=cfg.system.lattice,
         determinants=cfg.network.determinants,
         states=cfg.system.states,
         envelope=envelope,
@@ -525,6 +533,7 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
         nspins,
         charges,
         ndim=cfg.system.ndim,
+        lattice=cfg.system.lattice,
         determinants=cfg.network.determinants,
         states=cfg.system.states,
         envelope=envelope,
@@ -624,6 +633,13 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
         init_width=cfg.mcmc.init_width,
         core_electrons=core_electrons,
     )
+
+    # If PBC, map electrons back to the simulation cell
+    if cfg.system.lattice is not None:
+      rec = 2 * jnp.pi * jnp.linalg.inv(cfg.system.lattice)
+      pos = mcmc.batch_map_to_simulation_cell(pos, 
+          cfg.system.lattice, rec, cfg.system.ndim)
+
     # For excited states, each device has a batch of walkers, where each walker
     # is nstates * nelectrons. The vmap over nstates is handled in the function
     # created in make_total_ansatz
@@ -740,6 +756,7 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
       atoms=atoms_to_mcmc,
       blocks=cfg.mcmc.blocks * num_states,
       ndim=cfg.system.ndim,
+      lattice=cfg.system.lattice,
   )
 
   # Construct loss and optimizer
@@ -748,6 +765,9 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
         cfg.system.make_local_energy_fn.rsplit('.', maxsplit=1))
     local_energy_module = importlib.import_module(local_energy_module)
     make_local_energy = getattr(local_energy_module, local_energy_fn)  # type: hamiltonian.MakeLocalEnergy
+  elif cfg.system.lattice is not None:
+    make_local_energy = pbc_hamiltonian.local_energy
+    cfg.system.make_local_energy_kwargs['lattice'] = cfg.system.lattice
   else:
     make_local_energy = hamiltonian.local_energy
   laplacian_method = cfg.optim.get('laplacian', 'default')

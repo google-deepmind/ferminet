@@ -43,8 +43,7 @@ def make_multiwave_envelope(kpoints: jnp.ndarray) -> envelopes.Envelope:
 
   Args:
     kpoints: Reciprocal lattice vectors of terms included in the Fourier
-      series. Shape (nkpoints, ndim) (Note that ndim=3 is currently
-      a hard-coded default).
+      series. Shape (nkpoints, ndim)
 
   Returns:
     An instance of ferminet.envelopes.Envelope with apply_type
@@ -79,6 +78,7 @@ def make_multiwave_envelope(kpoints: jnp.ndarray) -> envelopes.Envelope:
 def make_kpoints(
     lattice: Union[np.ndarray, jnp.ndarray],
     spins: Tuple[int, int],
+    ndim: int = 3,
     min_kpoints: Optional[int] = None,
 ) -> jnp.ndarray:
   """Generates an array of reciprocal lattice vectors.
@@ -88,6 +88,7 @@ def make_kpoints(
       system, shape (ndim, ndim). (Note that ndim=3 is currently
       a hard-coded default).
     spins: Tuple of the number of spin-up and spin-down electrons.
+    ndim: Number of dimensions.
     min_kpoints: If specified, the number of kpoints which must be included in
       the output. The number of kpoints returned will be the
       first filled shell which is larger than this value. Defaults to None,
@@ -111,9 +112,9 @@ def make_kpoints(
 
   dk = 1 + 1e-5
   # Generate ordinals of the lowest min_kpoints kpoints
-  max_k = int(jnp.ceil(min_kpoints * dk)**(1 / 3.))
+  max_k = int(jnp.ceil(min_kpoints * dk)**(1 / ndim))
   ordinals = sorted(range(-max_k, max_k+1), key=abs)
-  ordinals = jnp.asarray(list(itertools.product(ordinals, repeat=3)))
+  ordinals = jnp.asarray(list(itertools.product(ordinals, repeat=ndim)))
 
   kpoints = ordinals @ rec_lattice.T
   kpoints = jnp.asarray(sorted(kpoints, key=jnp.linalg.norm))

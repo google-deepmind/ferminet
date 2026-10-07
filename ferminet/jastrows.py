@@ -29,10 +29,49 @@ class JastrowType(enum.Enum):
   SIMPLE_EE = enum.auto()
 
 
+def safe_norm(ee: jnp.ndarray):
+  n = ee.shape[0]
+  return (
+      jnp.linalg.norm(ee + jnp.eye(n)[..., None], axis=-1) * (1.0 - jnp.eye(n))
+    )[..., None] # extra dim for consistency with previous code versions
+
+
+def make_periodic_r_ee(lattice: jnp.ndarray):
+  """Util function for transforming r_ee into the periodic version.
+  Some of this could be refactored with ferminet.pbc.feature_layer
+
+  Args:
+      lattice: Matrix whose columns are the primitive lattice vectors of the
+        system, shape (ndim, ndim).
+  """
+
+  # Calculate reciprocal vectors, factor 2pi omitted
+  reciprocal_vecs = jnp.linalg.inv(lattice)
+  lattice_metric = lattice.T @ lattice
+
+  def apply(ee: jnp.ndarray):
+    s_ee = jnp.einsum('il,jkl->jki', reciprocal_vecs, ee)
+
+    n = ee.shape[0]
+    s_ee += jnp.eye(n)[..., None]
+
+    a = (1 - jnp.cos(2 * jnp.pi * s_ee))
+    b = jnp.sin(2 * jnp.pi * s_ee)
+    cos_term = jnp.einsum('...m,mn,...n->...', a, lattice_metric, a)
+    sin_term = jnp.einsum('...m,mn,...n->...', b, lattice_metric, b)
+    periodic_r_ee = (1 / (2 * jnp.pi)) * jnp.sqrt(cos_term + sin_term)
+
+    periodic_r_ee = periodic_r_ee * (1.0 - jnp.eye(n))
+    return periodic_r_ee[..., None]
+  
+  return apply
+
+
 def _jastrow_ee(
     r_ee: jnp.ndarray,
     params: ParamTree,
     nspins: tuple[int, int],
+    ndim: int,
     jastrow_fun: Callable[[jnp.ndarray, float, jnp.ndarray], jnp.ndarray],
 ) -> jnp.ndarray:
   """Jastrow factor for electron-electron cusps."""
@@ -47,21 +86,28 @@ def _jastrow_ee(
 
   if r_ees_parallel.shape[0] > 0:
     jastrow_ee_par = jnp.sum(
-        jastrow_fun(r_ees_parallel, 0.25, params['ee_par'])
+        jastrow_fun(r_ees_parallel, 1 / (ndim + 1), params['ee_par'])
     )
   else:
     jastrow_ee_par = jnp.asarray(0.0)
 
   if r_ees[0][1].shape[0] > 0:
-    jastrow_ee_anti = jnp.sum(jastrow_fun(r_ees[0][1], 0.5, params['ee_anti']))
+    jastrow_ee_anti = jnp.sum(
+        jastrow_fun(r_ees[0][1], 1 / (ndim - 1), params['ee_anti']))
   else:
     jastrow_ee_anti = jnp.asarray(0.0)
 
   return jastrow_ee_anti + jastrow_ee_par
 
 
-def make_simple_ee_jastrow():
+def make_simple_ee_jastrow(lattice: jnp.ndarray | None = None, ndim: int = 3):
   """Creates a Jastrow factor for electron-electron cusps."""
+
+  # If working in PBC, use periodic distance for the Jastrow
+  if lattice is not None:
+    norm = make_periodic_r_ee(lattice)
+  else:
+    norm = safe_norm
 
   def simple_ee_cusp_fun(
       r: jnp.ndarray, cusp: float, alpha: jnp.ndarray
@@ -80,20 +126,24 @@ def make_simple_ee_jastrow():
     return params
 
   def apply(
-      r_ee: jnp.ndarray,
+      ee: jnp.ndarray,
       params: ParamTree,
       nspins: tuple[int, int],
   ) -> jnp.ndarray:
     """Jastrow factor for electron-electron cusps."""
-    return _jastrow_ee(r_ee, params, nspins, jastrow_fun=simple_ee_cusp_fun)
+    r_ee = norm(ee)
+    return _jastrow_ee(r_ee, params, nspins, ndim, jastrow_fun=simple_ee_cusp_fun)
 
   return init, apply
 
 
-def get_jastrow(jastrow: JastrowType):
+def get_jastrow(
+    jastrow: JastrowType, 
+    lattice: jnp.ndarray | None = None, 
+    ndim: int = 3):
   jastrow_init, jastrow_apply = None, None
   if jastrow == JastrowType.SIMPLE_EE:
-    jastrow_init, jastrow_apply = make_simple_ee_jastrow()
+    jastrow_init, jastrow_apply = make_simple_ee_jastrow(lattice, ndim)
   elif jastrow != JastrowType.NONE:
     raise ValueError(f'Unknown Jastrow Factor type: {jastrow}')
 
