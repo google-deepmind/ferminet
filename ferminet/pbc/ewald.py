@@ -26,6 +26,8 @@ from typing import Callable
 import jax
 import jax.numpy as jnp
 
+from ferminet import mcmc
+
 
 def make_ewald_potential(
     lattice: jnp.ndarray,
@@ -142,6 +144,12 @@ def make_ewald_potential(
 
   def potential(ae: jnp.ndarray, ee: jnp.ndarray):
     """Accumulates atom-electron, atom-atom, and electron-electron potential."""
+    # Reduce vectors into first unit cell - Ewald summation
+    # is only guaranteed to converge close to the origin
+    ae_shape = ae.shape
+    ee_shape = ee.shape
+    ae = mcmc.map_to_simulation_cell(ae, lattice, rec, ndim).reshape(ae_shape)
+    ee = mcmc.map_to_simulation_cell(ee, lattice, rec, ndim).reshape(ee_shape)
     return jnp.real(
         atom_electron_potential(ae) +
         electron_electron_potential(ee) + atom_atom_potential)

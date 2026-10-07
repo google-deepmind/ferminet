@@ -633,6 +633,13 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
         init_width=cfg.mcmc.init_width,
         core_electrons=core_electrons,
     )
+
+    # If PBC, map electrons back to the simulation cell
+    if cfg.system.lattice is not None:
+      rec = 2 * jnp.pi * jnp.linalg.inv(cfg.system.lattice)
+      pos = mcmc.batch_map_to_simulation_cell(pos, 
+          cfg.system.lattice, rec, cfg.system.ndim)
+
     # For excited states, each device has a batch of walkers, where each walker
     # is nstates * nelectrons. The vmap over nstates is handled in the function
     # created in make_total_ansatz

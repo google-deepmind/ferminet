@@ -32,7 +32,8 @@ class JastrowType(enum.Enum):
 def safe_norm(ee: jnp.ndarray):
   n = ee.shape[0]
   return (
-      jnp.linalg.norm(ee + jnp.eye(n)[..., None], axis=-1) * (1.0 - jnp.eye(n)))
+      jnp.linalg.norm(ee + jnp.eye(n)[..., None], axis=-1) * (1.0 - jnp.eye(n))
+    )[..., None] # extra dim for consistency with previous code versions
 
 
 def make_periodic_r_ee(lattice: jnp.ndarray):

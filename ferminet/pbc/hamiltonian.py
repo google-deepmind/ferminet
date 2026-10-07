@@ -24,7 +24,7 @@ from typing import Callable, Sequence, Tuple
 import chex
 from ferminet import hamiltonian
 from ferminet import networks
-from ferminet.pbc.ewald import make_ewald_potential
+from ferminet.pbc import ewald
 import jax.numpy as jnp
 
 
@@ -95,7 +95,7 @@ def local_energy(
       data: MCMC configuration.
     """
     del key  # unused
-    potential_energy = make_ewald_potential(
+    potential_energy = ewald.make_ewald_potential(
         lattice, data.atoms, charges, convergence_radius, ndim
     )
     ae, ee, _, _ = networks.construct_input_features(

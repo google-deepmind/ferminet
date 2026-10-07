@@ -65,7 +65,6 @@ class PbcHamiltonianTest(parameterized.TestCase):
         nspins=nspins,
         use_scan=False,
         lattice=jnp.eye(3),
-        heg=False,
     )
 
     data = networks.FermiNetData(
