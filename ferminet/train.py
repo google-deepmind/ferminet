@@ -249,9 +249,10 @@ def make_opt_update_step(evaluate_loss: qmc_loss_functions.LossFn,
       key: chex.PRNGKey,
   ) -> OptUpdateResults:
     """Evaluates the loss and gradients and updates the parameters using optax."""
+    assert opt_state is not None
     (loss, aux_data), grad = loss_and_grad(params, key, data)
     grad = constants.pmean(grad)
-    updates, opt_state = optimizer.update(grad, opt_state, params)  # pyrefly: ignore[bad-argument-type]
+    updates, opt_state = optimizer.update(grad, opt_state, params)
     params = optax.apply_updates(params, updates)  # pyrefly: ignore[bad-assignment]
     return params, opt_state, loss, aux_data
 
@@ -489,9 +490,9 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
         feature_layer_module, feature_layer_fn
     )
   elif cfg.system.lattice is not None:
-    make_feature_layer = pbc_feature_layer.make_pbc_feature_layer  # pyrefly: ignore[bad-assignment]
+    make_feature_layer = pbc_feature_layer.make_pbc_feature_layer
   else:
-    make_feature_layer = networks.make_ferminet_features  # pyrefly: ignore[bad-assignment]
+    make_feature_layer = networks.make_ferminet_features
   feature_layer = make_feature_layer(
       natoms=charges.shape[0],
       nspins=cfg.system.electrons,

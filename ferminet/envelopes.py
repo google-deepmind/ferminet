@@ -46,7 +46,7 @@ class EnvelopeLabel(enum.Enum):
 class EnvelopeInit(Protocol):
 
   def __call__(
-      self, natom: int, output_dims: Union[int, Sequence[int]], ndim: int
+      self, natom: int, output_dims: Any, ndim: int
   ) -> Union[Mapping[str, Any], Sequence[Mapping[str, Any]]]:
     """Returns the envelope parameters.
 
@@ -116,12 +116,12 @@ def make_isotropic_envelope() -> Envelope:
     return params
 
   def apply(*, ae: jnp.ndarray, r_ae: jnp.ndarray, r_ee: jnp.ndarray,
-            pi: jnp.ndarray, sigma: jnp.ndarray) -> jnp.ndarray:
+            **kwargs: jnp.ndarray) -> jnp.ndarray:
     """Computes an isotropic exponentially-decaying multiplicative envelope."""
     del ae, r_ee  # unused
-    return jnp.sum(jnp.exp(-r_ae * sigma) * pi, axis=1)
+    return jnp.sum(jnp.exp(-r_ae * kwargs['sigma']) * kwargs['pi'], axis=1)
 
-  return Envelope(EnvelopeType.PRE_DETERMINANT, init, apply)  # pyrefly: ignore[bad-argument-type]
+  return Envelope(EnvelopeType.PRE_DETERMINANT, init, apply)
 
 
 def make_bottleneck_envelope(nenv: int = 16) -> Envelope:
@@ -158,11 +158,13 @@ def make_bottleneck_envelope(nenv: int = 16) -> Envelope:
     return params
 
   def apply(*, ae: jnp.ndarray, r_ae: jnp.ndarray, r_ee: jnp.ndarray,
-            pi: jnp.ndarray, sigma: jnp.ndarray, w: jnp.ndarray) -> jnp.ndarray:
+            **kwargs: jnp.ndarray) -> jnp.ndarray:
     del ae, r_ee  # unused
-    return jnp.sum(jnp.exp(-r_ae * sigma) * pi, axis=1) @ w
+    return jnp.sum(
+        jnp.exp(-r_ae * kwargs['sigma']) * kwargs['pi'], axis=1
+    ) @ kwargs['w']
 
-  return Envelope(EnvelopeType.PRE_DETERMINANT, init, apply)  # pyrefly: ignore[bad-argument-type]
+  return Envelope(EnvelopeType.PRE_DETERMINANT, init, apply)
 
 
 def make_diagonal_envelope() -> Envelope:
@@ -180,13 +182,13 @@ def make_diagonal_envelope() -> Envelope:
     return params
 
   def apply(*, ae: jnp.ndarray, r_ae: jnp.ndarray, r_ee: jnp.ndarray,
-            pi: jnp.ndarray, sigma: jnp.ndarray) -> jnp.ndarray:
+            **kwargs: jnp.ndarray) -> jnp.ndarray:
     """Computes a diagonal exponentially-decaying multiplicative envelope."""
     del r_ae, r_ee  # unused
-    r_ae_sigma = jnp.linalg.norm(ae[..., None] * sigma, axis=2)
-    return jnp.sum(jnp.exp(-r_ae_sigma) * pi, axis=1)
+    r_ae_sigma = jnp.linalg.norm(ae[..., None] * kwargs['sigma'], axis=2)
+    return jnp.sum(jnp.exp(-r_ae_sigma) * kwargs['pi'], axis=1)
 
-  return Envelope(EnvelopeType.PRE_DETERMINANT, init, apply)  # pyrefly: ignore[bad-argument-type]
+  return Envelope(EnvelopeType.PRE_DETERMINANT, init, apply)
 
 
 def make_full_envelope() -> Envelope:
@@ -205,16 +207,16 @@ def make_full_envelope() -> Envelope:
     return params
 
   def apply(*, ae: jnp.ndarray, r_ae: jnp.ndarray, r_ee: jnp.ndarray,
-            pi: jnp.ndarray, sigma: jnp.ndarray) -> jnp.ndarray:
+            **kwargs: jnp.ndarray) -> jnp.ndarray:
     """Computes a fully anisotropic exponentially-decaying envelope."""
     del r_ae, r_ee  # unused
-    ae_sigma = _apply_covariance(ae, sigma)
+    ae_sigma = _apply_covariance(ae, kwargs['sigma'])
     ae_sigma = curvature_tags_and_blocks.register_qmc(
-        ae_sigma, ae, sigma, type='full')
+        ae_sigma, ae, kwargs['sigma'], type='full')
     r_ae_sigma = jnp.linalg.norm(ae_sigma, axis=2)
-    return jnp.sum(jnp.exp(-r_ae_sigma) * pi, axis=1)
+    return jnp.sum(jnp.exp(-r_ae_sigma) * kwargs['pi'], axis=1)
 
-  return Envelope(EnvelopeType.PRE_DETERMINANT, init, apply)  # pyrefly: ignore[bad-argument-type]
+  return Envelope(EnvelopeType.PRE_DETERMINANT, init, apply)
 
 
 def make_null_envelope() -> Envelope:
@@ -226,12 +228,12 @@ def make_null_envelope() -> Envelope:
     del natom, ndim  # unused
     return [{} for _ in output_dims]
 
-  def apply(*, ae: jnp.ndarray, r_ae: jnp.ndarray,
-            r_ee: jnp.ndarray) -> jnp.ndarray:
-    del ae, r_ae, r_ee
+  def apply(*, ae: jnp.ndarray, r_ae: jnp.ndarray, r_ee: jnp.ndarray,
+            **kwargs: jnp.ndarray) -> jnp.ndarray:
+    del ae, r_ae, r_ee, kwargs
     return jnp.ones(shape=(1,))
 
-  return Envelope(EnvelopeType.PRE_DETERMINANT, init, apply)  # pyrefly: ignore[bad-argument-type]
+  return Envelope(EnvelopeType.PRE_DETERMINANT, init, apply)
 
 
 def make_sto_envelope() -> Envelope:
@@ -248,18 +250,20 @@ def make_sto_envelope() -> Envelope:
     return {'pi': pi, 'sigma': sigma, 'n': n}
 
   def apply(*, ae: jnp.ndarray, r_ae: jnp.ndarray, r_ee: jnp.ndarray,
-            pi: jnp.ndarray, sigma: jnp.ndarray, n: jnp.ndarray) -> jnp.ndarray:
+            **kwargs: jnp.ndarray) -> jnp.ndarray:
     """Computes a Slater-type orbital envelope: exp(-sigma*r_ae) * r_ae^n * pi."""
     del r_ae, r_ee  # unused
-    ae_sigma = _apply_covariance(ae, sigma)
+    ae_sigma = _apply_covariance(ae, kwargs['sigma'])
     ae_sigma = curvature_tags_and_blocks.register_qmc(
-        ae_sigma, ae, sigma, type='full')
+        ae_sigma, ae, kwargs['sigma'], type='full')
     r_ae_sigma = jnp.linalg.norm(ae_sigma, axis=2)
-    exp_r_ae = jnp.exp(-r_ae_sigma + jnp.exp(n) * jnp.log(r_ae_sigma))
-    out = jnp.sum(exp_r_ae * pi, axis=1)
+    exp_r_ae = jnp.exp(
+        -r_ae_sigma + jnp.exp(kwargs['n']) * jnp.log(r_ae_sigma)
+    )
+    out = jnp.sum(exp_r_ae * kwargs['pi'], axis=1)
     return out
 
-  return Envelope(EnvelopeType.PRE_ORBITAL, init, apply)  # pyrefly: ignore[bad-argument-type]
+  return Envelope(EnvelopeType.PRE_ORBITAL, init, apply)
 
 
 def make_sto_poly_envelope() -> Envelope:
@@ -274,22 +278,24 @@ def make_sto_poly_envelope() -> Envelope:
     return {'pi': pi, 'sigma': sigma}
 
   def apply(*, ae: jnp.ndarray, r_ae: jnp.ndarray, r_ee: jnp.ndarray,
-            pi: jnp.ndarray, sigma: jnp.ndarray) -> jnp.ndarray:
+            **kwargs: jnp.ndarray) -> jnp.ndarray:
     """Computes a Slater-type orbital envelope."""
     del r_ae, r_ee  # unused
     # Should register KFAC tags and blocks.
     # Envelope: exp(-sigma*r_ae) * (sum_i r_ae^i * pi_i)
-    ae_sigma = _apply_covariance(ae, sigma)
+    ae_sigma = _apply_covariance(ae, kwargs['sigma'])
     ae_sigma = curvature_tags_and_blocks.register_qmc(
-        ae_sigma, ae, sigma, type='full')
+        ae_sigma, ae, kwargs['sigma'], type='full')
     r_ae_sigma = jnp.linalg.norm(ae_sigma, axis=2)
     exp_r_ae = jnp.exp(-r_ae_sigma)
     poly_r_ae = jnp.power(
         jnp.expand_dims(r_ae_sigma, -1), jnp.arange(_MAX_POLY_ORDER))
-    out = jnp.sum(exp_r_ae * jnp.sum(poly_r_ae * pi, axis=3), axis=1)
+    out = jnp.sum(
+        exp_r_ae * jnp.sum(poly_r_ae * kwargs['pi'], axis=3), axis=1
+    )
     return out
 
-  return Envelope(EnvelopeType.PRE_ORBITAL, init, apply)  # pyrefly: ignore[bad-argument-type]
+  return Envelope(EnvelopeType.PRE_ORBITAL, init, apply)
 
 
 def get_envelope(

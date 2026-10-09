@@ -44,7 +44,7 @@ def get_config():
   cfg.system.electrons = (7, 7)
   # A ghost atom at the origin defines one-electron coordinate system.
   # Element 'X' is a dummy nucleus with zero charge
-  cfg.system.molecule = [system.Atom('X', (0, 0, 0))]  # pyrefly: ignore[missing-argument]
+  cfg.system.molecule = [system.Atom('X', (0, 0, 0))]
 
   cfg.system.lattice = _sc_lattice_vecs(
       rs, sum(cfg.system.electrons), cfg.system.ndim

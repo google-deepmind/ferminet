@@ -123,7 +123,7 @@ def make_s2(
   def s2_estimator(
       params: networks.ParamTree,
       data: networks.FermiNetData,
-      state: None = None,
+      state: Optional[DensityState] = None,
   ) -> jnp.ndarray:
     """Returns the S^2 contribution from a single electron configuration x."""
     del state  # only included for consistency in the interface
@@ -224,7 +224,7 @@ def make_s2(
 
     return s2
 
-  return s2_estimator  # pyrefly: ignore[bad-return]
+  return s2_estimator
 
 
 def make_dipole(
@@ -249,7 +249,7 @@ def make_dipole(
   def dipole_estimator(
       params: networks.ParamTree,
       data: networks.FermiNetData,
-      state: None = None,
+      state: Optional[DensityState] = None,
   ) -> jnp.ndarray:
     """Returns the dipole moment from a single electron configuration x."""
     del state  # only included for consistency in the interface
@@ -269,7 +269,7 @@ def make_dipole(
 
     return moment
 
-  return dipole_estimator  # pyrefly: ignore[bad-return]
+  return dipole_estimator
 
 
 def make_density_matrix(
@@ -395,8 +395,9 @@ def make_density_matrix(
   def density_estimator(
       params: networks.ParamTree,
       data: networks.FermiNetData,
-      state: DensityState,
+      state: Optional[DensityState] = None,
   ) -> jnp.ndarray:
+    assert state is not None
     return density.get_rho(
         batch_signed_net,
         params,
@@ -410,4 +411,4 @@ def make_density_matrix(
         state.probabilities,
         scf_approx)
 
-  return density_state, density_update, density_estimator  # pyrefly: ignore[bad-return]
+  return density_state, density_update, density_estimator

@@ -87,9 +87,10 @@ class Scf:
     if pyscf_mol:
       self._mol = pyscf_mol
     else:
+      assert molecule is not None and nelectrons is not None
       # If not passed a pyscf molecule, create one
       if any(atom.atomic_number - atom.charge > 1.e-8
-             for atom in molecule):  # pyrefly: ignore[not-iterable]
+             for atom in molecule):
         logging.info(
             'Fractional nuclear charge detected. '
             'Running SCF on atoms with integer charge.'
@@ -98,20 +99,20 @@ class Scf:
       core_electrons = core_electrons or {}
 
       nuclear_charge = 0
-      for atom in molecule:  # pyrefly: ignore[not-iterable]
+      for atom in molecule:
         nuclear_charge += atom.atomic_number
         if atom.symbol in core_electrons:
           nuclear_charge -= core_electrons[atom.symbol]
-      charge = nuclear_charge - sum(nelectrons)  # pyrefly: ignore[no-matching-overload]
+      charge = nuclear_charge - sum(nelectrons)
       self._mol = pyscf.gto.Mole(
-          atom=[[atom.symbol, atom.coords] for atom in molecule],  # pyrefly: ignore[not-iterable]
+          atom=[[atom.symbol, atom.coords] for atom in molecule],
           unit='bohr')
       self._mol.basis = basis  # pyrefly: ignore[bad-assignment]
-      self._mol.spin = nelectrons[0] - nelectrons[1]  # pyrefly: ignore[unsupported-operation]
+      self._mol.spin = nelectrons[0] - nelectrons[1]
       self._mol.charge = charge
       self._mol.ecp = ecp  # pyrefly: ignore[bad-assignment]
       self._mol.build()
-      if self._mol.nelectron != sum(nelectrons):  # pyrefly: ignore[no-matching-overload]
+      if self._mol.nelectron != sum(nelectrons):
         raise RuntimeError('PySCF molecule not consistent with QMC molecule.')
       self._mol_jax = gto.Mol.from_pyscf_mol(self._mol)
     if restricted:
@@ -193,14 +194,12 @@ class Scf:
 
   @mo_coeff.setter
   def mo_coeff(self, mo_coeff):
-    # pytype: disable=attribute-error
     if (self.mean_field is not None and
         self.mean_field.mo_coeff is not None and
         self.mean_field.mo_coeff.ndim != mo_coeff.ndim):
       raise ValueError('Attempting to override mo_coeffs with different rank. '
                        f'Got {mo_coeff.shape=}, have '
                        f'{self.mean_field.mo_coeff.shape=}')
-    # pytype: enable=attribute-error
     self.mean_field.mo_coeff = mo_coeff
 
   def eval_mos(self, positions: NDArray) -> Tuple[NDArray, NDArray]:

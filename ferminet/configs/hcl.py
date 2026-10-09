@@ -62,8 +62,8 @@ def get_config():
   """Returns config for running generic atoms with qmc."""
   cfg = base_config.default()
   cfg.system.molecule = [
-      system.Atom(symbol='H', coords=(0.0, 0.0, 0.0), units='angstrom'),  # pyrefly: ignore[missing-argument]
-      system.Atom(symbol='Cl', coords=(0.0, 0.0, 1.2799799), units='angstrom'),  # pyrefly: ignore[missing-argument]
+      system.Atom(symbol='H', coords=(0.0, 0.0, 0.0), units='angstrom'),
+      system.Atom(symbol='Cl', coords=(0.0, 0.0, 1.2799799), units='angstrom'),
   ]
   cfg.system.electrons = (9, 9)  # Core electrons are removed automatically
   cfg.system.use_pp = True  # Enable pseudopotentials

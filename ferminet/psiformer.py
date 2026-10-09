@@ -393,7 +393,7 @@ def make_fermi_net(
   if not feature_layer:
     natoms = charges.shape[0]
     feature_layer = networks.make_ferminet_features(
-        natoms, nspins, ndim=ndim, rescale_inputs=rescale_inputs  # pyrefly: ignore[bad-argument-type]
+        natoms, nspins, ndim=ndim, rescale_inputs=rescale_inputs
     )
 
   if isinstance(jastrow, str):

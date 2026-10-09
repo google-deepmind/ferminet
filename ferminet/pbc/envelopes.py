@@ -63,16 +63,16 @@ def make_multiwave_envelope(kpoints: jnp.ndarray) -> envelopes.Envelope:
     return params
 
   def apply(*, ae: jnp.ndarray, r_ae: jnp.ndarray, r_ee: jnp.ndarray,
-            sigma: jnp.ndarray) -> jnp.ndarray:
+            **kwargs: jnp.ndarray) -> jnp.ndarray:
     """See ferminet.envelopes.EnvelopeApply."""
     del r_ae, r_ee  # unused
     phase_coords = ae @ kpoints.T
     waves = jnp.concatenate((jnp.cos(phase_coords), jnp.sin(phase_coords)),
                             axis=2)
-    env = waves @ (sigma**2.0)
+    env = waves @ (kwargs['sigma'] ** 2.0)
     return jnp.sum(env, axis=1)
 
-  return envelopes.Envelope(envelopes.EnvelopeType.PRE_DETERMINANT, init, apply)  # pyrefly: ignore[bad-argument-type]
+  return envelopes.Envelope(envelopes.EnvelopeType.PRE_DETERMINANT, init, apply)
 
 
 def make_kpoints(

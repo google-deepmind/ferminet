@@ -15,7 +15,7 @@
 """Helper functions to create the loss and custom gradient of the loss."""
 
 import functools
-from typing import Tuple
+from typing import Any, Tuple
 
 import chex
 from ferminet import constants
@@ -184,9 +184,9 @@ def make_loss(network: networks.LogFermiNetLike,
     loss is the mean energy, and aux_data is an AuxiliaryLossDataobject. The
     loss is averaged over the batch and over all devices inside a pmap.
   """
-  vmap = jax.vmap if max_vmap_batch_size == 0 else functools.partial(
+  vmap: Any = jax.vmap if max_vmap_batch_size == 0 else functools.partial(
       folx.batched_vmap, max_batch_size=max_vmap_batch_size)
-  batch_local_energy = vmap(  # pyrefly: ignore[bad-specialization]
+  batch_local_energy = vmap(
       local_energy,
       in_axes=(
           None,
@@ -195,7 +195,7 @@ def make_loss(network: networks.LogFermiNetLike,
       ),
       out_axes=(0, 0)
   )
-  batch_network = vmap(network, in_axes=(None, 0, 0, 0, 0), out_axes=0)  # pyrefly: ignore[bad-specialization]
+  batch_network = vmap(network, in_axes=(None, 0, 0, 0, 0), out_axes=0)
 
   @jax.custom_jvp
   def total_energy(
@@ -324,9 +324,9 @@ def make_wqmc_loss(
     loss is the mean energy, and aux_data is an AuxiliaryLossDataobject. The
     loss is averaged over the batch and over all devices inside a pmap.
   """
-  vmap = jax.vmap if max_vmap_batch_size == 0 else functools.partial(
+  vmap: Any = jax.vmap if max_vmap_batch_size == 0 else functools.partial(
       folx.batched_vmap, max_batch_size=max_vmap_batch_size)
-  batch_local_energy = vmap(  # pyrefly: ignore[bad-specialization]
+  batch_local_energy = vmap(
       local_energy,
       in_axes=(
           None,
@@ -335,7 +335,7 @@ def make_wqmc_loss(
       ),
       out_axes=(0, 0)
   )
-  batch_network = vmap(network, in_axes=(None, 0, 0, 0, 0), out_axes=0)  # pyrefly: ignore[bad-specialization]
+  batch_network = vmap(network, in_axes=(None, 0, 0, 0, 0), out_axes=0)
 
   @jax.custom_jvp
   def total_energy(
@@ -482,13 +482,13 @@ def make_energy_overlap_loss(network: networks.LogFermiNetLike,
     LossFn callable which evaluates the total energy of the system.
   """
 
-  vmap = jax.vmap if max_vmap_batch_size == 0 else functools.partial(
+  vmap: Any = jax.vmap if max_vmap_batch_size == 0 else functools.partial(
       folx.batched_vmap, max_batch_size=max_vmap_batch_size)
   data_axes = networks.FermiNetData(positions=0, spins=0, atoms=0, charges=0)
-  batch_local_energy = vmap(  # pyrefly: ignore[bad-specialization]
+  batch_local_energy = vmap(
       local_energy, in_axes=(None, 0, data_axes), out_axes=(0, 0))
-  batch_network = vmap(network, in_axes=(None, 0, 0, 0, 0), out_axes=0)  # pyrefly: ignore[bad-specialization]
-  overlap_weight = jnp.array(overlap_weight)  # pyrefly: ignore[bad-assignment]
+  batch_network = vmap(network, in_axes=(None, 0, 0, 0, 0), out_axes=0)
+  overlap_weight_arr = jnp.array(overlap_weight)
 
   # TODO(pfau): how much of this can be factored out with make_loss?
   @jax.custom_jvp
@@ -506,7 +506,7 @@ def make_energy_overlap_loss(network: networks.LogFermiNetLike,
     loss_diff = e_l - loss
     variance = constants.pmean(
         jnp.mean(loss_diff * jnp.conj(loss_diff), axis=0))
-    weighted_energy = jnp.dot(loss, overlap_weight)  # pyrefly: ignore[bad-argument-type]
+    weighted_energy = jnp.dot(loss, overlap_weight_arr)
 
     # Overlap matrix. To compute S_ij^2 = <psi_i psi_j>^2/<psi_i^2><psi_j^2>
     # by Monte Carlo, you can split up the terms into a product of MC estimates
@@ -555,7 +555,7 @@ def make_energy_overlap_loss(network: networks.LogFermiNetLike,
           clip_local_energy,
           clip_from_median,
           center_at_clipped_energy)
-      aux_data.clipped_energy = jnp.dot(clipped_energy, overlap_weight)  # pyrefly: ignore[bad-argument-type]
+      aux_data.clipped_energy = jnp.dot(clipped_energy, overlap_weight_arr)
     else:
       energy_diff = aux_data.local_energy - energy
 
@@ -569,19 +569,20 @@ def make_energy_overlap_loss(network: networks.LogFermiNetLike,
     # Again, because the two expectations are taken over independent samples,
     # the product of empirical estimates will be unbiased.
 
+    assert aux_data.s_ij is not None and aux_data.mean_s_ij is not None
     if clip_local_energy > 0.0:
       clipped_overlap, overlap_diff = clip_local_values(
-          aux_data.s_ij,  # pyrefly: ignore[bad-argument-type]
-          aux_data.mean_s_ij,  # pyrefly: ignore[bad-argument-type]
+          aux_data.s_ij,
+          aux_data.mean_s_ij,
           clip_local_energy,
           clip_from_median,
           center_at_clipped_energy)
     else:
       clipped_overlap = aux_data.s_ij
-      overlap_diff = clipped_overlap - aux_data.mean_s_ij  # pyrefly: ignore[unsupported-operation]
+      overlap_diff = clipped_overlap - aux_data.mean_s_ij
 
     overlap_diff = 2 * jnp.sum(jnp.triu(
-        clipped_overlap * overlap_diff.transpose((0, 2, 1)), 1), axis=1)  # pyrefly: ignore[unsupported-operation]
+        clipped_overlap * overlap_diff.transpose((0, 2, 1)), 1), axis=1)
 
     # Due to the simultaneous requirements of KFAC (calling convention must be
     # (params, rng, data)) and Laplacian calculation (only want to take
@@ -599,7 +600,9 @@ def make_energy_overlap_loss(network: networks.LogFermiNetLike,
     kfac_jax.register_normal_predictive_distribution(
         jax.vmap(jnp.diag)(log_primal))
     device_batch_size = jnp.shape(aux_data.local_energy)[0]
-    tangent_loss = energy_diff * overlap_weight + overlap_penalty * overlap_diff  # pyrefly: ignore[unsupported-operation]
+    tangent_loss = (
+        energy_diff * overlap_weight_arr + overlap_penalty * overlap_diff
+    )
     tangents_out = (
         jnp.sum(jax.vmap(jnp.diag)(log_tangent) * tangent_loss) /
         device_batch_size,

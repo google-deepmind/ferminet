@@ -14,7 +14,7 @@
 
 """Implementation of Fermionic Neural Network in JAX."""
 import enum
-from typing import Any, Iterable, Mapping, MutableMapping, Optional, Sequence, Tuple, Union
+from typing import Any, Mapping, MutableMapping, Optional, Sequence, Tuple, Union
 
 import attr
 import chex
@@ -28,7 +28,7 @@ from typing_extensions import Protocol
 
 FermiLayers = Tuple[Tuple[int, int], ...]
 ParamTree = Union[
-    jnp.ndarray, Iterable['ParamTree'], MutableMapping[Any, 'ParamTree']
+    jnp.ndarray, Sequence['ParamTree'], Mapping[str, 'ParamTree']
 ]
 # Parameters for a single part of the network are just a dict.
 Param = MutableMapping[str, jnp.ndarray]
@@ -290,7 +290,11 @@ class BaseNetworkOptions:
       default=attr.Factory(
           envelopes.make_isotropic_envelope,
           takes_self=False))
-  feature_layer: FeatureLayer = None  # pyrefly: ignore[bad-assignment]
+  feature_layer: FeatureLayer = attr.ib(
+      default=attr.Factory(
+          lambda: make_ferminet_features(natoms=0), takes_self=False
+      )
+  )
   jastrow: jastrows.JastrowType = jastrows.JastrowType.NONE
   complex_output: bool = False
 
@@ -480,18 +484,22 @@ def construct_input_features(
 
 def make_ferminet_features(
     natoms: int,
-    nspins: Optional[Tuple[int, int]] = None,
+    nspins: Optional[Sequence[int]] = None,
     ndim: int = 3,
     rescale_inputs: bool = False,
+    **kwargs: Any,
 ) -> FeatureLayer:
   """Returns the init and apply functions for the standard features."""
 
-  del nspins
+  del nspins, kwargs
 
   def init() -> Tuple[Tuple[int, int], Param]:
     return (natoms * (ndim + 1), ndim + 1), {}
 
-  def apply(ae, r_ae, ee, r_ee) -> Tuple[jnp.ndarray, jnp.ndarray]:
+  def apply(
+      ae, r_ae, ee, r_ee, **params: jnp.ndarray
+  ) -> Tuple[jnp.ndarray, jnp.ndarray]:
+    del params
     if rescale_inputs:
       log_r_ae = jnp.log(1 + r_ae)  # grows as log(r) rather than r
       ae_features = jnp.concatenate((log_r_ae, ae * log_r_ae / r_ae), axis=2)
@@ -505,7 +513,7 @@ def make_ferminet_features(
     ae_features = jnp.reshape(ae_features, [jnp.shape(ae_features)[0], -1])
     return ae_features, ee_features
 
-  return FeatureLayer(init=init, apply=apply)  # pyrefly: ignore[bad-argument-type]
+  return FeatureLayer(init=init, apply=apply)
 
 
 ## Network layers: permutation-equivariance ##

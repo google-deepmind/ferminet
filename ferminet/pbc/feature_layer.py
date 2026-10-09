@@ -19,7 +19,7 @@ Spencer, J.S. and Foulkes, W.M.C., 2022. Discovering Quantum Phase Transitions
 with Fermionic Neural Networks. arXiv preprint arXiv:2202.05183.
 """
 
-from typing import Optional, Tuple
+from typing import Any, Optional, Sequence, Tuple
 
 import chex
 from ferminet import networks
@@ -44,12 +44,13 @@ def periodic_norm(metric: jnp.ndarray, scaled_r: jnp.ndarray) -> jnp.ndarray:
 
 
 def make_pbc_feature_layer(
-    natoms: Optional[int] = None,
-    nspins: Optional[Tuple[int, ...]] = None,
+    natoms: int,
+    nspins: Optional[Sequence[int]] = None,
     ndim: int = 3,
     rescale_inputs: bool = False,
     lattice: Optional[jnp.ndarray] = None,
     include_r_ae: bool = True,
+    **kwargs: Any,
 ) -> networks.FeatureLayer:
   """Returns the init and apply functions for periodic features.
 
@@ -65,9 +66,10 @@ def make_pbc_feature_layer(
         to avoid cusps with ghost atoms in, e.g., homogeneous electron gas. If
         not needed, set cfg.network.make_feature_layer_kwargs['include_r_ae'] =
         False
+      **kwargs: Unused additional keyword arguments.
   """
 
-  del nspins
+  del nspins, kwargs
 
   if lattice is None:
     lattice = jnp.eye(ndim)
@@ -78,11 +80,14 @@ def make_pbc_feature_layer(
 
   def init() -> Tuple[Tuple[int, int], networks.Param]:
     if include_r_ae:
-      return (natoms * (2 * ndim + 1), 2 * ndim + 1), {}  # pyrefly: ignore[unsupported-operation]
+      return (natoms * (2 * ndim + 1), 2 * ndim + 1), {}
     else:
-      return (natoms * (2 * ndim), 2 * ndim + 1), {}  # pyrefly: ignore[unsupported-operation]
+      return (natoms * (2 * ndim), 2 * ndim + 1), {}
 
-  def apply(ae, r_ae, ee, r_ee) -> Tuple[jnp.ndarray, jnp.ndarray]:
+  def apply(
+      ae, r_ae, ee, r_ee, **params: jnp.ndarray
+  ) -> Tuple[jnp.ndarray, jnp.ndarray]:
+    del params
     # One e features in phase coordinates, (s_ae)_i = k_i . ae
     s_ae = jnp.einsum('il,jkl->jki', reciprocal_vecs, ae)
     # Two e features in phase coordinates
@@ -109,4 +114,4 @@ def make_pbc_feature_layer(
     ee_features = jnp.concatenate((r_ee[..., None], ee), axis=2)
     return ae_features, ee_features
 
-  return networks.FeatureLayer(init=init, apply=apply)  # pyrefly: ignore[bad-argument-type]
+  return networks.FeatureLayer(init=init, apply=apply)

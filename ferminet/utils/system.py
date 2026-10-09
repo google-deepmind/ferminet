@@ -51,20 +51,22 @@ class Atom:
       type=Sequence[float],
       converter=lambda xs: tuple(float(x) for x in xs),
       default=(0.0, 0.0, 0.0))
-  charge = attr.ib(type=float, converter=float)  # pyrefly: ignore[bad-class-definition]
-  atomic_number = attr.ib(type=int, converter=int)  # pyrefly: ignore[bad-class-definition]
+  charge: float = attr.ib(
+      converter=float,
+      default=attr.Factory(
+          lambda self: self.element.atomic_number, takes_self=True
+      ),
+  )
+  atomic_number: int = attr.ib(
+      converter=int,
+      default=attr.Factory(
+          lambda self: self.element.atomic_number, takes_self=True
+      ),
+  )
   units = attr.ib(
       type=str,
       default='bohr',
       validator=attr.validators.in_(['bohr', 'angstrom']))
-
-  @charge.default  # pyrefly: ignore[missing-attribute]
-  def _set_default_charge(self):
-    return self.element.atomic_number
-
-  @atomic_number.default  # pyrefly: ignore[missing-attribute]
-  def _set_default_atomic_number(self):
-    return self.element.atomic_number
 
   def __attrs_post_init__(self):
     if self.units == 'angstrom':
@@ -99,7 +101,7 @@ def pyscf_mol_to_internal_representation(
   # Ensure Mole is built so all attributes are appropriately set.
   mol.build()
   atoms = [
-      Atom(mol.atom_symbol(i), mol.atom_coord(i))  # pyrefly: ignore[missing-argument]
+      Atom(mol.atom_symbol(i), mol.atom_coord(i))
       for i in range(mol.natm)
   ]
   return ml_collections.ConfigDict({
