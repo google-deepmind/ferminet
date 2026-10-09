@@ -18,6 +18,7 @@ NOTE: these functions operate on batches of MCMC configurations and should not
 be vmapped.
 """
 
+from typing import Callable
 import chex
 from ferminet import constants
 from ferminet import networks
@@ -25,6 +26,15 @@ import jax
 from jax import lax
 from jax import numpy as jnp
 import numpy as np
+
+
+def map_to_simulation_cell(pos, lattice, rec, ndim):
+  """If working in PBC, map electrons back to the supercell."""
+  pos_ = jnp.reshape(pos, [-1, ndim])
+  phase = jnp.einsum('il,kl->ki', rec / (2 * jnp.pi), pos_)
+  phase_prim = phase % 1
+  prim = jnp.einsum('il,kl->ki', lattice, phase_prim)
+  return prim.reshape(pos.shape)
 
 
 def _harmonic_mean(x, atoms):
@@ -85,6 +95,7 @@ def mh_update(
     stddev=0.02,
     atoms=None,
     ndim=3,
+    map_to_cell: Callable[[jnp.ndarray], jnp.ndarray] = lambda x: x,
     blocks=1,
     i=0,
 ):
@@ -105,6 +116,8 @@ def mh_update(
       the i-th electron and the atoms, otherwise the move proposal drawn from
       N(0, stddev^2).
     ndim: dimensionality of system.
+    map_to_cell: If PBC, callable which maps electrons back to the simulation
+      cell. If OBC, identity function.
     blocks: Ignored.
     i: Ignored.
 
@@ -120,6 +133,7 @@ def mh_update(
   x1 = data.positions
   if atoms is None:  # symmetric proposal, same stddev everywhere
     x2 = x1 + stddev * jax.random.normal(subkey, shape=x1.shape)  # proposal
+    x2 = map_to_cell(x2)
     lp_2 = 2.0 * f(
         params, x2, data.spins, data.atoms, data.charges
     )  # log prob of proposal
@@ -130,6 +144,8 @@ def mh_update(
     hmean1 = _harmonic_mean(x1, atoms)  # harmonic mean of distances to nuclei
 
     x2 = x1 + stddev * hmean1 * jax.random.normal(subkey, shape=x1.shape)
+    x2 = map_to_cell(x2)
+    x2 = x2.reshape(x1.shape)
     lp_2 = 2.0 * f(
         params, x2, data.spins, data.atoms, data.charges
     )  # log prob of proposal
@@ -157,6 +173,7 @@ def mh_block_update(
     stddev=0.02,
     atoms=None,
     ndim=3,
+    map_to_cell: Callable[[jnp.ndarray], jnp.ndarray] = lambda x: x,
     blocks=1,
     i=0,
 ):
@@ -173,6 +190,8 @@ def mh_block_update(
     stddev: width of Gaussian move proposal.
     atoms: Not implemented. Raises an error if not None.
     ndim: dimensionality of system.
+    map_to_cell: If PBC, callable which maps electrons back to the simulation
+      cell. If OBC, identity function.
     blocks: number of blocks to split electron updates into.
     i: index of block of electrons to move.
 
@@ -199,6 +218,7 @@ def mh_block_update(
     x2 = x1.at[:, ii].add(
         stddev * jax.random.normal(subkey, shape=x1[:, ii].shape))
     x2 = jnp.reshape(x2, [batch_size, -1])
+    x2 = map_to_cell(x2)
     if pad > 0:
       x2 = x2[..., :-pad*ndim]
     # log prob of proposal
@@ -217,12 +237,15 @@ def mh_block_update(
   return new_data, key, lp_new, num_accepts
 
 
-def make_mcmc_step(batch_network,
-                   batch_per_device,
-                   steps=10,
-                   atoms=None,
-                   ndim=3,
-                   blocks=1):
+def make_mcmc_step(
+    batch_network,
+    batch_per_device,
+    steps=10,
+    atoms=None,
+    ndim=3,
+    blocks=1,
+    lattice=None,
+):
   """Creates the MCMC step function.
 
   Args:
@@ -238,11 +261,21 @@ def make_mcmc_step(batch_network,
     ndim: Dimensionality of the system (usually 3).
     blocks: Number of blocks to split the updates into. If 1, use all-electron
       moves.
+    lattice: If None, assume OBC. Otherwise matrix with supercell lattice
+      vectors
 
   Returns:
     Callable which performs the set of MCMC steps.
   """
   inner_fun = mh_block_update if blocks > 1 else mh_update
+
+  # If PBC, map electrons back to the supercell
+  if lattice is not None:
+    rec = 2 * jnp.pi * jnp.linalg.inv(lattice)
+    map_to_cell = lambda p: map_to_simulation_cell(p, lattice, rec, ndim)
+  else:
+    rec = None
+    map_to_cell = lambda p: p
 
   def mcmc_step(params, data, key, width):
     """Performs a set of MCMC steps.
@@ -267,8 +300,10 @@ def make_mcmc_step(batch_network,
           stddev=width,
           atoms=atoms,
           ndim=ndim,
+          map_to_cell=map_to_cell,
           blocks=blocks,
-          i=i)
+          i=i
+      )
 
     nsteps = steps * blocks
     logprob = 2.0 * batch_network(

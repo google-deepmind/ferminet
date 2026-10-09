@@ -60,7 +60,7 @@ def default() -> ml_collections.ConfigDict:
           'objective': 'vmc',
           'iterations': 1000000,  # number of iterations
           'optimizer': 'kfac',  # one of adam, kfac, lamb, none
-          'laplacian': 'default',  # of of default or folx (for forward lapl)
+          'laplacian': 'default',  # one of default or folx (for forward lapl)
           # If 0, use standard vmap. If >0, the max batch size for batched_vmap
           'max_vmap_batch_size': 0,
           'lr': {
@@ -148,10 +148,12 @@ def default() -> ml_collections.ConfigDict:
           # 1. Specify the system by setting variables below.
           # list of system.Atom objects with element type and position.
           'molecule': config_dict.placeholder(list),
+          # If None, assume OBC, if PBC then matrix with the
+          # supercell lattice vectors
+          'lattice': None,
           # number of spin up, spin-down electrons
           'electrons': tuple(),
-          # Dimensionality. Change with care. FermiNet implementation currently
-          # assumes 3D systems.
+          # Dimensionality.
           'ndim': 3,
           # Number of excited states. If 0, use normal ground state machinery.
           # If 1, compute ground state using excited state machinery. If >1,

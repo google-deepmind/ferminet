@@ -298,7 +298,7 @@ def make_psiformer_layers(
     """Applies the Psiformer interaction layers to a walker configuration.
 
     Args:
-      params: parameters for the interaction and permuation-equivariant layers.
+      params: parameters for the interaction and permutation-equivariant layers.
       ae: electron-nuclear vectors.
       r_ae: electron-nuclear distances.
       ee: electron-electron vectors.
@@ -337,6 +337,7 @@ def make_fermi_net(
     charges: jnp.ndarray,
     *,
     ndim: int = 3,
+    lattice: jnp.ndarray | None = None,
     determinants: int = 16,
     states: int = 0,
     envelope: Optional[envelopes.Envelope] = None,
@@ -361,6 +362,8 @@ def make_fermi_net(
     nspins: Tuple of the number of spin-up and spin-down electrons.
     charges: (natom) array of atom nuclear charges.
     ndim: Dimension of the system. Change only with caution.
+    lattice: If None, assume OBC. Otherwise matrix with supercell lattice
+      vectors.
     determinants: Number of determinants.
     states: Number of outputs, one per excited (or ground) state. Ignored if 0.
     envelope: Envelope to use to impose orbitals go to zero at infinity.
@@ -401,6 +404,7 @@ def make_fermi_net(
 
   options = PsiformerOptions(
       ndim=ndim,
+      lattice=lattice,
       determinants=determinants,
       states=states,
       envelope=envelope,
@@ -416,7 +420,7 @@ def make_fermi_net(
       mlp_hidden_dims=mlp_hidden_dims,
       use_layer_norm=use_layer_norm,
       tf32=tf32,
-  )  # pytype: disable=wrong-keyword-args
+  )
 
   psiformer_layers = make_psiformer_layers(nspins, charges.shape[0], options)
 

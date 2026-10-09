@@ -12,8 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License
 
-"""Tests for ferminet.pbc.hamiltonian."""
-
 from absl.testing import absltest
 from absl.testing import parameterized
 from ferminet import base_config
@@ -65,7 +63,6 @@ class PbcHamiltonianTest(parameterized.TestCase):
         nspins=nspins,
         use_scan=False,
         lattice=jnp.eye(3),
-        heg=False,
     )
 
     data = networks.FermiNetData(
