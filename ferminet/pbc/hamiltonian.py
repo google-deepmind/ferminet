@@ -24,8 +24,31 @@ from typing import Sequence, Tuple
 import chex
 from ferminet import hamiltonian
 from ferminet import networks
+from ferminet import pseudopotential as pp
 from ferminet.pbc import ewald
 import jax.numpy as jnp
+
+
+def _reduce_to_cell(
+    x: jnp.ndarray, lattice: jnp.ndarray, rec: jnp.ndarray
+) -> jnp.ndarray:
+  """Reduces displacements into the primitive cell centered at the origin."""
+  phase = jnp.einsum('il,...l->...i', rec / (2 * jnp.pi), x)
+  return jnp.einsum('il,...l->...i', lattice, phase - jnp.round(phase))
+
+
+def _move_to_mic(
+    pos: jnp.ndarray,
+    ae: jnp.ndarray,
+    lattice: jnp.ndarray,
+    rec: jnp.ndarray,
+) -> jnp.ndarray:
+  """Translates electrons by lattice vectors to the MIC of the closest atom."""
+  prim_ae = _reduce_to_cell(ae, lattice, rec)
+  closest = jnp.argmin(jnp.linalg.norm(prim_ae, axis=-1), axis=1)
+  idx = jnp.arange(ae.shape[0])
+  shift = prim_ae[idx, closest] - ae[idx, closest]
+  return pos + jnp.reshape(shift, pos.shape)
 
 
 def local_energy(
@@ -59,9 +82,10 @@ def local_energy(
     states: Number of excited states to compute. Not implemented, only present
       for consistency of calling convention.
     state_specific: Not implemented.
-    pp_type: type of pseudopotential to use. Not implemented.
+    pp_type: type of pseudopotential to use. Only used if pp_symbols is
+      provided.
     pp_symbols: sequence of element symbols for which the pseudopotential is
-      used. Not implemented.
+      used.
     lattice: Shape (ndim, ndim). Matrix of lattice vectors. Default: identity
       matrix.
     convergence_radius: int. Radius of cluster summed over by Ewald sums.
@@ -73,18 +97,31 @@ def local_energy(
   """
   if states > 0 or state_specific:
     raise NotImplementedError('Excited states not implemented with PBC.')
-  if pp_symbols:
-    raise NotImplementedError('Pseudopotentials not implemented with PBC.')
 
   del nspins
-  del pp_type
   if lattice is None:
     lattice = jnp.eye(ndim)
+
+  if not pp_symbols:
+    effective_charges = charges
+    use_pp = False
+  elif ndim == 3:
+    effective_charges, pp_local, pp_nonlocal = pp.make_pp_potential(
+        charges=charges,
+        symbols=pp_symbols,
+        quad_degree=4,
+        ecp=pp_type,
+        complex_output=complex_output,
+    )
+    use_pp = not bool(jnp.all(effective_charges == charges))
+  else:
+    raise NotImplementedError('Pseudopotentials only implemented for 3D.')
 
   ke = hamiltonian.local_kinetic_energy(f,
                                         use_scan=use_scan,
                                         complex_output=complex_output,
                                         laplacian_method=laplacian_method)
+  rec = 2 * jnp.pi * jnp.linalg.inv(lattice)
 
   def _e_l(
       params: networks.ParamTree, key: chex.PRNGKey, data: networks.FermiNetData
@@ -96,18 +133,36 @@ def local_energy(
       key: RNG state.
       data: MCMC configuration.
     """
-    del key  # unused
     potential_energy = ewald.make_ewald_potential(
         lattice=lattice,
         atoms=data.atoms,
-        charges=charges,
+        charges=effective_charges,
         truncation_limit=convergence_radius,
         ndim=ndim,
     )
     ae, ee, _, _ = networks.construct_input_features(
         data.positions, data.atoms, ndim
     )
-    potential = potential_energy(ae, ee)
+    if use_pp:
+      pos = _move_to_mic(data.positions, ae, lattice, rec)
+      ae, ee, _, _ = networks.construct_input_features(pos, data.atoms, ndim)
+      ae = _reduce_to_cell(ae, lattice, rec)
+      ee = _reduce_to_cell(ee, lattice, rec)
+      r_ae = jnp.linalg.norm(ae, axis=-1, keepdims=True)
+      data = networks.FermiNetData(
+          positions=pos,
+          spins=data.spins,
+          atoms=data.atoms,
+          charges=data.charges,
+      )
+      potential = (
+          potential_energy(ae, ee)
+          + pp_local(r_ae)
+          + pp_nonlocal(key, f, params, data, ae, r_ae)
+      )
+    else:
+      del key  # unused
+      potential = potential_energy(ae, ee)
     kinetic = ke(params, data)
     return potential + kinetic, None
 

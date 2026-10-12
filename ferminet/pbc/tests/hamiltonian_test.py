@@ -26,10 +26,11 @@ import numpy as np
 
 class PbcHamiltonianTest(parameterized.TestCase):
 
-  def test_periodicity(self):
+  @parameterized.parameters(None, (('B', 'N'),))
+  def test_periodicity(self, pp_symbols):
     cfg = base_config.default()
 
-    nspins = (6, 5)
+    nspins = (4, 3) if pp_symbols else (6, 5)
     atoms = jnp.asarray([[0., 0., 0.2], [1.2, 1., -0.2], [2.5, -0.8, 0.6]])
     natom = atoms.shape[0]
     charges = jnp.asarray([2, 5, 7])
@@ -63,14 +64,15 @@ class PbcHamiltonianTest(parameterized.TestCase):
         nspins=nspins,
         use_scan=False,
         lattice=jnp.eye(3),
+        pp_symbols=pp_symbols,
     )
 
     data = networks.FermiNetData(
         positions=xs.flatten(), spins=spins, atoms=atoms, charges=charges
     )
 
-    key, subkey = jax.random.split(key)
-    e1, _ = local_energy(params, subkey, data)
+    key, eval_key = jax.random.split(key)
+    e1, _ = local_energy(params, eval_key, data)
 
     # Select random electron coordinate to displace by a random lattice vec
     key, subkey = jax.random.split(key)
@@ -83,8 +85,7 @@ class PbcHamiltonianTest(parameterized.TestCase):
         positions=xs.flatten(), spins=spins, atoms=atoms, charges=charges
     )
 
-    key, subkey = jax.random.split(key)
-    e2, _ = local_energy(params, subkey, data2)
+    e2, _ = local_energy(params, eval_key, data2)
 
     atol, rtol = 4.e-3, 4.e-3
     np.testing.assert_allclose(e1, e2, atol=atol, rtol=rtol)
