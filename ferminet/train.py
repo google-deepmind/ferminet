@@ -163,7 +163,7 @@ class OptUpdate(Protocol):
       self,
       params: networks.ParamTree,
       data: networks.FermiNetData,
-      opt_state: optax.OptState,
+      opt_state: optax.OptState | None,
       key: chex.PRNGKey,
   ) -> OptUpdateResults:
     """Evaluates the loss and gradients and updates the parameters accordingly.
@@ -308,10 +308,12 @@ def make_training_step(
     data, pmove = mcmc_step(params, data, mcmc_key, mcmc_width)
 
     # Optimization step
-    new_params, new_state, loss, aux_data = optimizer_step(params,
-                                                           data,
-                                                           state,  # pyrefly: ignore[bad-argument-type]
-                                                           loss_key)
+    new_params, new_state, loss, aux_data = optimizer_step(
+        params=params,
+        data=data,
+        opt_state=state,
+        key=loss_key,
+    )
     if reset_if_nan:
       new_params = jax.lax.cond(jnp.isnan(loss),
                                 lambda: params,
