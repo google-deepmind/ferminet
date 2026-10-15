@@ -225,11 +225,11 @@ def make_loss(network: networks.LogFermiNetLike,
     loss = constants.pmean(jnp.mean(e_l))
     loss_diff = e_l - loss
     variance = constants.pmean(jnp.mean(loss_diff * jnp.conj(loss_diff)))
-    return loss, AuxiliaryLossData(
+    return loss.real, AuxiliaryLossData(
         energy=loss,
         variance=variance.real,
         local_energy=e_l,
-        clipped_energy=e_l,
+        clipped_energy=loss,
         local_energy_mat=e_l_mat,
     )
 
@@ -242,13 +242,13 @@ def make_loss(network: networks.LogFermiNetLike,
     if clip_local_energy > 0.0:
       aux_data.clipped_energy, diff = clip_local_values(
           aux_data.local_energy,
-          loss,
+          aux_data.energy,
           clip_local_energy,
           clip_from_median,
           center_at_clipped_energy,
           complex_output)
     else:
-      diff = aux_data.local_energy - loss
+      diff = aux_data.local_energy - aux_data.energy
 
     # Due to the simultaneous requirements of KFAC (calling convention must be
     # (params, rng, data)) and Laplacian calculation (only want to take
@@ -377,11 +377,11 @@ def make_wqmc_loss(
 
     grad_e_l = jax.grad(batch_local_energy_pos)(data.positions)
     grad_e_l = jnp.tanh(jax.lax.stop_gradient(grad_e_l))
-    return loss, AuxiliaryLossData(
+    return loss.real, AuxiliaryLossData(
         energy=loss,
         variance=variance.real,
         local_energy=e_l,
-        clipped_energy=e_l,
+        clipped_energy=loss,
         grad_local_energy=grad_e_l,
         local_energy_mat=e_l_mat,
     )
@@ -395,14 +395,14 @@ def make_wqmc_loss(
     if clip_local_energy > 0.0:
       aux_data.clipped_energy, diff = clip_local_values(
           aux_data.local_energy,
-          loss,
+          aux_data.energy,
           clip_local_energy,
           clip_from_median,
           center_at_clipped_energy,
           complex_output,
       )
     else:
-      diff = aux_data.local_energy - loss
+      diff = aux_data.local_energy - aux_data.energy
 
     def log_q(params_, pos_, spins_, atoms_, charges_):
       out = batch_network(params_, pos_, spins_, atoms_, charges_)
@@ -532,7 +532,9 @@ def make_energy_overlap_loss(network: networks.LogFermiNetLike,
                 energy=loss,
                 variance=variance.real,
                 local_energy=e_l,
-                clipped_energy=loss,
+                clipped_energy=(
+                    weighted_energy if clip_local_energy > 0.0 else loss
+                ),
                 s_ij=s_ij_local,
                 mean_s_ij=s_ij,
                 local_energy_mat=e_l))
