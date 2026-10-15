@@ -299,21 +299,32 @@ def potential_nuclear_nuclear(charges: Array, atoms: Array) -> jnp.ndarray:
 
 
 def potential_energy(r_ae: Array, r_ee: Array, atoms: Array,
-                     charges: Array) -> jnp.ndarray:
+                     charges: Array, potential_type: str = 'coulomb',
+                     omega: float = 0.0, scale_alpha: float = 1.0) -> jnp.ndarray:
   """Returns the potential energy for this electron configuration.
 
   Args:
-    r_ae: Shape (nelectrons, natoms). r_ae[i, j] gives the distance between
+    r_ae: Shape (nelectrons, natoms, ...). r_ae[i, j, 0] gives the distance between
       electron i and atom j.
     r_ee: Shape (neletrons, nelectrons, :). r_ee[i,j,0] gives the distance
       between electrons i and j. Other elements in the final axes are not
       required.
     atoms: Shape (natoms, ndim). Positions of the atoms.
     charges: Shape (natoms). Nuclear charges of the atoms.
+    potential_type: String specifying potential ('coulomb' or 'harm').
+    omega: Harmonic oscillator frequency.
+    scale_alpha: Scaling factor for electron-electron interaction.
   """
-  return (potential_electron_electron(r_ee) +
-          potential_electron_nuclear(charges, r_ae) +
-          potential_nuclear_nuclear(charges, atoms))
+  v_ee = potential_electron_electron(r_ee) * scale_alpha
+  if potential_type == 'harm':
+    # Harmonic oscillator potential: 1/2 \omega^2 \sum_i |r_i - R|^2
+    v_ae = 0.5 * (omega**2) * jnp.sum(r_ae[:, 0, 0]**2)
+    v_aa = 0.0
+  else:
+    v_ae = potential_electron_nuclear(charges, r_ae)
+    v_aa = potential_nuclear_nuclear(charges, atoms)
+
+  return v_ee + v_ae + v_aa
 
 
 def local_energy(
@@ -328,6 +339,9 @@ def local_energy(
     state_specific: bool = False,
     pp_type: str = 'ccecp',
     pp_symbols: Sequence[str] | None = None,
+    potential_type: str = 'coulomb',
+    omega: float = 0.0,
+    scale_alpha: float = 1.0,
 ) -> LocalEnergy:
   """Creates the function to evaluate the local energy.
 
@@ -351,6 +365,9 @@ def local_energy(
       provided.
     pp_symbols: sequence of element symbols for which the pseudopotential is
       used.
+    potential_type: String specifying potential ('coulomb' or 'harm').
+    omega: Harmonic oscillator frequency.
+    scale_alpha: Scaling factor for electron-electron interaction.
 
   Returns:
     Callable with signature e_l(params, key, data) which evaluates the local
@@ -397,9 +414,9 @@ def local_energy(
       ae, _, r_ae, r_ee = vmap_features(positions, data.atoms, ndim)
 
       # Compute potential energy
-      vmap_pot = jax.vmap(potential_energy, (0, 0, None, None))
+      vmap_pot = jax.vmap(potential_energy, (0, 0, None, None, None, None, None))
       pot_spectrum = vmap_pot(
-          r_ae, r_ee, data.atoms, effective_charges)[:, None]
+          r_ae, r_ee, data.atoms, effective_charges, potential_type, omega, scale_alpha)[:, None]
 
       if use_pp:
         data_vmap_dims = networks.FermiNetData(
@@ -452,7 +469,7 @@ def local_energy(
           data.atoms,
           ndim,
       )
-      potential = (potential_energy(r_ae, r_ee, data.atoms, effective_charges) +
+      potential = (potential_energy(r_ae, r_ee, data.atoms, effective_charges, potential_type, omega, scale_alpha) +
                    pp_local(r_ae) +
                    pp_nonlocal(key, f, params, data, ae, r_ae))
       kinetic = ke(params, data)
